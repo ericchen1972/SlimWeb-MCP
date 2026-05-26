@@ -80,15 +80,98 @@ export class WeblessAccountRepository {
     };
   }
 
+  async listThemesForAccountSite(accountId, args) {
+    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
+    const themes = await this.listThemesForSite(site.id);
+
+    return {
+      site,
+      themes
+    };
+  }
+
+  async createThemeFromDefault(accountId, args) {
+    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
+    const name = requireThemeName(args.name);
+    const themeMode = normalizeThemeMode(args.theme_mode);
+
+    await this.pool.query('BEGIN');
+
+    try {
+      const sortOrder = await this.nextThemeSortOrder(site.id);
+      const result = await this.pool.query(
+        `
+          insert into site_pages (
+            site_id,
+            name,
+            is_default,
+            is_active,
+            theme_mode,
+            navbar_source_type,
+            mega_menu_source_type,
+            footer_source_type,
+            support_source_type,
+            body_template_code,
+            sort_order
+          )
+          values ($1, $2, false, false, $3, 'default', 'default', 'default', 'default', null, $4)
+          returning id, site_id, name, is_default, is_active, theme_mode
+        `,
+        [site.id, name, themeMode, sortOrder]
+      );
+      const theme = formatTheme(result.rows[0]);
+
+      await this.copyDefaultTemplateToTheme(site.id, theme.id);
+      await this.pool.query('COMMIT');
+
+      return {
+        site,
+        theme,
+        copied_from_default: true,
+        source_theme: 'Default',
+        preview_url: this.previewUrlFor(site, 'index', theme.id)
+      };
+    } catch (error) {
+      await this.pool.query('ROLLBACK');
+      throw error;
+    }
+  }
+
+  async updateThemeRootElements(accountId, args) {
+    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
+    const theme = await this.resolveThemeForSite(site.id, args.theme_id);
+
+    if (theme.is_default) {
+      throw codedError('VALIDATION_FAILED', 'Default theme root elements cannot be modified through this tool. Create a non-Default theme first.');
+    }
+
+    const fragments = normalizeRootFragments(args.fragments);
+    const updatedFragments = [];
+
+    for (const [fragment, html] of Object.entries(fragments)) {
+      await this.storage.write(rootElementStoragePath(theme, fragment), Buffer.from(html.trim() + '\n', 'utf8'), 'text/x-php; charset=utf-8');
+      updatedFragments.push(fragment);
+    }
+
+    if (typeof args.css === 'string' && args.css.trim() !== '') {
+      await this.storage.write(`${themeDirectory(theme)}/assets/root-elements/css/00-mcp-theme.css`, Buffer.from(args.css.trim() + '\n', 'utf8'), 'text/css; charset=utf-8');
+    }
+
+    return {
+      ok: true,
+      site,
+      theme,
+      updated_fragments: updatedFragments,
+      updated_css: typeof args.css === 'string' && args.css.trim() !== '',
+      preview_url: this.previewUrlFor(site, 'index', theme.id)
+    };
+  }
+
   async getPagePreviewUrl(accountId, args) {
     const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
     const pageKey = normalizePageKey(args.page_key ?? 'index');
     const theme = await this.resolveThemeForSite(site.id, args.theme_id);
-    const url = new URL(`${this.publicSiteBaseUrl}/sites/${encodeURIComponent(site.slug)}/default-preview`);
-
-    url.searchParams.set('mcp_site_id', String(site.id));
-    url.searchParams.set('mcp_page_key', pageKey);
-    url.searchParams.set('mcp_theme_id', String(theme.id));
+    const url = new URL(this.previewUrlFor(site, pageKey, theme.id));
 
     return {
       site,
@@ -198,6 +281,19 @@ export class WeblessAccountRepository {
     return result.rows.map((theme) => formatTheme(theme));
   }
 
+  async nextThemeSortOrder(siteId) {
+    const result = await this.pool.query(
+      `
+        select coalesce(max(sort_order), 0) + 1 as next_sort_order
+        from site_pages
+        where site_id = $1
+      `,
+      [siteId]
+    );
+
+    return Number.parseInt(result.rows[0]?.next_sort_order ?? '1', 10);
+  }
+
   async resolveThemeForSite(siteId, themeId) {
     const params = [siteId];
     let where = 'site_id = $1 and is_active = true';
@@ -228,6 +324,39 @@ export class WeblessAccountRepository {
     }
 
     return formatTheme(theme);
+  }
+
+  async copyDefaultTemplateToTheme(siteId, themeId) {
+    const sourceDirectory = `sites/${siteId}/templates/default`;
+    const targetDirectory = `sites/${siteId}/templates/schemes/${themeId}`;
+    const files = await this.storage.listFiles(sourceDirectory);
+
+    for (const sourcePath of files) {
+      const relativePath = sourcePath.slice(sourceDirectory.length + 1);
+      let targetPath = `${targetDirectory}/${relativePath}`;
+
+      const bodyMatch = relativePath.match(/^pages\/([^/]+)\/content\.blade\.php$/);
+      if (bodyMatch) {
+        targetPath = `${targetDirectory}/pages/${bodyMatch[1]}/body.blade.php`;
+      }
+
+      const bytes = await this.storage.readBytes(sourcePath);
+      if (bytes !== null) {
+        await this.storage.write(targetPath, bytes, contentTypeForPath(targetPath));
+      }
+    }
+  }
+
+  previewUrlFor(site, pageKey, themeId) {
+    const url = new URL(`${this.publicSiteBaseUrl}/sites/${encodeURIComponent(site.slug)}/default-preview`);
+
+    url.searchParams.set('mcp_site_id', String(site.id));
+    url.searchParams.set('mcp_page_key', pageKey);
+    url.searchParams.set('mcp_theme_id', String(themeId));
+    url.searchParams.set('preview_page', pageKey);
+    url.searchParams.set('preview_style_scheme', String(themeId));
+
+    return url.toString();
   }
 
 }
@@ -264,11 +393,37 @@ export class LocalStorageAdapter {
     });
   }
 
+  async readBytes(storagePath) {
+    const absolutePath = this.absoluteStoragePath(storagePath);
+
+    return readFile(absolutePath).catch((error) => {
+      if (error.code === 'ENOENT') {
+        return null;
+      }
+
+      throw error;
+    });
+  }
+
   async write(storagePath, bytes) {
     const absolutePath = this.absoluteStoragePath(storagePath);
 
     await mkdir(path.dirname(absolutePath), { recursive: true });
     await writeFile(absolutePath, bytes);
+  }
+
+  async listFiles(prefix) {
+    const absolutePrefix = this.absoluteStoragePath(prefix);
+
+    return listLocalFiles(absolutePrefix)
+      .then((files) => files.map((file) => path.relative(path.resolve(this.root), file).split(path.sep).join('/')))
+      .catch((error) => {
+        if (error.code === 'ENOENT') {
+          return [];
+        }
+
+        throw error;
+      });
   }
 
   absoluteStoragePath(storagePath) {
@@ -318,6 +473,27 @@ export class GcsStorageAdapter {
     return response.text();
   }
 
+  async readBytes(storagePath) {
+    const response = await this.fetch(
+      `https://storage.googleapis.com/storage/v1/b/${encodeURIComponent(this.requireBucket())}/o/${encodeURIComponent(storagePath)}?alt=media`,
+      {
+        headers: {
+          authorization: `Bearer ${await this.accessToken()}`
+        }
+      }
+    );
+
+    if (response.status === 404) {
+      return null;
+    }
+
+    if (!response.ok) {
+      throw codedError('UPSTREAM_ERROR', `Unable to read object from Cloud Storage: HTTP ${response.status}`);
+    }
+
+    return Buffer.from(await response.arrayBuffer());
+  }
+
   async write(storagePath, bytes, contentType = 'application/octet-stream') {
     const response = await this.fetch(
       `https://storage.googleapis.com/upload/storage/v1/b/${encodeURIComponent(this.requireBucket())}/o?uploadType=media&name=${encodeURIComponent(storagePath)}`,
@@ -334,6 +510,29 @@ export class GcsStorageAdapter {
     if (!response.ok) {
       throw codedError('UPSTREAM_ERROR', `Unable to write object to Cloud Storage: HTTP ${response.status}`);
     }
+  }
+
+  async listFiles(prefix) {
+    const normalizedPrefix = prefix.replace(/\/+$/, '') + '/';
+    const response = await this.fetch(
+      `https://storage.googleapis.com/storage/v1/b/${encodeURIComponent(this.requireBucket())}/o?prefix=${encodeURIComponent(normalizedPrefix)}`,
+      {
+        headers: {
+          authorization: `Bearer ${await this.accessToken()}`
+        }
+      }
+    );
+
+    if (!response.ok) {
+      throw codedError('UPSTREAM_ERROR', `Unable to list objects from Cloud Storage: HTTP ${response.status}`);
+    }
+
+    const payload = await response.json();
+    const items = Array.isArray(payload.items) ? payload.items : [];
+
+    return items
+      .map((item) => String(item.name ?? ''))
+      .filter((name) => name.startsWith(normalizedPrefix) && name.length > normalizedPrefix.length);
   }
 
   requireBucket() {
@@ -395,6 +594,49 @@ function requireInteger(value, name) {
   return parsed;
 }
 
+function requireThemeName(value) {
+  const name = String(value ?? '').trim();
+
+  if (name.length < 2 || name.length > 80) {
+    throw codedError('VALIDATION_FAILED', 'name must be between 2 and 80 characters.');
+  }
+
+  return name;
+}
+
+function normalizeThemeMode(value) {
+  const mode = String(value ?? 'light').trim();
+
+  if (!['light', 'dark', 'system'].includes(mode)) {
+    throw codedError('VALIDATION_FAILED', 'theme_mode must be light, dark, or system.');
+  }
+
+  return mode;
+}
+
+function normalizeRootFragments(value) {
+  if (value === undefined || value === null) {
+    return {};
+  }
+
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    throw codedError('VALIDATION_FAILED', 'fragments must be an object keyed by navbar, footer, or online_support.');
+  }
+
+  const allowed = new Set(['navbar', 'footer', 'online_support']);
+  const normalized = {};
+
+  for (const [key, html] of Object.entries(value)) {
+    if (!allowed.has(key)) {
+      throw codedError('VALIDATION_FAILED', `Unsupported root element fragment: ${key}`);
+    }
+
+    normalized[key] = extractSafeHtml(html, `fragments.${key}`);
+  }
+
+  return normalized;
+}
+
 function normalizePageKey(value) {
   const pageKey = String(value || 'index').trim();
 
@@ -436,17 +678,31 @@ function templateAssetStoragePath(theme, relativePath) {
   return `${themeDirectory(theme)}/${relativePath.replace(/^\/+/, '')}`;
 }
 
+function rootElementStoragePath(theme, fragment) {
+  const filename = {
+    navbar: 'navbar.blade.php',
+    footer: 'footer.blade.php',
+    online_support: 'online-support.blade.php'
+  }[fragment];
+
+  return `${themeDirectory(theme)}/root-elements/${filename}`;
+}
+
 function extractHtmlContent(content) {
   const html = typeof content?.html === 'string'
     ? content.html
     : (typeof content?.body_html === 'string' ? content.body_html : '');
 
-  if (html.trim() === '') {
-    throw codedError('VALIDATION_FAILED', 'content.html or content.body_html is required.');
+  return extractSafeHtml(html, 'content.html or content.body_html');
+}
+
+function extractSafeHtml(html, name) {
+  if (typeof html !== 'string' || html.trim() === '') {
+    throw codedError('VALIDATION_FAILED', `${name} is required.`);
   }
 
   if (/<\s*(script|link|iframe)\b/i.test(html) || /\son[a-z]+\s*=/i.test(html)) {
-    throw codedError('UNSAFE_CONTENT', 'Homepage content cannot include script/link/iframe tags or inline event handlers. Use external asset tools for CSS/JS.');
+    throw codedError('UNSAFE_CONTENT', 'HTML content cannot include script/link/iframe tags or inline event handlers. Use external asset tools for CSS/JS.');
   }
 
   return html;
@@ -525,4 +781,47 @@ function mimeTypeExtension(mimeType) {
   }
 
   return 'bin';
+}
+
+function contentTypeForPath(storagePath) {
+  const extension = path.extname(storagePath).toLowerCase();
+
+  if (extension === '.css') {
+    return 'text/css; charset=utf-8';
+  }
+
+  if (extension === '.php') {
+    return 'text/x-php; charset=utf-8';
+  }
+
+  if (extension === '.jpg' || extension === '.jpeg') {
+    return 'image/jpeg';
+  }
+
+  if (extension === '.png') {
+    return 'image/png';
+  }
+
+  if (extension === '.webp') {
+    return 'image/webp';
+  }
+
+  return 'application/octet-stream';
+}
+
+async function listLocalFiles(directory) {
+  const { readdir } = await import('node:fs/promises');
+  const entries = await readdir(directory, { withFileTypes: true });
+  const files = [];
+
+  for (const entry of entries) {
+    const fullPath = path.join(directory, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...await listLocalFiles(fullPath));
+    } else if (entry.isFile()) {
+      files.push(fullPath);
+    }
+  }
+
+  return files;
 }

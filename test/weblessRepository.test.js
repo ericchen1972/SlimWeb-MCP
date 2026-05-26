@@ -63,6 +63,67 @@ function fakePool() {
   };
 }
 
+function themeMutationPool() {
+  const queries = [];
+  let insertedThemeId = 22;
+
+  return {
+    queries,
+    async query(sql, params) {
+      queries.push({ sql, params });
+
+      if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') {
+        return { rows: [] };
+      }
+
+      if (sql.includes('from sites') && sql.includes('account_id = $1 and id = $2')) {
+        return {
+          rows: [{
+            id: params[1],
+            slug: 'site-1',
+            name: '測試網站',
+            domain: '',
+            status: 'active',
+            site_status: 'published'
+          }]
+        };
+      }
+
+      if (sql.includes('coalesce(max(sort_order), 0)')) {
+        return { rows: [{ next_sort_order: 3 }] };
+      }
+
+      if (sql.includes('insert into site_pages')) {
+        return {
+          rows: [{
+            id: insertedThemeId++,
+            site_id: params[0],
+            name: params[1],
+            is_default: false,
+            is_active: false,
+            theme_mode: params[2]
+          }]
+        };
+      }
+
+      if (sql.includes('where site_id = $1 and id = $2')) {
+        return {
+          rows: [{
+            id: params[1],
+            site_id: params[0],
+            name: '可愛版型',
+            is_default: false,
+            is_active: false,
+            theme_mode: 'light'
+          }]
+        };
+      }
+
+      throw new Error(`Unexpected query: ${sql}`);
+    }
+  };
+}
+
 test('database config enables SSL when DB_SSLMODE is require', () => {
   const config = databaseConfigFromEnv({
     DB_HOST: 'db.example.com',
@@ -232,6 +293,76 @@ test('repository rejects unsafe inline script content', async () => {
         html: '<section onclick="alert(1)">Bad</section>'
       }
     }),
-    /Homepage content cannot include/
+    /HTML content cannot include/
+  );
+});
+
+test('repository creates a theme by copying default template files', async () => {
+  const storageRoot = await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-'));
+  const pool = themeMutationPool();
+  const repository = new WeblessAccountRepository(pool, {
+    storageRoot,
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+
+  await repository.storage.write('sites/101/templates/default/pages/index/content.blade.php', Buffer.from('<section>Default home</section>'));
+  await repository.storage.write('sites/101/templates/default/root-elements/navbar.blade.php', Buffer.from('<nav>Default nav</nav>'));
+  await repository.storage.write('sites/101/templates/default/assets/root-elements/css/00-base.css', Buffer.from('.nav{display:flex}'));
+
+  const result = await repository.createThemeFromDefault(11, {
+    site_id: 101,
+    name: '可愛版型',
+    theme_mode: 'light'
+  });
+
+  assert.equal(result.theme.id, 22);
+  assert.equal(result.theme.name, '可愛版型');
+  assert.equal(result.copied_from_default, true);
+  assert.equal(
+    await readFile(path.join(storageRoot, 'sites/101/templates/schemes/22/pages/index/body.blade.php'), 'utf8'),
+    '<section>Default home</section>'
+  );
+  assert.equal(
+    await readFile(path.join(storageRoot, 'sites/101/templates/schemes/22/root-elements/navbar.blade.php'), 'utf8'),
+    '<nav>Default nav</nav>'
+  );
+  assert.equal(
+    await readFile(path.join(storageRoot, 'sites/101/templates/schemes/22/assets/root-elements/css/00-base.css'), 'utf8'),
+    '.nav{display:flex}'
+  );
+  assert.equal(pool.queries.some((query) => query.sql === 'BEGIN'), true);
+  assert.equal(pool.queries.some((query) => query.sql === 'COMMIT'), true);
+});
+
+test('repository updates root element fragments and css for a custom theme', async () => {
+  const storageRoot = await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-'));
+  const repository = new WeblessAccountRepository(themeMutationPool(), {
+    storageRoot,
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+
+  const result = await repository.updateThemeRootElements(11, {
+    site_id: 101,
+    theme_id: 22,
+    fragments: {
+      navbar: '<nav class="cute-nav">Cute</nav>',
+      footer: '<footer>Cute footer</footer>'
+    },
+    css: '.cute-nav{background:#fff7d6}'
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.updated_fragments, ['navbar', 'footer']);
+  assert.equal(
+    await readFile(path.join(storageRoot, 'sites/101/templates/schemes/22/root-elements/navbar.blade.php'), 'utf8'),
+    '<nav class="cute-nav">Cute</nav>\n'
+  );
+  assert.equal(
+    await readFile(path.join(storageRoot, 'sites/101/templates/schemes/22/root-elements/footer.blade.php'), 'utf8'),
+    '<footer>Cute footer</footer>\n'
+  );
+  assert.equal(
+    await readFile(path.join(storageRoot, 'sites/101/templates/schemes/22/assets/root-elements/css/00-mcp-theme.css'), 'utf8'),
+    '.cute-nav{background:#fff7d6}\n'
   );
 });

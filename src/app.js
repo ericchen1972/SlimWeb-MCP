@@ -34,6 +34,68 @@ const MCP_TOOLS = [
     }
   },
   {
+    name: 'slimweb.themes.list',
+    description: 'List page style schemes/themes for a SlimWeb site, including Default and the currently active theme.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        site_id: {
+          type: 'integer',
+          description: 'Target SlimWeb site ID.'
+        }
+      },
+      required: ['site_id']
+    }
+  },
+  {
+    name: 'slimweb.themes.create_from_default',
+    description: 'Create a new non-Default theme/page style scheme by copying Default template files into the new theme. Use this before designing a new visual style.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        site_id: {
+          type: 'integer',
+          description: 'Target SlimWeb site ID.'
+        },
+        name: {
+          type: 'string',
+          description: 'Human-readable theme name, such as 可愛版型.'
+        },
+        theme_mode: {
+          type: 'string',
+          enum: ['light', 'dark', 'system']
+        }
+      },
+      required: ['site_id', 'name']
+    }
+  },
+  {
+    name: 'slimweb.themes.update_root_elements',
+    description: 'Update root-level theme fragments such as navbar, footer, online support, and theme-level CSS for a non-Default theme. Do not use this to overwrite page body content.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        site_id: {
+          type: 'integer',
+          description: 'Target SlimWeb site ID.'
+        },
+        theme_id: {
+          type: ['integer', 'string'],
+          description: 'Target non-Default theme ID.'
+        },
+        fragments: {
+          type: 'object',
+          description: 'Optional root element HTML fragments keyed by navbar, footer, or online_support.'
+        },
+        css: {
+          type: 'string',
+          description: 'Optional theme CSS stored under root-elements assets.'
+        }
+      },
+      required: ['site_id', 'theme_id']
+    }
+  },
+  {
     name: 'slimweb.assets.upload',
     description: 'Upload or register a reusable asset such as an image for page, theme, product, or site use. Use returned URLs/paths in page content instead of embedding file bytes.',
     inputSchema: {
@@ -314,6 +376,36 @@ async function toolResultForCall(message, request, context) {
     case 'slimweb.site.select': {
       try {
         const result = await context.accountRepository.selectSiteForAccount(session.account_id, toolArgs(message));
+
+        return mcpResult(message.id ?? null, mcpJsonContent(result));
+      } catch (error) {
+        return toolExceptionToMcpError(message?.id ?? null, error);
+      }
+    }
+
+    case 'slimweb.themes.list': {
+      try {
+        const result = await context.accountRepository.listThemesForAccountSite(session.account_id, toolArgs(message));
+
+        return mcpResult(message.id ?? null, mcpJsonContent(result));
+      } catch (error) {
+        return toolExceptionToMcpError(message?.id ?? null, error);
+      }
+    }
+
+    case 'slimweb.themes.create_from_default': {
+      try {
+        const result = await context.accountRepository.createThemeFromDefault(session.account_id, toolArgs(message));
+
+        return mcpResult(message.id ?? null, mcpJsonContent(result));
+      } catch (error) {
+        return toolExceptionToMcpError(message?.id ?? null, error);
+      }
+    }
+
+    case 'slimweb.themes.update_root_elements': {
+      try {
+        const result = await context.accountRepository.updateThemeRootElements(session.account_id, toolArgs(message));
 
         return mcpResult(message.id ?? null, mcpJsonContent(result));
       } catch (error) {

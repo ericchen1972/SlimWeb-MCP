@@ -132,6 +132,9 @@ test('MCP tools list includes homepage editing contract tools', async () => {
 
     for (const toolName of [
       'slimweb.site.select',
+      'slimweb.themes.list',
+      'slimweb.themes.create_from_default',
+      'slimweb.themes.update_root_elements',
       'slimweb.assets.upload',
       'slimweb.pages.get_home_content',
       'slimweb.pages.update_home_content',
@@ -140,6 +143,8 @@ test('MCP tools list includes homepage editing contract tools', async () => {
       assert.ok(toolsByName.has(toolName), `${toolName} should be discoverable`);
     }
 
+    assert.equal(toolsByName.get('slimweb.themes.create_from_default').inputSchema.required.includes('name'), true);
+    assert.equal(toolsByName.get('slimweb.themes.update_root_elements').inputSchema.required.includes('theme_id'), true);
     assert.equal(toolsByName.get('slimweb.assets.upload').inputSchema.required.includes('source'), true);
     assert.equal(toolsByName.get('slimweb.pages.update_home_content').inputSchema.required.includes('content'), true);
     assert.equal(toolsByName.get('slimweb.preview.get_page_url').inputSchema.required.includes('page_key'), true);
@@ -159,6 +164,18 @@ test('homepage editing tools call repository implementations', async () => {
     selectSiteForAccount: async (accountId, args) => {
       calls.push(['select', accountId, args]);
       return { selected_site: { id: args.site_id, slug: 'site-1' } };
+    },
+    listThemesForAccountSite: async (accountId, args) => {
+      calls.push(['themes_list', accountId, args]);
+      return { themes: [{ id: 1, name: 'Default' }] };
+    },
+    createThemeFromDefault: async (accountId, args) => {
+      calls.push(['themes_create', accountId, args]);
+      return { theme: { id: 22, name: args.name }, copied_from_default: true };
+    },
+    updateThemeRootElements: async (accountId, args) => {
+      calls.push(['themes_root', accountId, args]);
+      return { ok: true, theme: { id: args.theme_id }, updated_fragments: Object.keys(args.fragments ?? {}) };
     },
     getPagePreviewUrl: async (accountId, args) => {
       calls.push(['preview', accountId, args]);
@@ -219,18 +236,21 @@ test('homepage editing tools call repository implementations', async () => {
     };
 
     assert.equal((await callTool(23, 'slimweb.site.select', { site_id: 101 })).result.content[0].json.selected_site.slug, 'site-1');
-    assert.match((await callTool(24, 'slimweb.preview.get_page_url', { site_id: 101, page_key: 'index' })).result.content[0].json.url, /mcp_page_key=index/);
-    assert.equal((await callTool(25, 'slimweb.pages.get_home_content', { site_id: 101 })).result.content[0].json.content.html, '<section>Home</section>');
-    assert.equal((await callTool(26, 'slimweb.pages.update_home_content', { site_id: 101, content: { html: '<section>New</section>' } })).result.content[0].json.ok, true);
-    assert.match((await callTool(27, 'slimweb.assets.upload', {
+    assert.equal((await callTool(24, 'slimweb.themes.list', { site_id: 101 })).result.content[0].json.themes.length, 1);
+    assert.equal((await callTool(25, 'slimweb.themes.create_from_default', { site_id: 101, name: '可愛版型' })).result.content[0].json.theme.id, 22);
+    assert.equal((await callTool(26, 'slimweb.themes.update_root_elements', { site_id: 101, theme_id: 22, fragments: { navbar: '<nav>cute</nav>' } })).result.content[0].json.ok, true);
+    assert.match((await callTool(27, 'slimweb.preview.get_page_url', { site_id: 101, page_key: 'index' })).result.content[0].json.url, /mcp_page_key=index/);
+    assert.equal((await callTool(28, 'slimweb.pages.get_home_content', { site_id: 101 })).result.content[0].json.content.html, '<section>Home</section>');
+    assert.equal((await callTool(29, 'slimweb.pages.update_home_content', { site_id: 101, content: { html: '<section>New</section>' } })).result.content[0].json.ok, true);
+    assert.match((await callTool(30, 'slimweb.assets.upload', {
       site_id: 101,
       source: { data_base64: Buffer.from('image').toString('base64'), mime_type: 'image/png' },
       target_usage: 'home_page',
       asset_scope: 'page'
     })).result.content[0].json.public_url, /hero\.png/);
 
-    assert.deepEqual(calls.map((call) => call[0]), ['select', 'preview', 'get_home', 'update_home', 'upload']);
-    assert.deepEqual(calls.map((call) => call[1]), [13, 13, 13, 13, 13]);
+    assert.deepEqual(calls.map((call) => call[0]), ['select', 'themes_list', 'themes_create', 'themes_root', 'preview', 'get_home', 'update_home', 'upload']);
+    assert.deepEqual(calls.map((call) => call[1]), [13, 13, 13, 13, 13, 13, 13, 13]);
   });
 });
 

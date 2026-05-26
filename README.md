@@ -173,13 +173,14 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 
 第一階段先建立小而安全的 tool surface。每個 tool 都要具備權限檢查、input validation、錯誤處理、audit log 與文件更新，再進入可用狀態。
 
-版型與頁面 tools 先不在本階段定義，之後獨立補上。
-
 | Tool | 狀態 | 權限 | 用途 |
 | --- | --- | --- | --- |
 | `slimweb.auth.status` | Available | authenticated user | 回傳登入狀態、使用者摘要、目前 account。 |
 | `slimweb.sites.list` | Available | account read | 列出使用者可操作的 SlimWeb sites。 |
 | `slimweb.site.select` | Available | account read | 驗證並回傳 AI 後續 tool 呼叫要操作的 site。 |
+| `slimweb.themes.list` | Available | content read | 列出站台的 Default 與自訂版型。 |
+| `slimweb.themes.create_from_default` | Available | content write | 建立新版型，並將 Default template 檔案複製到新版型。 |
+| `slimweb.themes.update_root_elements` | Available | content write | 更新非 Default 版型的 navbar、footer、online support 與 root CSS。 |
 | `slimweb.dashboard.summary` | Planned | dashboard read | 讀取 KPI、最新訂單、最新會員、低庫存提醒等後台首頁摘要。 |
 | `slimweb.settings.get` | Planned | settings read | 讀取網站狀態、國別、商品載入方式、允許退貨天數等基本設定。 |
 | `slimweb.settings.update` | Planned | settings write | 更新允許由 MCP 修改的基本設定欄位。 |
@@ -311,6 +312,45 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 是否需要 confirmation: no
 - 錯誤情境: site not found、site not accessible
 - Audit fields: request ID、user ID、account ID、site ID
+
+### `slimweb.themes.list`
+
+- 狀態: Available
+- 權限: content read
+- Scope: active site
+- 用途: 列出目前站台可用版型，讓 AI 知道 Default、active theme 與可設計的自訂版型。
+- Input: `site_id`
+- Output: site summary、theme IDs、names、is default、is active、theme mode
+- Side effects: none
+- 是否需要 confirmation: no
+- 錯誤情境: site not found、site not accessible
+- Audit fields: request ID、user ID、account ID、site ID
+
+### `slimweb.themes.create_from_default`
+
+- 狀態: Available
+- 權限: content write
+- Scope: active site
+- 用途: 建立新版型。此 tool 會新增一筆非 Default `site_pages` 記錄，並將 Default template storage 複製到新版型目錄；Default 的 `content.blade.php` 會轉成新版型的 `body.blade.php`。
+- Input: `site_id`、`name`、optional `theme_mode` (`light`, `dark`, `system`)
+- Output: site summary、created theme summary、copied flag、preview URL
+- Side effects: creates site page style scheme and copies Default template files
+- 是否需要 confirmation: yes when user did not explicitly ask to create a new theme
+- 錯誤情境: site not found、invalid name、storage adapter not configured、upstream write failed
+- Audit fields: request ID、user ID、account ID、site ID、theme ID
+
+### `slimweb.themes.update_root_elements`
+
+- 狀態: Available
+- 權限: content write
+- Scope: active site and non-Default theme
+- 用途: 更新新版型的 root elements，例如 navbar、footer、online support，以及 root-level CSS。Default 版型不可用此 tool 修改 root elements。
+- Input: `site_id`、`theme_id`、optional `fragments.navbar`、`fragments.footer`、`fragments.online_support`、optional `css`
+- Output: write summary、theme summary、updated fragments、CSS updated flag、preview URL
+- Side effects: writes root element Blade fragments and `assets/root-elements/css/00-mcp-theme.css`
+- 是否需要 confirmation: yes for customer-facing active theme
+- 錯誤情境: theme not found、attempting to modify Default、unsafe HTML、storage adapter not configured
+- Audit fields: request ID、user ID、account ID、site ID、theme ID、updated fragments
 
 ### `slimweb.dashboard.summary`
 
@@ -1088,6 +1128,9 @@ MCP tools 應回傳可預期的錯誤類型：
 - `slimweb.auth.status`
 - `slimweb.sites.list`
 - `slimweb.site.select`
+- `slimweb.themes.list`
+- `slimweb.themes.create_from_default`
+- `slimweb.themes.update_root_elements`
 - `slimweb.assets.upload`
 - `slimweb.pages.get_home_content`
 - `slimweb.pages.update_home_content`
