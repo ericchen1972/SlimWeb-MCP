@@ -110,8 +110,99 @@ test('MCP tools list includes input schemas', async () => {
     for (const tool of body.result.tools) {
       assert.equal(typeof tool.inputSchema, 'object');
       assert.equal(tool.inputSchema.type, 'object');
-      assert.deepEqual(tool.inputSchema.properties, {});
+      assert.equal(typeof tool.inputSchema.properties, 'object');
     }
+  });
+});
+
+test('MCP tools list includes homepage editing contract tools', async () => {
+  await withServer(async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/mcp`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 22,
+        method: 'tools/list'
+      })
+    });
+
+    const body = await response.json();
+    const toolsByName = new Map(body.result.tools.map((tool) => [tool.name, tool]));
+
+    for (const toolName of [
+      'slimweb.site.select',
+      'slimweb.assets.upload',
+      'slimweb.pages.get_home_content',
+      'slimweb.pages.update_home_content',
+      'slimweb.preview.get_page_url'
+    ]) {
+      assert.ok(toolsByName.has(toolName), `${toolName} should be discoverable`);
+    }
+
+    assert.equal(toolsByName.get('slimweb.assets.upload').inputSchema.required.includes('source'), true);
+    assert.equal(toolsByName.get('slimweb.pages.update_home_content').inputSchema.required.includes('content'), true);
+    assert.equal(toolsByName.get('slimweb.preview.get_page_url').inputSchema.required.includes('page_key'), true);
+  });
+});
+
+test('planned homepage editing tools return not implemented instead of unknown tool', async () => {
+  await withServerOptions({
+    googleVerifier: {
+      verify: async () => ({
+        sub: 'google-sub-planned',
+        email: 'owner@example.com',
+        name: 'Owner'
+      })
+    },
+    accountRepository: {
+      upsertGoogleAccount: async () => ({
+        id: 13,
+        email: 'owner@example.com',
+        name: 'Owner',
+        google_id: 'google-sub-planned'
+      }),
+      listSitesForAccount: async () => []
+    },
+    sessionSecret: 'test-secret'
+  }, async (baseUrl) => {
+    const loginResponse = await fetch(`${baseUrl}/auth/google`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ credential: 'google-id-token' })
+    });
+    const token = (await loginResponse.json()).session.access_token;
+
+    const response = await fetch(`${baseUrl}/mcp`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 23,
+        method: 'tools/call',
+        params: {
+          name: 'slimweb.pages.update_home_content',
+          arguments: {
+            site_id: 101,
+            content: {
+              layout: 'two_column',
+              sections: []
+            }
+          }
+        }
+      })
+    });
+
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(body.id, 23);
+    assert.equal(body.error.code, -32004);
+    assert.equal(body.error.data.reason, 'NOT_IMPLEMENTED');
+    assert.equal(body.error.data.tool, 'slimweb.pages.update_home_content');
   });
 });
 

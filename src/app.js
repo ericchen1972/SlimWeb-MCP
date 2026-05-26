@@ -8,6 +8,147 @@ const EMPTY_INPUT_SCHEMA = {
   type: 'object',
   properties: {}
 };
+const MCP_TOOLS = [
+  {
+    name: 'slimweb.auth.status',
+    description: 'Return the authenticated SlimWeb MCP account status.',
+    inputSchema: EMPTY_INPUT_SCHEMA
+  },
+  {
+    name: 'slimweb.sites.list',
+    description: 'List SlimWeb sites available to the authenticated account.',
+    inputSchema: EMPTY_INPUT_SCHEMA
+  },
+  {
+    name: 'slimweb.site.select',
+    description: 'Select the active SlimWeb site for later MCP calls. Contract stub; persistence is not implemented yet.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        site_id: {
+          type: 'integer',
+          description: 'Stable SlimWeb site ID selected from slimweb.sites.list.'
+        }
+      },
+      required: ['site_id']
+    }
+  },
+  {
+    name: 'slimweb.assets.upload',
+    description: 'Upload or register a reusable asset such as an image for page, theme, product, or site use. Contract stub; storage write is not implemented yet.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        site_id: {
+          type: 'integer',
+          description: 'Target SlimWeb site ID.'
+        },
+        source: {
+          type: 'object',
+          description: 'Image or file source. Provide exactly one of attachment_ref, image_url, file_url, or data_ref.',
+          properties: {
+            attachment_ref: { type: 'string' },
+            image_url: { type: 'string' },
+            file_url: { type: 'string' },
+            data_ref: { type: 'string' }
+          }
+        },
+        target_usage: {
+          type: 'string',
+          enum: ['reference', 'home_page', 'custom_page', 'theme_asset', 'product_image', 'brand_asset']
+        },
+        asset_scope: {
+          type: 'string',
+          enum: ['site', 'theme', 'page', 'product']
+        },
+        target_id: {
+          type: ['integer', 'string'],
+          description: 'Optional stable target ID, such as page ID, theme ID, or product ID.'
+        },
+        suggested_filename: {
+          type: 'string'
+        },
+        alt_text: {
+          type: 'string'
+        }
+      },
+      required: ['site_id', 'source', 'target_usage', 'asset_scope']
+    }
+  },
+  {
+    name: 'slimweb.pages.get_home_content',
+    description: 'Read the current homepage content for a site, including Default/theme context. Contract stub; Webless adapter is not implemented yet.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        site_id: {
+          type: 'integer'
+        },
+        theme_id: {
+          type: ['integer', 'string'],
+          description: 'Optional target theme. Omit for currently active theme context.'
+        },
+        include_default: {
+          type: 'boolean',
+          description: 'Include Default homepage content when reading a non-Default theme.'
+        }
+      },
+      required: ['site_id']
+    }
+  },
+  {
+    name: 'slimweb.pages.update_home_content',
+    description: 'Replace or update homepage content using structured page content and uploaded assets. Contract stub; Webless adapter is not implemented yet.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        site_id: {
+          type: 'integer'
+        },
+        theme_id: {
+          type: ['integer', 'string'],
+          description: 'Target theme. Use Default only for allowed homepage content edits.'
+        },
+        content: {
+          type: 'object',
+          description: 'Structured homepage content. Do not include script/link tags; use external asset tools for CSS/JS.'
+        },
+        replacement_mode: {
+          type: 'string',
+          enum: ['replace_all', 'patch_sections']
+        },
+        confirmation_token: {
+          type: 'string'
+        }
+      },
+      required: ['site_id', 'content']
+    }
+  },
+  {
+    name: 'slimweb.preview.get_page_url',
+    description: 'Return a preview URL for a page with explicit site, theme, and page parameters. Contract stub; preview URL adapter is not implemented yet.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        site_id: {
+          type: 'integer'
+        },
+        page_key: {
+          type: 'string',
+          description: 'Page identifier such as home, about, or a custom page slug.'
+        },
+        theme_id: {
+          type: ['integer', 'string']
+        },
+        mode: {
+          type: 'string',
+          enum: ['published', 'preview']
+        }
+      },
+      required: ['site_id', 'page_key']
+    }
+  }
+];
 
 function escapeHtml(value) {
   return String(value)
@@ -140,6 +281,17 @@ async function toolResultForCall(message, request, context) {
       }));
     }
 
+    case 'slimweb.site.select':
+    case 'slimweb.assets.upload':
+    case 'slimweb.pages.get_home_content':
+    case 'slimweb.pages.update_home_content':
+    case 'slimweb.preview.get_page_url':
+      return mcpError(message?.id ?? null, -32004, `MCP tool is declared but not implemented yet: ${name}`, {
+        reason: 'NOT_IMPLEMENTED',
+        tool: name,
+        status: 'contract_stub'
+      });
+
     default:
       return mcpError(message?.id ?? null, -32601, `Unknown MCP tool: ${name ?? 'undefined'}`);
   }
@@ -165,18 +317,7 @@ async function handleMcpMessage(message, request, context) {
 
     case 'tools/list':
       return mcpResult(id, {
-        tools: [
-          {
-            name: 'slimweb.auth.status',
-            description: 'Return the authenticated SlimWeb MCP account status.',
-            inputSchema: EMPTY_INPUT_SCHEMA
-          },
-          {
-            name: 'slimweb.sites.list',
-            description: 'List SlimWeb sites available to the authenticated account.',
-            inputSchema: EMPTY_INPUT_SCHEMA
-          }
-        ]
+        tools: MCP_TOOLS
       });
 
     case 'tools/call':

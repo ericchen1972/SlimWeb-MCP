@@ -1045,8 +1045,13 @@ MCP tools 應回傳可預期的錯誤類型：
 
 - `slimweb.auth.status`
 - `slimweb.sites.list`
+- `slimweb.site.select` (contract stub)
+- `slimweb.assets.upload` (contract stub)
+- `slimweb.pages.get_home_content` (contract stub)
+- `slimweb.pages.update_home_content` (contract stub)
+- `slimweb.preview.get_page_url` (contract stub)
 
-其他 tools 仍是 planned contracts，尚未進入 MCP discovery。
+Contract stub 表示 AI Client 可以在 discovery 中看到 tool 名稱、用途與 input schema，但實際呼叫會回 `NOT_IMPLEMENTED`，直到 SlimWeb Backend Adapter 接上 Webless application service 或 API。其他 tools 仍是 planned contracts，尚未進入 MCP discovery。
 
 ## 登入與 webless 帳號系統
 
