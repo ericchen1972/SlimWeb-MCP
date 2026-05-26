@@ -208,7 +208,7 @@ test('Google login failure returns a visible error message', async () => {
   });
 });
 
-test('auth success page shows the bearer token for AI client setup', async () => {
+test('auth success page shows only the raw bearer token for AI client setup', async () => {
   await withServerOptions({
     googleVerifier: {
       verify: async () => ({
@@ -244,7 +244,8 @@ test('auth success page shows the bearer token for AI client setup', async () =>
     const html = await successResponse.text();
 
     assert.equal(successResponse.status, 200);
-    assert.match(html, /Authorization: Bearer/);
+    assert.doesNotMatch(html, /Authorization:\s*Bearer/);
+    assert.doesNotMatch(html, /<textarea[^>]*>Bearer\s+/);
     assert.match(html, new RegExp(loginBody.session.access_token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   });
 });

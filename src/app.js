@@ -319,9 +319,9 @@ function handleAuthSuccess(request, response, context) {
   <main style="max-width: 760px; margin: 64px auto; font-family: system-ui, sans-serif; line-height: 1.6;">
     <h1>已登入 SlimWeb MCP</h1>
     <p>帳號：${escapeHtml(session.email)}</p>
-    <p>如果你的 AI Client 不會自動共享瀏覽器 Cookie，請把下面這段設定到 MCP server 的 Authorization header。</p>
-    <label for="mcp-token" style="display:block; font-weight: 700; margin-top: 24px;">Authorization header</label>
-    <textarea id="mcp-token" readonly rows="7" style="box-sizing: border-box; width: 100%; margin-top: 8px; padding: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px;">Authorization: Bearer ${escapeHtml(token)}</textarea>
+    <p>如果你的 AI Client 不會自動共享瀏覽器 Cookie，請把下面的 token 設定到 MCP server 的 Bearer token 欄位。</p>
+    <label for="mcp-token" style="display:block; font-weight: 700; margin-top: 24px;">Bearer token</label>
+    <textarea id="mcp-token" readonly rows="7" style="box-sizing: border-box; width: 100%; margin-top: 8px; padding: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px;">${escapeHtml(token)}</textarea>
     <button type="button" id="copy-token" style="margin-top: 12px; padding: 10px 14px; border: 0; border-radius: 6px; background: #111827; color: white; cursor: pointer;">複製 Token</button>
     <p id="copy-status" style="color: #047857;"></p>
     <p style="margin-top: 24px;">MCP URL：</p>
