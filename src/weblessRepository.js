@@ -2,15 +2,24 @@ import pg from 'pg';
 
 const { Pool } = pg;
 
-function databaseConfigFromEnv() {
-  return {
-    host: process.env.DB_HOST,
-    port: process.env.DB_PORT ? Number.parseInt(process.env.DB_PORT, 10) : undefined,
-    database: process.env.DB_DATABASE,
-    user: process.env.DB_USERNAME,
-    password: process.env.DB_PASSWORD,
+export function databaseConfigFromEnv(env = process.env) {
+  const sslMode = String(env.DB_SSLMODE ?? '').toLowerCase();
+  const config = {
+    host: env.DB_HOST,
+    port: env.DB_PORT ? Number.parseInt(env.DB_PORT, 10) : undefined,
+    database: env.DB_DATABASE,
+    user: env.DB_USERNAME,
+    password: env.DB_PASSWORD,
     max: 3
   };
+
+  if (sslMode === 'require') {
+    config.ssl = {
+      rejectUnauthorized: false
+    };
+  }
+
+  return config;
 }
 
 export class WeblessAccountRepository {
