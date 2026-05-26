@@ -89,6 +89,32 @@ test('unknown MCP method returns JSON-RPC method error', async () => {
   });
 });
 
+test('MCP tools list includes input schemas', async () => {
+  await withServer(async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/mcp`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 21,
+        method: 'tools/list'
+      })
+    });
+
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(body.id, 21);
+    assert.ok(Array.isArray(body.result.tools));
+
+    for (const tool of body.result.tools) {
+      assert.equal(typeof tool.inputSchema, 'object');
+      assert.equal(tool.inputSchema.type, 'object');
+      assert.deepEqual(tool.inputSchema.properties, {});
+    }
+  });
+});
+
 test('auth status requires an MCP session', async () => {
   await withServer(async (baseUrl) => {
     const response = await fetch(`${baseUrl}/mcp`, {

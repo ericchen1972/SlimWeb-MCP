@@ -4,6 +4,10 @@ import { WeblessAccountRepository } from './weblessRepository.js';
 
 const SERVICE_NAME = 'slimweb-mcp';
 const SERVICE_VERSION = '0.1.0';
+const EMPTY_INPUT_SCHEMA = {
+  type: 'object',
+  properties: {}
+};
 
 function escapeHtml(value) {
   return String(value)
@@ -164,11 +168,13 @@ async function handleMcpMessage(message, request, context) {
         tools: [
           {
             name: 'slimweb.auth.status',
-            description: 'Return the authenticated SlimWeb MCP account status.'
+            description: 'Return the authenticated SlimWeb MCP account status.',
+            inputSchema: EMPTY_INPUT_SCHEMA
           },
           {
             name: 'slimweb.sites.list',
-            description: 'List SlimWeb sites available to the authenticated account.'
+            description: 'List SlimWeb sites available to the authenticated account.',
+            inputSchema: EMPTY_INPUT_SCHEMA
           }
         ]
       });
