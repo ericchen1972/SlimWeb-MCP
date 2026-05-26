@@ -871,9 +871,9 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 用途: 只有在 AI flow 明確需要保存圖片或檔案時，才建立 reusable asset。
 - Input: `site_id`、`source` (`data_base64`, `image_url`, or `file_url`)、`target_usage`、`asset_scope`、optional `theme_id`、`suggested_filename`、`alt_text`
 - Output: storage path、public URL、usage、alt text、mime type
-- Side effects: stores asset in Webless local template storage under the selected theme/page scheme
+- Side effects: stores asset in configured Webless template storage under the selected theme/page scheme
 - 是否需要 confirmation: replacing existing customer-facing asset 時需要
-- 錯誤情境: unsupported source、file too large、missing usage、unauthorized、`WEBLESS_STORAGE_ROOT` not configured
+- 錯誤情境: unsupported source、file too large、missing usage、unauthorized、storage adapter not configured
 - Audit fields: request ID、user ID、account ID、site ID、asset ID、usage
 
 ### `slimweb.pages.get_home_content`
@@ -886,7 +886,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - Output: site summary、page key、theme summary、storage path、content HTML、exists flag
 - Side effects: none
 - 是否需要 confirmation: no
-- 錯誤情境: site not found、theme not found、`WEBLESS_STORAGE_ROOT` not configured
+- 錯誤情境: site not found、theme not found、storage adapter not configured
 - Audit fields: request ID、user ID、account ID、site ID、theme ID、page key
 
 ### `slimweb.pages.update_home_content`
@@ -897,9 +897,9 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 用途: 替換首頁 body/content。AI 應先使用 `slimweb.assets.upload` 保存圖片，並在 HTML 使用回傳 URL。
 - Input: `site_id`、optional `theme_id`、`content.html` or `content.body_html`、optional `replacement_mode`
 - Output: write summary、site summary、theme summary、storage path、bytes written
-- Side effects: overwrites homepage template file in Webless local template storage
+- Side effects: overwrites homepage template file in configured Webless template storage
 - 是否需要 confirmation: yes when replacing customer-facing content
-- 錯誤情境: unsafe content、missing HTML、site/theme not found、`WEBLESS_STORAGE_ROOT` not configured
+- 錯誤情境: unsafe content、missing HTML、site/theme not found、storage adapter not configured
 - Audit fields: request ID、user ID、account ID、site ID、theme ID、page key、bytes written
 
 ### `slimweb.preview.get_page_url`
@@ -1095,12 +1095,14 @@ MCP tools 應回傳可預期的錯誤類型：
 
 其他 tools 仍是 planned contracts，尚未進入 MCP discovery。
 
-首頁與資產寫入 tools 需要 MCP service 能存取 Webless local disk root。環境變數：
+首頁與資產寫入 tools 透過 storage adapter 寫入 Webless template storage。Production 預設使用 GCS，環境變數：
 
-- `WEBLESS_STORAGE_ROOT`: Webless `Storage::disk('local')` root。依目前 Webless 設定，對應 `storage/app/private`。
+- `WEBLESS_STORAGE_DRIVER`: `gcs` or `local`。Cloud Run production 使用 `gcs`。
+- `GCS_BUCKET`: Webless Cloud Storage bucket，例如 `webless_bucket`。
+- `WEBLESS_STORAGE_ROOT`: local driver 才需要，對應 Webless `Storage::disk('local')` root。
 - `WEBLESS_PUBLIC_BASE_URL`: SlimWeb public base URL，預設 `https://slimweb.tw`。
 
-若 `WEBLESS_STORAGE_ROOT` 未設定，頁面與資產寫入 tools 會回 `UPSTREAM_NOT_CONFIGURED`，避免 MCP 寫入自己的 Cloud Run ephemeral disk 造成 Webless 看不到內容。
+若 storage adapter 未設定，頁面與資產寫入 tools 會回 `UPSTREAM_NOT_CONFIGURED`，避免 MCP 寫入自己的 Cloud Run ephemeral disk 造成 Webless 看不到內容。
 
 ## 登入與 webless 帳號系統
 

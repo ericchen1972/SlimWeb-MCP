@@ -4,6 +4,7 @@ import path from 'node:path';
 
 const { Pool } = pg;
 const MAX_ASSET_BYTES = 10 * 1024 * 1024;
+const METADATA_TOKEN_URL = 'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token';
 
 export function databaseConfigFromEnv(env = process.env) {
   const sslMode = String(env.DB_SSLMODE ?? '').toLowerCase();
@@ -28,7 +29,7 @@ export function databaseConfigFromEnv(env = process.env) {
 export class WeblessAccountRepository {
   constructor(pool = new Pool(databaseConfigFromEnv()), options = {}) {
     this.pool = pool;
-    this.storageRoot = options.storageRoot ?? process.env.WEBLESS_STORAGE_ROOT ?? '';
+    this.storage = options.storage ?? createStorageAdapter(options);
     this.publicSiteBaseUrl = (options.publicSiteBaseUrl ?? process.env.WEBLESS_PUBLIC_BASE_URL ?? 'https://slimweb.tw').replace(/\/+$/, '');
   }
 
@@ -103,14 +104,7 @@ export class WeblessAccountRepository {
     const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
     const theme = await this.resolveThemeForSite(site.id, args.theme_id);
     const storagePath = homeContentStoragePath(site.id, theme);
-    const absolutePath = this.absoluteStoragePath(storagePath);
-    const html = await readFile(absolutePath, 'utf8').catch((error) => {
-      if (error.code === 'ENOENT') {
-        return null;
-      }
-
-      throw error;
-    });
+    const html = await this.storage.readText(storagePath);
 
     return {
       site,
@@ -127,10 +121,8 @@ export class WeblessAccountRepository {
     const theme = await this.resolveThemeForSite(site.id, args.theme_id);
     const html = extractHtmlContent(args.content);
     const storagePath = homeContentStoragePath(site.id, theme);
-    const absolutePath = this.absoluteStoragePath(storagePath);
 
-    await mkdir(path.dirname(absolutePath), { recursive: true });
-    await writeFile(absolutePath, html.trim() + '\n', 'utf8');
+    await this.storage.write(storagePath, Buffer.from(html.trim() + '\n', 'utf8'), 'text/x-php; charset=utf-8');
 
     return {
       ok: true,
@@ -149,10 +141,8 @@ export class WeblessAccountRepository {
     const { bytes, mimeType } = await resolveAssetSource(args.source);
     const filename = safeAssetFilename(args.suggested_filename, mimeType);
     const storagePath = templateAssetStoragePath(theme, `assets/mcp/${Date.now()}-${filename}`);
-    const absolutePath = this.absoluteStoragePath(storagePath);
 
-    await mkdir(path.dirname(absolutePath), { recursive: true });
-    await writeFile(absolutePath, bytes);
+    await this.storage.write(storagePath, bytes, mimeType);
 
     return {
       ok: true,
@@ -240,14 +230,55 @@ export class WeblessAccountRepository {
     return formatTheme(theme);
   }
 
+}
+
+export function createStorageAdapter(options = {}) {
+  const driver = (options.storageDriver ?? process.env.WEBLESS_STORAGE_DRIVER ?? (options.gcsBucket || process.env.GCS_BUCKET ? 'gcs' : 'local')).toLowerCase();
+
+  if (driver === 'gcs') {
+    return new GcsStorageAdapter({
+      bucket: options.gcsBucket ?? process.env.GCS_BUCKET,
+      fetchImpl: options.fetchImpl
+    });
+  }
+
+  return new LocalStorageAdapter({
+    root: options.storageRoot ?? process.env.WEBLESS_STORAGE_ROOT ?? ''
+  });
+}
+
+export class LocalStorageAdapter {
+  constructor({ root }) {
+    this.root = root;
+  }
+
+  async readText(storagePath) {
+    const absolutePath = this.absoluteStoragePath(storagePath);
+
+    return readFile(absolutePath, 'utf8').catch((error) => {
+      if (error.code === 'ENOENT') {
+        return null;
+      }
+
+      throw error;
+    });
+  }
+
+  async write(storagePath, bytes) {
+    const absolutePath = this.absoluteStoragePath(storagePath);
+
+    await mkdir(path.dirname(absolutePath), { recursive: true });
+    await writeFile(absolutePath, bytes);
+  }
+
   absoluteStoragePath(storagePath) {
-    if (!this.storageRoot) {
-      throw codedError('UPSTREAM_NOT_CONFIGURED', 'WEBLESS_STORAGE_ROOT is required for page and asset write tools.', {
+    if (!this.root) {
+      throw codedError('UPSTREAM_NOT_CONFIGURED', 'WEBLESS_STORAGE_ROOT is required when WEBLESS_STORAGE_DRIVER=local.', {
         env: 'WEBLESS_STORAGE_ROOT'
       });
     }
 
-    const absoluteRoot = path.resolve(this.storageRoot);
+    const absoluteRoot = path.resolve(this.root);
     const absolutePath = path.resolve(absoluteRoot, storagePath);
 
     if (!absolutePath.startsWith(absoluteRoot + path.sep)) {
@@ -255,6 +286,93 @@ export class WeblessAccountRepository {
     }
 
     return absolutePath;
+  }
+}
+
+export class GcsStorageAdapter {
+  constructor({ bucket, fetchImpl = fetch }) {
+    this.bucket = bucket;
+    this.fetch = fetchImpl;
+    this.cachedAccessToken = null;
+    this.cachedAccessTokenExpiresAt = 0;
+  }
+
+  async readText(storagePath) {
+    const response = await this.fetch(
+      `https://storage.googleapis.com/storage/v1/b/${encodeURIComponent(this.requireBucket())}/o/${encodeURIComponent(storagePath)}?alt=media`,
+      {
+        headers: {
+          authorization: `Bearer ${await this.accessToken()}`
+        }
+      }
+    );
+
+    if (response.status === 404) {
+      return null;
+    }
+
+    if (!response.ok) {
+      throw codedError('UPSTREAM_ERROR', `Unable to read object from Cloud Storage: HTTP ${response.status}`);
+    }
+
+    return response.text();
+  }
+
+  async write(storagePath, bytes, contentType = 'application/octet-stream') {
+    const response = await this.fetch(
+      `https://storage.googleapis.com/upload/storage/v1/b/${encodeURIComponent(this.requireBucket())}/o?uploadType=media&name=${encodeURIComponent(storagePath)}`,
+      {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${await this.accessToken()}`,
+          'content-type': contentType
+        },
+        body: bytes
+      }
+    );
+
+    if (!response.ok) {
+      throw codedError('UPSTREAM_ERROR', `Unable to write object to Cloud Storage: HTTP ${response.status}`);
+    }
+  }
+
+  requireBucket() {
+    if (!this.bucket) {
+      throw codedError('UPSTREAM_NOT_CONFIGURED', 'GCS_BUCKET is required when WEBLESS_STORAGE_DRIVER=gcs.', {
+        env: 'GCS_BUCKET'
+      });
+    }
+
+    return this.bucket;
+  }
+
+  async accessToken() {
+    const now = Date.now();
+    if (this.cachedAccessToken && this.cachedAccessTokenExpiresAt > now + 60_000) {
+      return this.cachedAccessToken;
+    }
+
+    const response = await this.fetch(METADATA_TOKEN_URL, {
+      headers: {
+        'metadata-flavor': 'Google'
+      }
+    });
+
+    if (!response.ok) {
+      throw codedError('UPSTREAM_ERROR', `Unable to obtain Cloud Run metadata token: HTTP ${response.status}`);
+    }
+
+    const payload = await response.json();
+    const accessToken = String(payload.access_token ?? '');
+
+    if (!accessToken) {
+      throw codedError('UPSTREAM_ERROR', 'Cloud Run metadata token response did not include access_token.');
+    }
+
+    this.cachedAccessToken = accessToken;
+    this.cachedAccessTokenExpiresAt = now + Math.max(0, Number(payload.expires_in ?? 0) - 60) * 1000;
+
+    return accessToken;
   }
 }
 
