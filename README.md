@@ -936,8 +936,9 @@ MCP tools 應回傳可預期的錯誤類型：
 
 目前服務入口：
 
-- `GET /healthz`: Cloud Run health check / service metadata
+- `GET /`: service metadata
 - `GET /readyz`: readiness check
+- `GET /healthz`: local health check path; Cloud Run public URL may reserve this path, use `/readyz` for online verification
 - `GET /auth/login`: SlimWeb MCP Google 登入頁
 - `POST /auth/google`: 接收 Google Identity credential，建立或更新 webless `accounts`
 - `GET /auth/success`: 登入完成頁
