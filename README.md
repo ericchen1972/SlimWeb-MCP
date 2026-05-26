@@ -177,9 +177,9 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 
 | Tool | 狀態 | 權限 | 用途 |
 | --- | --- | --- | --- |
-| `slimweb.auth.status` | Planned | authenticated user | 回傳登入狀態、使用者摘要、目前 account 與 active site。 |
-| `slimweb.sites.list` | Planned | account read | 列出使用者可操作的 SlimWeb sites。 |
-| `slimweb.site.select` | Planned | account read | 選定後續 tool 呼叫使用的 active site。 |
+| `slimweb.auth.status` | Available | authenticated user | 回傳登入狀態、使用者摘要、目前 account。 |
+| `slimweb.sites.list` | Available | account read | 列出使用者可操作的 SlimWeb sites。 |
+| `slimweb.site.select` | Available | account read | 驗證並回傳 AI 後續 tool 呼叫要操作的 site。 |
 | `slimweb.dashboard.summary` | Planned | dashboard read | 讀取 KPI、最新訂單、最新會員、低庫存提醒等後台首頁摘要。 |
 | `slimweb.settings.get` | Planned | settings read | 讀取網站狀態、國別、商品載入方式、允許退貨天數等基本設定。 |
 | `slimweb.settings.update` | Planned | settings write | 更新允許由 MCP 修改的基本設定欄位。 |
@@ -222,7 +222,10 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 | `slimweb.customer_service.settings.get` | Planned | customer service read | 讀取 AI 客服設定摘要。 |
 | `slimweb.customer_service.settings.update` | Planned | customer service write | 更新 AI 客服設定。 |
 | `slimweb.exports.create` | Planned | export read | 建立會員、訂單或退貨匯出檔。 |
-| `slimweb.assets.upload` | Planned | asset write | 只有當 AI flow 明確需要保存可重用素材時才寫入 asset。 |
+| `slimweb.assets.upload` | Available | asset write | 只有當 AI flow 明確需要保存可重用素材時才寫入 asset。 |
+| `slimweb.pages.get_home_content` | Available | content read | 讀取首頁目前儲存在 Webless template storage 的 body/content。 |
+| `slimweb.pages.update_home_content` | Available | content write | 替換首頁 body/content；禁止直接寫入 script/link/iframe 與 inline event handler。 |
+| `slimweb.preview.get_page_url` | Available | content read | 回傳指定 site、page、theme 的預覽 URL，供 AI 自行截圖與檢查。 |
 | `slimweb.external_assets.list` | Planned | asset read | 列出站台、版型或頁面層級引用的外部 CSS / JS。 |
 | `slimweb.external_assets.upsert` | Planned | asset write + content write | 新增或更新外部 CSS / JS 引用；AI 必須提供 URL 與用途。 |
 | `slimweb.external_assets.delete` | Planned | asset write + content write | 停用或刪除外部 CSS / JS 引用。 |
@@ -272,7 +275,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 
 ### `slimweb.auth.status`
 
-- 狀態: Planned
+- 狀態: Available
 - 權限: authenticated user
 - Scope: user session
 - 用途: 回傳目前登入與 scope 狀態。
@@ -285,7 +288,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 
 ### `slimweb.sites.list`
 
-- 狀態: Planned
+- 狀態: Available
 - 權限: account read
 - Scope: authenticated account
 - 用途: 列出使用者可透過 MCP 操作的 sites。
@@ -298,13 +301,13 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 
 ### `slimweb.site.select`
 
-- 狀態: Planned
+- 狀態: Available
 - 權限: account read
 - Scope: authenticated account
-- 用途: 設定後續 MCP tool calls 的 active site。
+- 用途: 驗證使用者可操作指定 site，並回傳 site summary 與可用 theme/page scheme。AI Client 不可在多站台歧義時自行猜測。
 - Input: `site_id`
-- Output: active site summary、available tool categories
-- Side effects: updates MCP session scope
+- Output: selected site summary、themes、mutation scope hints
+- Side effects: none；目前不把 active site 寫入 session，write tools 仍必須明確帶 `site_id`
 - 是否需要 confirmation: no
 - 錯誤情境: site not found、site not accessible
 - Audit fields: request ID、user ID、account ID、site ID
@@ -862,16 +865,55 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 
 ### `slimweb.assets.upload`
 
-- 狀態: Planned
+- 狀態: Available
 - 權限: asset write
 - Scope: active site
 - 用途: 只有在 AI flow 明確需要保存圖片或檔案時，才建立 reusable asset。
-- Input: file metadata、source reference、target usage、suggested filename、alt text
-- Output: asset ID、URL、thumbnail URL、usage、alt text、audit ID
-- Side effects: stores asset in SlimWeb-managed storage
+- Input: `site_id`、`source` (`data_base64`, `image_url`, or `file_url`)、`target_usage`、`asset_scope`、optional `theme_id`、`suggested_filename`、`alt_text`
+- Output: storage path、public URL、usage、alt text、mime type
+- Side effects: stores asset in Webless local template storage under the selected theme/page scheme
 - 是否需要 confirmation: replacing existing customer-facing asset 時需要
-- 錯誤情境: unsupported file type、file too large、missing usage、unauthorized
+- 錯誤情境: unsupported source、file too large、missing usage、unauthorized、`WEBLESS_STORAGE_ROOT` not configured
 - Audit fields: request ID、user ID、account ID、site ID、asset ID、usage
+
+### `slimweb.pages.get_home_content`
+
+- 狀態: Available
+- 權限: content read
+- Scope: active site
+- 用途: 讀取首頁 body/content。Default 讀取 `content.blade.php`，自訂版型讀取 `body.blade.php`。
+- Input: `site_id`、optional `theme_id`、optional `include_default`
+- Output: site summary、page key、theme summary、storage path、content HTML、exists flag
+- Side effects: none
+- 是否需要 confirmation: no
+- 錯誤情境: site not found、theme not found、`WEBLESS_STORAGE_ROOT` not configured
+- Audit fields: request ID、user ID、account ID、site ID、theme ID、page key
+
+### `slimweb.pages.update_home_content`
+
+- 狀態: Available
+- 權限: content write
+- Scope: active site
+- 用途: 替換首頁 body/content。AI 應先使用 `slimweb.assets.upload` 保存圖片，並在 HTML 使用回傳 URL。
+- Input: `site_id`、optional `theme_id`、`content.html` or `content.body_html`、optional `replacement_mode`
+- Output: write summary、site summary、theme summary、storage path、bytes written
+- Side effects: overwrites homepage template file in Webless local template storage
+- 是否需要 confirmation: yes when replacing customer-facing content
+- 錯誤情境: unsafe content、missing HTML、site/theme not found、`WEBLESS_STORAGE_ROOT` not configured
+- Audit fields: request ID、user ID、account ID、site ID、theme ID、page key、bytes written
+
+### `slimweb.preview.get_page_url`
+
+- 狀態: Available
+- 權限: content read
+- Scope: active site
+- 用途: 回傳 AI 可開啟並自行截圖的頁面預覽 URL。
+- Input: `site_id`、`page_key`、optional `theme_id`、optional `mode`
+- Output: site summary、page key、theme summary、preview URL、mode、theme parameter support hint
+- Side effects: none
+- 是否需要 confirmation: no
+- 錯誤情境: site not found、theme not found、invalid page key
+- Audit fields: request ID、user ID、account ID、site ID、theme ID、page key
 
 ### `slimweb.external_assets.list`
 
@@ -1039,19 +1081,26 @@ MCP tools 應回傳可預期的錯誤類型：
 - `GET /auth/login`: SlimWeb MCP Google 登入頁
 - `POST /auth/google`: 接收 Google Identity credential，建立或更新 webless `accounts`
 - `GET /auth/success`: 登入完成頁
-- `POST /mcp`: MCP JSON-RPC endpoint，目前支援 `initialize` 與 `tools/list`
+- `POST /mcp`: MCP JSON-RPC endpoint，目前支援 `initialize`、`tools/list` 與 `tools/call`
 
 目前已進入 MCP discovery 的 tools：
 
 - `slimweb.auth.status`
 - `slimweb.sites.list`
-- `slimweb.site.select` (contract stub)
-- `slimweb.assets.upload` (contract stub)
-- `slimweb.pages.get_home_content` (contract stub)
-- `slimweb.pages.update_home_content` (contract stub)
-- `slimweb.preview.get_page_url` (contract stub)
+- `slimweb.site.select`
+- `slimweb.assets.upload`
+- `slimweb.pages.get_home_content`
+- `slimweb.pages.update_home_content`
+- `slimweb.preview.get_page_url`
 
-Contract stub 表示 AI Client 可以在 discovery 中看到 tool 名稱、用途與 input schema，但實際呼叫會回 `NOT_IMPLEMENTED`，直到 SlimWeb Backend Adapter 接上 Webless application service 或 API。其他 tools 仍是 planned contracts，尚未進入 MCP discovery。
+其他 tools 仍是 planned contracts，尚未進入 MCP discovery。
+
+首頁與資產寫入 tools 需要 MCP service 能存取 Webless local disk root。環境變數：
+
+- `WEBLESS_STORAGE_ROOT`: Webless `Storage::disk('local')` root。依目前 Webless 設定，對應 `storage/app/private`。
+- `WEBLESS_PUBLIC_BASE_URL`: SlimWeb public base URL，預設 `https://slimweb.tw`。
+
+若 `WEBLESS_STORAGE_ROOT` 未設定，頁面與資產寫入 tools 會回 `UPSTREAM_NOT_CONFIGURED`，避免 MCP 寫入自己的 Cloud Run ephemeral disk 造成 Webless 看不到內容。
 
 ## 登入與 webless 帳號系統
 

@@ -146,7 +146,38 @@ test('MCP tools list includes homepage editing contract tools', async () => {
   });
 });
 
-test('planned homepage editing tools return not implemented instead of unknown tool', async () => {
+test('homepage editing tools call repository implementations', async () => {
+  const calls = [];
+  const repository = {
+    upsertGoogleAccount: async () => ({
+      id: 13,
+      email: 'owner@example.com',
+      name: 'Owner',
+      google_id: 'google-sub-planned'
+    }),
+    listSitesForAccount: async () => [],
+    selectSiteForAccount: async (accountId, args) => {
+      calls.push(['select', accountId, args]);
+      return { selected_site: { id: args.site_id, slug: 'site-1' } };
+    },
+    getPagePreviewUrl: async (accountId, args) => {
+      calls.push(['preview', accountId, args]);
+      return { url: `https://slimweb.tw/sites/site-1/default-preview?mcp_page_key=${args.page_key}` };
+    },
+    getHomeContent: async (accountId, args) => {
+      calls.push(['get_home', accountId, args]);
+      return { content: { html: '<section>Home</section>' } };
+    },
+    updateHomeContent: async (accountId, args) => {
+      calls.push(['update_home', accountId, args]);
+      return { ok: true, storage_path: 'sites/101/templates/default/pages/index/content.blade.php' };
+    },
+    uploadAsset: async (accountId, args) => {
+      calls.push(['upload', accountId, args]);
+      return { ok: true, public_url: 'https://slimweb.tw/sites/site-1/template-assets/1/assets/mcp/hero.png' };
+    }
+  };
+
   await withServerOptions({
     googleVerifier: {
       verify: async () => ({
@@ -155,15 +186,7 @@ test('planned homepage editing tools return not implemented instead of unknown t
         name: 'Owner'
       })
     },
-    accountRepository: {
-      upsertGoogleAccount: async () => ({
-        id: 13,
-        email: 'owner@example.com',
-        name: 'Owner',
-        google_id: 'google-sub-planned'
-      }),
-      listSitesForAccount: async () => []
-    },
+    accountRepository: repository,
     sessionSecret: 'test-secret'
   }, async (baseUrl) => {
     const loginResponse = await fetch(`${baseUrl}/auth/google`, {
@@ -173,36 +196,41 @@ test('planned homepage editing tools return not implemented instead of unknown t
     });
     const token = (await loginResponse.json()).session.access_token;
 
-    const response = await fetch(`${baseUrl}/mcp`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${token}`
-      },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: 23,
-        method: 'tools/call',
-        params: {
-          name: 'slimweb.pages.update_home_content',
-          arguments: {
-            site_id: 101,
-            content: {
-              layout: 'two_column',
-              sections: []
-            }
+    const callTool = async (id, name, args) => {
+      const response = await fetch(`${baseUrl}/mcp`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id,
+          method: 'tools/call',
+          params: {
+            name,
+            arguments: args
           }
-        }
-      })
-    });
+        })
+      });
 
-    const body = await response.json();
+      assert.equal(response.status, 200);
+      return response.json();
+    };
 
-    assert.equal(response.status, 200);
-    assert.equal(body.id, 23);
-    assert.equal(body.error.code, -32004);
-    assert.equal(body.error.data.reason, 'NOT_IMPLEMENTED');
-    assert.equal(body.error.data.tool, 'slimweb.pages.update_home_content');
+    assert.equal((await callTool(23, 'slimweb.site.select', { site_id: 101 })).result.content[0].json.selected_site.slug, 'site-1');
+    assert.match((await callTool(24, 'slimweb.preview.get_page_url', { site_id: 101, page_key: 'index' })).result.content[0].json.url, /mcp_page_key=index/);
+    assert.equal((await callTool(25, 'slimweb.pages.get_home_content', { site_id: 101 })).result.content[0].json.content.html, '<section>Home</section>');
+    assert.equal((await callTool(26, 'slimweb.pages.update_home_content', { site_id: 101, content: { html: '<section>New</section>' } })).result.content[0].json.ok, true);
+    assert.match((await callTool(27, 'slimweb.assets.upload', {
+      site_id: 101,
+      source: { data_base64: Buffer.from('image').toString('base64'), mime_type: 'image/png' },
+      target_usage: 'home_page',
+      asset_scope: 'page'
+    })).result.content[0].json.public_url, /hero\.png/);
+
+    assert.deepEqual(calls.map((call) => call[0]), ['select', 'preview', 'get_home', 'update_home', 'upload']);
+    assert.deepEqual(calls.map((call) => call[1]), [13, 13, 13, 13, 13]);
   });
 });
 

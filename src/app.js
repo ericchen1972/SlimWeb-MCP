@@ -21,7 +21,7 @@ const MCP_TOOLS = [
   },
   {
     name: 'slimweb.site.select',
-    description: 'Select the active SlimWeb site for later MCP calls. Contract stub; persistence is not implemented yet.',
+    description: 'Validate and return a SlimWeb site selected from slimweb.sites.list. Use this before write operations when the user owns multiple sites.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -35,7 +35,7 @@ const MCP_TOOLS = [
   },
   {
     name: 'slimweb.assets.upload',
-    description: 'Upload or register a reusable asset such as an image for page, theme, product, or site use. Contract stub; storage write is not implemented yet.',
+    description: 'Upload or register a reusable asset such as an image for page, theme, product, or site use. Use returned URLs/paths in page content instead of embedding file bytes.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -45,13 +45,19 @@ const MCP_TOOLS = [
         },
         source: {
           type: 'object',
-          description: 'Image or file source. Provide exactly one of attachment_ref, image_url, file_url, or data_ref.',
+          description: 'Image or file source. Provide exactly one of attachment_ref, image_url, file_url, data_ref, or data_base64.',
           properties: {
             attachment_ref: { type: 'string' },
             image_url: { type: 'string' },
             file_url: { type: 'string' },
-            data_ref: { type: 'string' }
+            data_ref: { type: 'string' },
+            data_base64: { type: 'string' },
+            mime_type: { type: 'string' }
           }
+        },
+        theme_id: {
+          type: ['integer', 'string'],
+          description: 'Optional target theme/page scheme. Omit to use the active theme.'
         },
         target_usage: {
           type: 'string',
@@ -77,7 +83,7 @@ const MCP_TOOLS = [
   },
   {
     name: 'slimweb.pages.get_home_content',
-    description: 'Read the current homepage content for a site, including Default/theme context. Contract stub; Webless adapter is not implemented yet.',
+    description: 'Read the current homepage content for a site, including Default/theme context.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -98,7 +104,7 @@ const MCP_TOOLS = [
   },
   {
     name: 'slimweb.pages.update_home_content',
-    description: 'Replace or update homepage content using structured page content and uploaded assets. Contract stub; Webless adapter is not implemented yet.',
+    description: 'Replace homepage content using structured page content and uploaded assets. Do not include script/link tags; manage external CSS/JS with external asset tools.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -126,7 +132,7 @@ const MCP_TOOLS = [
   },
   {
     name: 'slimweb.preview.get_page_url',
-    description: 'Return a preview URL for a page with explicit site, theme, and page parameters. Contract stub; preview URL adapter is not implemented yet.',
+    description: 'Return a preview URL for a page with explicit site, theme, and page parameters so the AI can inspect the page visually before editing.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -249,6 +255,29 @@ function mcpJsonContent(json) {
   };
 }
 
+function toolArgs(message) {
+  return message?.params?.arguments && typeof message.params.arguments === 'object'
+    ? message.params.arguments
+    : {};
+}
+
+function toolExceptionToMcpError(id, error) {
+  const codeByReason = {
+    VALIDATION_FAILED: -32602,
+    NOT_FOUND: -32002,
+    UPSTREAM_NOT_CONFIGURED: -32005,
+    UNSAFE_CONTENT: -32006,
+    NOT_IMPLEMENTED: -32004
+  };
+  const reason = error.code ?? 'TOOL_FAILED';
+  const code = codeByReason[reason] ?? -32000;
+
+  return mcpError(id, code, error.message || 'MCP tool failed.', {
+    reason,
+    ...(error.data && typeof error.data === 'object' ? error.data : {})
+  });
+}
+
 async function toolResultForCall(message, request, context) {
   const name = message?.params?.name;
   const session = verifySessionToken(readSessionToken(request), context.sessionSecret);
@@ -281,16 +310,55 @@ async function toolResultForCall(message, request, context) {
       }));
     }
 
-    case 'slimweb.site.select':
-    case 'slimweb.assets.upload':
-    case 'slimweb.pages.get_home_content':
-    case 'slimweb.pages.update_home_content':
-    case 'slimweb.preview.get_page_url':
-      return mcpError(message?.id ?? null, -32004, `MCP tool is declared but not implemented yet: ${name}`, {
-        reason: 'NOT_IMPLEMENTED',
-        tool: name,
-        status: 'contract_stub'
-      });
+    case 'slimweb.site.select': {
+      try {
+        const result = await context.accountRepository.selectSiteForAccount(session.account_id, toolArgs(message));
+
+        return mcpResult(message.id ?? null, mcpJsonContent(result));
+      } catch (error) {
+        return toolExceptionToMcpError(message?.id ?? null, error);
+      }
+    }
+
+    case 'slimweb.assets.upload': {
+      try {
+        const result = await context.accountRepository.uploadAsset(session.account_id, toolArgs(message));
+
+        return mcpResult(message.id ?? null, mcpJsonContent(result));
+      } catch (error) {
+        return toolExceptionToMcpError(message?.id ?? null, error);
+      }
+    }
+
+    case 'slimweb.pages.get_home_content': {
+      try {
+        const result = await context.accountRepository.getHomeContent(session.account_id, toolArgs(message));
+
+        return mcpResult(message.id ?? null, mcpJsonContent(result));
+      } catch (error) {
+        return toolExceptionToMcpError(message?.id ?? null, error);
+      }
+    }
+
+    case 'slimweb.pages.update_home_content': {
+      try {
+        const result = await context.accountRepository.updateHomeContent(session.account_id, toolArgs(message));
+
+        return mcpResult(message.id ?? null, mcpJsonContent(result));
+      } catch (error) {
+        return toolExceptionToMcpError(message?.id ?? null, error);
+      }
+    }
+
+    case 'slimweb.preview.get_page_url': {
+      try {
+        const result = await context.accountRepository.getPagePreviewUrl(session.account_id, toolArgs(message));
+
+        return mcpResult(message.id ?? null, mcpJsonContent(result));
+      } catch (error) {
+        return toolExceptionToMcpError(message?.id ?? null, error);
+      }
+    }
 
     default:
       return mcpError(message?.id ?? null, -32601, `Unknown MCP tool: ${name ?? 'undefined'}`);
