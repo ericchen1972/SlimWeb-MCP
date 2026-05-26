@@ -938,9 +938,34 @@ MCP tools 應回傳可預期的錯誤類型：
 
 - `GET /healthz`: Cloud Run health check / service metadata
 - `GET /readyz`: readiness check
+- `GET /auth/login`: SlimWeb MCP Google 登入頁
+- `POST /auth/google`: 接收 Google Identity credential，建立或更新 webless `accounts`
+- `GET /auth/success`: 登入完成頁
 - `POST /mcp`: MCP JSON-RPC endpoint，目前支援 `initialize` 與 `tools/list`
 
-目前 `tools/list` 回傳空陣列，因為上方 tools 仍是 planned contracts，尚未進入 MCP discovery。
+目前已進入 MCP discovery 的 tools：
+
+- `slimweb.auth.status`
+- `slimweb.sites.list`
+
+其他 tools 仍是 planned contracts，尚未進入 MCP discovery。
+
+## 登入與 webless 帳號系統
+
+MCP service 使用與 webless 相同的 Google Client ID 驗證 Google Identity token，並直接連接 webless PostgreSQL：
+
+- 登入時依 Google `sub` upsert webless `accounts`
+- MCP session 使用 `MCP_SESSION_SECRET` 簽章
+- session 可透過 HttpOnly cookie 或 `Authorization: Bearer <token>` 使用
+- `slimweb.sites.list` 直接從 webless `sites` 查詢該 account 可操作網站
+
+Cloud Run 入口是 public HTTPS，但 MCP tools 需要有效 MCP session。未登入呼叫 protected tools 會回 `AUTH_REQUIRED`。
+
+如果 Google 登入頁顯示 origin/client 錯誤，需在 Google OAuth client 加入 Cloud Run URL：
+
+```text
+https://slimweb-mcp-aakwcbp2ca-de.a.run.app
+```
 
 ## Docker 與 Cloud Run 部署
 
@@ -975,7 +1000,7 @@ GitHub push 自動部署目前使用 GitHub Actions：
 
 `cloudbuild.yaml` 仍保留為 Cloud Build 部署設定。若之後在 GCP Cloud Build 完成 GitHub repo mapping 與 webhook secret IAM 設定，可改用 Cloud Build Trigger。
 
-初期部署使用 `--no-allow-unauthenticated`。等 Google Login 與 MCP auth 邊界完成後，再決定是否開放 public HTTPS entrypoint。
+Cloud Run 使用 `--allow-unauthenticated`，讓 AI Client 與使用者可開啟登入頁；實際 MCP tool 權限由 MCP session 與後續 tool guard 控制。
 
 ## 下一步
 
