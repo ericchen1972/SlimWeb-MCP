@@ -152,6 +152,47 @@ test('Google login creates a signed MCP session cookie', async () => {
   });
 });
 
+test('auth success page shows the bearer token for AI client setup', async () => {
+  await withServerOptions({
+    googleVerifier: {
+      verify: async () => ({
+        sub: 'google-sub-token',
+        email: 'owner@example.com',
+        name: 'Owner'
+      })
+    },
+    accountRepository: {
+      upsertGoogleAccount: async (profile) => ({
+        id: 12,
+        email: profile.email,
+        name: profile.name,
+        google_id: profile.sub
+      }),
+      listSitesForAccount: async () => []
+    },
+    sessionSecret: 'test-secret'
+  }, async (baseUrl) => {
+    const loginResponse = await fetch(`${baseUrl}/auth/google`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ credential: 'google-id-token' })
+    });
+    const loginBody = await loginResponse.json();
+    const cookie = loginResponse.headers.get('set-cookie');
+
+    const successResponse = await fetch(`${baseUrl}/auth/success`, {
+      headers: {
+        cookie
+      }
+    });
+    const html = await successResponse.text();
+
+    assert.equal(successResponse.status, 200);
+    assert.match(html, /Authorization: Bearer/);
+    assert.match(html, new RegExp(loginBody.session.access_token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  });
+});
+
 test('authenticated tools can read account status and sites', async () => {
   await withServerOptions({
     googleVerifier: {
