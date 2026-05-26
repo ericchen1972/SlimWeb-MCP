@@ -959,21 +959,27 @@ PORT=8080 npm start
 docker build -t slimweb-mcp:local .
 ```
 
-Cloud Build / Cloud Run 設定：
+Cloud Run 設定：
 
 - GCP project: `webless-489821`
 - Region: `asia-east1`
 - Cloud Run service: `slimweb-mcp`
 - Artifact Registry repository: `cloud-run-source-deploy`
-- Build config: `cloudbuild.yaml`
 
-GitHub push 自動部署需要在 GCP 建立 Cloud Build Trigger，指向 `ericchen1972/SlimWeb-MCP` 的 `main` branch，並使用本 repo 的 `cloudbuild.yaml`。
+GitHub push 自動部署目前使用 GitHub Actions：
+
+- Workflow: `.github/workflows/deploy.yml`
+- Trigger: push to `main`
+- Secret: `GCP_SA_KEY`
+- Deploy target: Cloud Run `slimweb-mcp`
+
+`cloudbuild.yaml` 仍保留為 Cloud Build 部署設定。若之後在 GCP Cloud Build 完成 GitHub repo mapping 與 webhook secret IAM 設定，可改用 Cloud Build Trigger。
 
 初期部署使用 `--no-allow-unauthenticated`。等 Google Login 與 MCP auth 邊界完成後，再決定是否開放 public HTTPS entrypoint。
 
 ## 下一步
 
-1. 建立 GCP Cloud Build Trigger，讓 `main` push 自動部署 `slimweb-mcp`。
+1. 等待 GitHub Actions 首次部署完成，確認 Cloud Run `slimweb-mcp` revision ready。
 2. 定義 Google Login callback、session model、token refresh 策略。
 3. 將 planned tools 逐步接進 MCP discovery。
 4. 實作 `slimweb.auth.status`、`slimweb.sites.list`、`slimweb.site.select`。
