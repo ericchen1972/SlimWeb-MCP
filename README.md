@@ -223,6 +223,10 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 | `slimweb.customer_service.settings.update` | Planned | customer service write | 更新 AI 客服設定。 |
 | `slimweb.exports.create` | Planned | export read | 建立會員、訂單或退貨匯出檔。 |
 | `slimweb.assets.upload` | Planned | asset write | 只有當 AI flow 明確需要保存可重用素材時才寫入 asset。 |
+| `slimweb.external_assets.list` | Planned | asset read | 列出站台、版型或頁面層級引用的外部 CSS / JS。 |
+| `slimweb.external_assets.upsert` | Planned | asset write + content write | 新增或更新外部 CSS / JS 引用；AI 必須提供 URL 與用途。 |
+| `slimweb.external_assets.delete` | Planned | asset write + content write | 停用或刪除外部 CSS / JS 引用。 |
+| `slimweb.external_assets.reorder` | Planned | asset write + content write | 調整外部 CSS / JS 載入順序。 |
 | `slimweb.audit.list` | Planned | audit read | 列出近期 MCP tool execution 紀錄。 |
 
 ## Tool 文件維護規範
@@ -262,6 +266,8 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - Read tools 應回傳 stable IDs，讓 AI 後續 write tools 能精準指定目標。
 - Write tools 不接受模糊目標，例如「第一個商品」；AI 必須先用 read tool 取得候選，再讓使用者或語意唯一指定。
 - 需要圖片的 tools 必須明確收到圖片附件、可下載 image URL、或前一步 `slimweb.assets.upload` 回傳的 `asset_id`。
+- 外部 CSS / JS 不可直接寫入頁面內容、文章內容或版型內容；AI 必須使用 `slimweb.external_assets.*` tools 以結構化 URL 管理。
+- Write tools 應拒絕未經 allowlist 的 `<script>`、`<link rel="stylesheet">`、inline event handler 與可執行片段，除非該 tool 明確標示支援且通過安全驗證。
 - AI 不需要知道 SlimWeb 檔案目錄或後端 route，只需依 tool contract 使用 tools。
 
 ### `slimweb.auth.status`
@@ -867,6 +873,70 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 錯誤情境: unsupported file type、file too large、missing usage、unauthorized
 - Audit fields: request ID、user ID、account ID、site ID、asset ID、usage
 
+### `slimweb.external_assets.list`
+
+- 狀態: Planned
+- 權限: asset read
+- Scope: active site；可選 site、theme、page scope
+- 用途: 列出目前站台、版型或頁面層級引用的外部 CSS / JS，讓 AI 在修改頁面前知道既有外部依賴與載入順序。
+- Input: optional `scope` (`site`, `theme`, `page`)、optional `theme_id`、optional `page_id`、optional `type` (`css`, `js`)、optional enabled filter
+- Output: external asset IDs、type、URL、scope、theme/page reference、placement、load mode、enabled status、purpose、created/updated time、editable hints
+- Side effects: none
+- 是否需要 confirmation: no
+- 錯誤情境: missing active site、permission denied、theme not found、page not found、invalid scope
+- Audit fields: request ID、user ID、account ID、site ID、scope、theme ID、page ID
+
+### `slimweb.external_assets.upsert`
+
+- 狀態: Planned
+- 權限: asset write + content write
+- Scope: active site；可選 site、theme、page scope
+- 用途: 新增或更新外部 CSS / JS 引用。AI 若需要引入 CDN、字型、追蹤碼、互動套件、動畫套件或外部樣式，必須透過本 tool 填寫 URL 與用途，不可直接把 `<script>` 或 `<link>` 寫進內容。
+- Input:
+  - optional `external_asset_id`
+  - `scope`: `site`, `theme`, `page`
+  - optional `theme_id`
+  - optional `page_id`
+  - `type`: `css` or `js`
+  - `url`: HTTPS URL
+  - `placement`: `head` or `body_end`
+  - optional `load_mode`: `normal`, `async`, `defer`
+  - optional `integrity`
+  - optional `crossorigin`: `none`, `anonymous`, `use-credentials`
+  - `enabled`: boolean
+  - `purpose`: human-readable reason，例如 `font`, `carousel`, `animation`, `analytics`, `custom interaction`
+- Output: external asset summary、changed fields、warnings、audit ID、preview impact hints
+- Side effects: creates or modifies external asset reference used by SlimWeb render pipeline
+- 是否需要 confirmation: yes for JavaScript, third-party tracking, site-scope resources, changing enabled status, or changing URL domain
+- 錯誤情境: non-HTTPS URL、blocked domain、unsupported type、invalid placement、missing purpose、theme/page mismatch、permission denied、conflict
+- Audit fields: request ID、user ID、account ID、site ID、external asset ID、scope、type、URL domain、changed fields
+
+### `slimweb.external_assets.delete`
+
+- 狀態: Planned
+- 權限: asset write + content write
+- Scope: active site；可選 site、theme、page scope
+- 用途: 停用或刪除外部 CSS / JS 引用。預設建議停用而非硬刪，讓使用者可回復錯誤移除。
+- Input: `external_asset_id`、`mode`: `disable` or `delete`、reason
+- Output: removed/disabled asset summary、affected scope、warnings、audit ID
+- Side effects: disables or deletes external asset reference and may change storefront rendering or behavior
+- 是否需要 confirmation: yes
+- 錯誤情境: external asset not found、permission denied、dependency warning、conflict
+- Audit fields: request ID、user ID、account ID、site ID、external asset ID、mode、URL domain
+
+### `slimweb.external_assets.reorder`
+
+- 狀態: Planned
+- 權限: asset write + content write
+- Scope: active site；可選 site、theme、page scope
+- 用途: 調整同一 scope 下外部 CSS / JS 的載入順序，支援處理相依套件或覆蓋樣式順序。
+- Input: `scope`、optional `theme_id`、optional `page_id`、ordered `external_asset_ids`
+- Output: ordered external asset summaries、warnings、audit ID
+- Side effects: modifies load order and may affect storefront rendering or JavaScript behavior
+- 是否需要 confirmation: yes if JavaScript order changes or site-scope order changes
+- 錯誤情境: missing IDs、asset scope mismatch、dependency conflict、permission denied
+- Audit fields: request ID、user ID、account ID、site ID、scope、ordered external asset IDs
+
 ### `slimweb.audit.list`
 
 - 狀態: Planned
@@ -894,6 +964,33 @@ AI Client 收到或引用的圖片預設是 reference-only。只有當 tool call
 - `alt_text`
 
 頁面與版型相關素材會在 page/template tools 定義時再補充。
+
+## 外部 CSS / JS 政策
+
+外部 CSS / JS 屬於可影響全站視覺、互動行為與安全性的資源，不應混在頁面 HTML、文章 body、FAQ answer 或版型內容內。AI Client 若需要引入外部檔案，必須使用 `slimweb.external_assets.*` tools 以結構化資料管理。
+
+原則：
+
+- 外部資源只接受 `https://` URL。
+- AI 必須填寫 `purpose`，說明引入原因，例如字型、輪播、動畫、追蹤碼或特定互動功能。
+- CSS 建議放在 `head`；JS 預設放在 `body_end`，除非資源文件明確要求放在 `head`。
+- JavaScript、第三方追蹤碼、site-scope 資源、URL domain 變更與啟用/停用都需要 confirmation。
+- 頁面內容與版型內容不得直接包含 `<script>`、`<link rel="stylesheet">`、inline event handler，例如 `onclick`、`onload`。
+- MCP Server 應記錄 URL domain、scope、placement、load mode、enabled status 與用途，供 audit 與客服追蹤。
+- 若未來提供 domain allowlist / blocklist，`slimweb.external_assets.upsert` 必須在寫入前檢查。
+
+Scope 規則：
+
+- `site`: 全站資源，影響目前網站所有頁面。高影響，預設需要 confirmation。
+- `theme`: 只影響指定版型。當使用者要求 AI 建立或修改新版型時，可用於版型專屬互動或樣式。
+- `page`: 只影響指定頁面。當需求只針對首頁、關於我們、活動頁等單頁時，優先使用 page scope。
+
+Default 與版型限制：
+
+- 在 Default 狀態下，AI 只能修改首頁內容與自訂頁面內容；不得新增或修改 Default 的版型級 external assets。
+- 若 Default 頁面內容需要外部資源，AI 應優先使用 page scope，並說明為何該頁需要該資源。
+- 當使用者要求 AI 建立或修改非 Default 版型時，theme scope 可用，但必須明確指定目標 theme。
+- 頁面與版型沒有綁定；若 AI 為某頁建立非 Default 版本並依賴外部資源，必須確認 Default 對應頁是否也需要 page-scope external assets，避免切回 Default 時頁面缺依賴。
 
 ## 安全要求
 
