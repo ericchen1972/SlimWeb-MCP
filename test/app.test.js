@@ -152,6 +152,36 @@ test('Google login creates a signed MCP session cookie', async () => {
   });
 });
 
+test('Google login failure returns a visible error message', async () => {
+  await withServerOptions({
+    googleVerifier: {
+      verify: async () => {
+        const error = new Error('Invalid Google account.');
+        error.code = 'INVALID_GOOGLE_ACCOUNT';
+        throw error;
+      }
+    },
+    accountRepository: {
+      upsertGoogleAccount: async () => {
+        throw new Error('should not be called');
+      },
+      listSitesForAccount: async () => []
+    },
+    sessionSecret: 'test-secret'
+  }, async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/auth/google`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ credential: 'bad-token' })
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 401);
+    assert.equal(body.error.code, 'INVALID_GOOGLE_ACCOUNT');
+    assert.equal(body.error.message, 'Invalid Google account.');
+  });
+});
+
 test('auth success page shows the bearer token for AI client setup', async () => {
   await withServerOptions({
     googleVerifier: {

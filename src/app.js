@@ -221,11 +221,15 @@ function loginPage(context) {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ credential: response.credential })
-      }).then(function(result) {
-        if (!result.ok) throw new Error('login failed');
+      }).then(async function(result) {
+        if (!result.ok) {
+          const payload = await result.json().catch(function() { return {}; });
+          const message = payload.error && payload.error.message ? payload.error.message : '登入失敗，請重新再試。';
+          throw new Error(message);
+        }
         window.location.href = '/auth/success';
-      }).catch(function() {
-        alert('登入失敗，請重新再試。');
+      }).catch(function(error) {
+        alert('登入失敗：' + error.message);
       });
     }
 
@@ -273,6 +277,11 @@ async function handleGoogleLogin(request, response, context) {
       'set-cookie': sessionCookie(token, context.secureCookies)
     });
   } catch (error) {
+    console.warn('mcp_google_login_failed', {
+      code: error.code ?? 'LOGIN_FAILED',
+      message: error.message
+    });
+
     jsonResponse(response, 401, {
       ok: false,
       error: {
