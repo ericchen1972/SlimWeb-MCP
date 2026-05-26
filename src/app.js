@@ -49,7 +49,7 @@ const MCP_TOOLS = [
   },
   {
     name: 'slimweb.themes.create_from_default',
-    description: 'Create a new non-Default theme/page style scheme by copying Default template files into the new theme. Use this before designing a new visual style.',
+    description: 'Create a new non-Default theme/page style scheme by copying only Default shell/root-element template files. Page content remains separated and falls back to Default unless explicitly created for the theme.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -67,6 +67,24 @@ const MCP_TOOLS = [
         }
       },
       required: ['site_id', 'name']
+    }
+  },
+  {
+    name: 'slimweb.theme_shell.get_context',
+    description: 'Return reference-only JSON describing real storefront shell data such as nav items, category counts, cart/login buttons, footer contact items, and online support state. Call before creating or modifying visual theme elements.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        site_id: {
+          type: 'integer',
+          description: 'Target SlimWeb site ID.'
+        },
+        theme_id: {
+          type: ['integer', 'string'],
+          description: 'Target theme ID or default.'
+        }
+      },
+      required: ['site_id', 'theme_id']
     }
   },
   {
@@ -93,6 +111,55 @@ const MCP_TOOLS = [
         }
       },
       required: ['site_id', 'theme_id']
+    }
+  },
+  {
+    name: 'slimweb.theme_style_profile.get',
+    description: 'Read the editable style summary/profile for a theme so visual design can stay consistent with prior user requests.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        site_id: { type: 'integer' },
+        theme_id: { type: ['integer', 'string'] }
+      },
+      required: ['site_id', 'theme_id']
+    }
+  },
+  {
+    name: 'slimweb.theme_style_profile.upsert',
+    description: 'Create or update a theme style summary/profile with user intent, visual keywords, color, typography, layout, illustration, and avoid notes.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        site_id: { type: 'integer' },
+        theme_id: { type: ['integer', 'string'] },
+        summary: { type: 'string' },
+        target_audience: { type: 'string' },
+        visual_keywords: { type: 'array', items: { type: 'string' } },
+        color_notes: { type: 'string' },
+        typography_notes: { type: 'string' },
+        layout_notes: { type: 'string' },
+        illustration_notes: { type: 'string' },
+        avoid_notes: { type: 'string' },
+        user_request: { type: 'string' },
+        user_requests: { type: 'array', items: { type: 'object' } },
+        ai_design_notes: { type: 'string' }
+      },
+      required: ['site_id', 'theme_id']
+    }
+  },
+  {
+    name: 'slimweb.theme_style_profile.append_request',
+    description: 'Append one user request/change note to a theme style profile history without replacing the existing profile.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        site_id: { type: 'integer' },
+        theme_id: { type: ['integer', 'string'] },
+        request: { type: 'string' },
+        ai_notes: { type: 'string' }
+      },
+      required: ['site_id', 'theme_id', 'request']
     }
   },
   {
@@ -403,9 +470,49 @@ async function toolResultForCall(message, request, context) {
       }
     }
 
+    case 'slimweb.theme_shell.get_context': {
+      try {
+        const result = await context.accountRepository.getThemeShellContext(session.account_id, toolArgs(message));
+
+        return mcpResult(message.id ?? null, mcpJsonContent(result));
+      } catch (error) {
+        return toolExceptionToMcpError(message?.id ?? null, error);
+      }
+    }
+
     case 'slimweb.themes.update_root_elements': {
       try {
         const result = await context.accountRepository.updateThemeRootElements(session.account_id, toolArgs(message));
+
+        return mcpResult(message.id ?? null, mcpJsonContent(result));
+      } catch (error) {
+        return toolExceptionToMcpError(message?.id ?? null, error);
+      }
+    }
+
+    case 'slimweb.theme_style_profile.get': {
+      try {
+        const result = await context.accountRepository.getThemeStyleProfile(session.account_id, toolArgs(message));
+
+        return mcpResult(message.id ?? null, mcpJsonContent(result));
+      } catch (error) {
+        return toolExceptionToMcpError(message?.id ?? null, error);
+      }
+    }
+
+    case 'slimweb.theme_style_profile.upsert': {
+      try {
+        const result = await context.accountRepository.upsertThemeStyleProfile(session.account_id, toolArgs(message));
+
+        return mcpResult(message.id ?? null, mcpJsonContent(result));
+      } catch (error) {
+        return toolExceptionToMcpError(message?.id ?? null, error);
+      }
+    }
+
+    case 'slimweb.theme_style_profile.append_request': {
+      try {
+        const result = await context.accountRepository.appendThemeStyleProfileRequest(session.account_id, toolArgs(message));
 
         return mcpResult(message.id ?? null, mcpJsonContent(result));
       } catch (error) {

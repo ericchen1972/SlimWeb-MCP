@@ -179,8 +179,12 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 | `slimweb.sites.list` | Available | account read | 列出使用者可操作的 SlimWeb sites。 |
 | `slimweb.site.select` | Available | account read | 驗證並回傳 AI 後續 tool 呼叫要操作的 site。 |
 | `slimweb.themes.list` | Available | content read | 列出站台的 Default 與自訂版型。 |
-| `slimweb.themes.create_from_default` | Available | content write | 建立新版型，並將 Default template 檔案複製到新版型。 |
+| `slimweb.themes.create_from_default` | Available | content write | 建立新版型，並只複製 Default shell/root-element template；內容頁預設沿用 Default。 |
+| `slimweb.theme_shell.get_context` | Available | content read | 回傳設計用 reference-only JSON，包含 nav、分類、購物車/登入按鈕、footer 聯絡資訊與線上客服狀態。 |
 | `slimweb.themes.update_root_elements` | Available | content write | 更新非 Default 版型的 navbar、footer、online support 與 root CSS。 |
+| `slimweb.theme_style_profile.get` | Available | content read | 讀取版型風格摘要與需求歷史。 |
+| `slimweb.theme_style_profile.upsert` | Available | content write | 建立或更新版型風格摘要、色彩、字體、版面、插圖與避免事項。 |
+| `slimweb.theme_style_profile.append_request` | Available | content write | 追加一筆使用者風格需求或變更紀錄。 |
 | `slimweb.dashboard.summary` | Planned | dashboard read | 讀取 KPI、最新訂單、最新會員、低庫存提醒等後台首頁摘要。 |
 | `slimweb.settings.get` | Planned | settings read | 讀取網站狀態、國別、商品載入方式、允許退貨天數等基本設定。 |
 | `slimweb.settings.update` | Planned | settings write | 更新允許由 MCP 修改的基本設定欄位。 |
@@ -331,12 +335,26 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 狀態: Available
 - 權限: content write
 - Scope: active site
-- 用途: 建立新版型。此 tool 會新增一筆非 Default `site_pages` 記錄，並將 Default template storage 複製到新版型目錄；Default 的 `content.blade.php` 會轉成新版型的 `body.blade.php`。
+- 用途: 建立新版型。此 tool 會新增一筆非 Default `site_pages` 記錄，並只將 Default 的 shell/root-element template storage 複製到新版型目錄。
 - Input: `site_id`、`name`、optional `theme_mode` (`light`, `dark`, `system`)
-- Output: site summary、created theme summary、copied flag、preview URL
-- Side effects: creates site page style scheme and copies Default template files
+- Output: site summary、created theme summary、copied flag、`copied_scope`、`content_fallback`、preview URL
+- Side effects: creates site page style scheme and copies Default shell files. It does not copy `pages/*` body/content files.
 - 是否需要 confirmation: yes when user did not explicitly ask to create a new theme
 - 錯誤情境: site not found、invalid name、storage adapter not configured、upstream write failed
+- Audit fields: request ID、user ID、account ID、site ID、theme ID
+
+### `slimweb.theme_shell.get_context`
+
+- 狀態: Available
+- 權限: content read
+- Scope: active site and selected theme
+- 用途: 在建立或修改版型前，讓 AI 取得實際會接上的資料摘要 JSON，例如 nav item 數量/名稱/樹狀結構、商品分類數量/名稱、購物車/登入/註冊按鈕、footer 聯絡資訊數量與線上客服狀態。
+- Input: `site_id`、`theme_id`
+- Output: `reference_only: true`、site summary、theme summary、`theme_scope`、`navbar`、`product_categories`、`storefront_actions`、`footer`、`online_support`
+- Side effects: none
+- 重要規則: 此 JSON 僅供設計參考，不可直接把 nav/footer/contact 寫死進 root element 或 page body。AI 應依此資料量預留版面、選擇 icon/spacing，實際資料仍由 Webless runtime 接上。
+- 是否需要 confirmation: no
+- 錯誤情境: site not found、theme not found、database read failed
 - Audit fields: request ID、user ID、account ID、site ID、theme ID
 
 ### `slimweb.themes.update_root_elements`
@@ -351,6 +369,45 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 是否需要 confirmation: yes for customer-facing active theme
 - 錯誤情境: theme not found、attempting to modify Default、unsafe HTML、storage adapter not configured
 - Audit fields: request ID、user ID、account ID、site ID、theme ID、updated fragments
+
+### `slimweb.theme_style_profile.get`
+
+- 狀態: Available
+- 權限: content read
+- Scope: active site and selected theme
+- 用途: 讀取版型風格摘要，讓 AI 在視覺設計前知道既有方向、限制與使用者曾提出的變更。
+- Input: `site_id`、`theme_id`
+- Output: site summary、theme summary、nullable `profile`
+- Side effects: none
+- 是否需要 confirmation: no
+- 錯誤情境: site not found、theme not found、profile table not migrated
+- Audit fields: request ID、user ID、account ID、site ID、theme ID
+
+### `slimweb.theme_style_profile.upsert`
+
+- 狀態: Available
+- 權限: content write
+- Scope: active site and selected theme
+- 用途: 建立或更新版型風格摘要，包含 `summary`、`target_audience`、`visual_keywords`、`color_notes`、`typography_notes`、`layout_notes`、`illustration_notes`、`avoid_notes`、`user_request(s)`、`ai_design_notes`。
+- Input: `site_id`、`theme_id` and at least one style/profile field
+- Output: write summary、theme summary、profile
+- Side effects: upserts `site_theme_style_profiles`
+- 是否需要 confirmation: no, unless changing an active customer-facing theme's declared direction against the user's current request
+- 錯誤情境: site not found、theme not found、profile table not migrated、invalid JSON field
+- Audit fields: request ID、user ID、account ID、site ID、theme ID
+
+### `slimweb.theme_style_profile.append_request`
+
+- 狀態: Available
+- 權限: content write
+- Scope: active site and selected theme
+- 用途: 追加一筆使用者需求或變更紀錄，不覆蓋既有風格摘要。適合記錄「文青一點」、「字體不要那麼粗」、「背景補手繪插圖」等要求。
+- Input: `site_id`、`theme_id`、`request`、optional `ai_notes`
+- Output: write summary、theme summary、updated profile
+- Side effects: appends to `site_theme_style_profiles.user_requests` and increments profile version
+- 是否需要 confirmation: no
+- 錯誤情境: site not found、theme not found、profile table not migrated
+- Audit fields: request ID、user ID、account ID、site ID、theme ID
 
 ### `slimweb.dashboard.summary`
 
@@ -921,7 +978,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 狀態: Available
 - 權限: content read
 - Scope: active site
-- 用途: 讀取首頁 body/content。Default 讀取 `content.blade.php`，自訂版型讀取 `body.blade.php`。
+- 用途: 讀取首頁 body/content。Default 讀取 `content.blade.php`；自訂版型若有專屬 `body.blade.php` 則讀取該檔，否則 runtime 會沿用 Default 內容。
 - Input: `site_id`、optional `theme_id`、optional `include_default`
 - Output: site summary、page key、theme summary、storage path、content HTML、exists flag
 - Side effects: none
@@ -1072,7 +1129,9 @@ Default 與版型限制：
 - 在 Default 狀態下，AI 只能修改首頁內容與自訂頁面內容；不得新增或修改 Default 的版型級 external assets。
 - 若 Default 頁面內容需要外部資源，AI 應優先使用 page scope，並說明為何該頁需要該資源。
 - 當使用者要求 AI 建立或修改非 Default 版型時，theme scope 可用，但必須明確指定目標 theme。
-- 頁面與版型沒有綁定；若 AI 為某頁建立非 Default 版本並依賴外部資源，必須確認 Default 對應頁是否也需要 page-scope external assets，避免切回 Default 時頁面缺依賴。
+- 版型與內容分離：非 Default 版型只管理 navbar、body/background styling、online support、footer。除非使用者明確要求「某版型的某頁內容」，否則內容頁沿用 Default。
+- 建立或修改版型前，AI 必須先讀 `slimweb.theme_shell.get_context` 與 `slimweb.theme_style_profile.get`；前者描述實際資料形狀，後者描述風格意圖與變更歷史。
+- `slimweb.theme_shell.get_context` 回傳的是 reference-only JSON。AI 可以用它決定 spacing、icon、容器容量與 responsive 行為，但不可把 nav/footer/contact 等真實資料寫死到版型片段。
 
 ## 安全要求
 

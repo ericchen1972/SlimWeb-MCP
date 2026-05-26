@@ -128,6 +128,8 @@ export class WeblessAccountRepository {
         site,
         theme,
         copied_from_default: true,
+        copied_scope: 'theme_shell_only',
+        content_fallback: 'default',
         source_theme: 'Default',
         preview_url: this.previewUrlFor(site, 'index', theme.id)
       };
@@ -164,6 +166,186 @@ export class WeblessAccountRepository {
       updated_fragments: updatedFragments,
       updated_css: typeof args.css === 'string' && args.css.trim() !== '',
       preview_url: this.previewUrlFor(site, 'index', theme.id)
+    };
+  }
+
+  async getThemeShellContext(accountId, args) {
+    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
+    const theme = await this.resolveThemeForSite(site.id, args.theme_id);
+    const [navItems, categories, siteDetails, faqCount] = await Promise.all([
+      this.listSiteNavItems(site.id),
+      this.listSiteCategories(site.id),
+      this.getSiteDesignDetails(site.id),
+      this.countSiteFaqs(site.id)
+    ]);
+
+    const contactItems = contactItemsFromSiteDetails(siteDetails);
+
+    return {
+      reference_only: true,
+      usage_rule: 'Use this JSON to understand real storefront data shape while designing. Do not hard-code these records into page or theme content.',
+      site,
+      theme,
+      theme_scope: {
+        root_elements: ['navbar', 'body_background', 'online_support', 'footer'],
+        content_fallback: theme.is_default ? null : 'default',
+        page_body_rule: 'Non-Default themes inherit Default page content unless a page-specific body is explicitly created.'
+      },
+      navbar: {
+        counts: {
+          total_items: navItems.length,
+          top_level_items: navItems.filter((item) => item.parent_id === null).length,
+          icon_items: navItems.filter((item) => item.icon_svg || item.icon_path).length
+        },
+        item_names: navItems.map((item) => item.name),
+        tree: buildTree(navItems)
+      },
+      product_categories: {
+        counts: {
+          total_items: categories.length,
+          top_level_items: categories.filter((category) => category.parent_id === null).length,
+          image_items: categories.filter((category) => category.image_path).length,
+          icon_items: categories.filter((category) => category.icon_svg || category.icon_path).length
+        },
+        item_names: categories.map((category) => category.name),
+        tree: buildTree(categories)
+      },
+      storefront_actions: {
+        cart_button: true,
+        register_button: true,
+        login_button: true,
+        account_entry: true
+      },
+      footer: {
+        counts: {
+          contact_items: contactItems.length,
+          social_links: contactItems.filter((item) => item.kind === 'social').length
+        },
+        contact_items: contactItems
+      },
+      online_support: {
+        enabled: Boolean(siteDetails.use_ai_customer_service && siteDetails.ai_api_key && siteDetails.ai_model_name),
+        faq_count: faqCount
+      }
+    };
+  }
+
+  async getThemeStyleProfile(accountId, args) {
+    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
+    const theme = await this.resolveThemeForSite(site.id, args.theme_id);
+    const profile = await this.findThemeStyleProfile(theme.id);
+
+    return {
+      site,
+      theme,
+      profile
+    };
+  }
+
+  async upsertThemeStyleProfile(accountId, args) {
+    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
+    const theme = await this.resolveThemeForSite(site.id, args.theme_id);
+    const userRequests = normalizeUserRequests(args.user_requests ?? (args.user_request ? [{ request: args.user_request }] : []));
+    const visualKeywords = normalizeStringArray(args.visual_keywords);
+
+    const result = await this.pool.query(
+      `
+        insert into site_theme_style_profiles (
+          site_id,
+          site_page_id,
+          summary,
+          target_audience,
+          visual_keywords,
+          color_notes,
+          typography_notes,
+          layout_notes,
+          illustration_notes,
+          avoid_notes,
+          user_requests,
+          ai_design_notes,
+          created_by_account_id,
+          updated_by_account_id
+        )
+        values ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10, $11::jsonb, $12, $13, $13)
+        on conflict (site_page_id)
+        do update set
+          summary = coalesce(excluded.summary, site_theme_style_profiles.summary),
+          target_audience = coalesce(excluded.target_audience, site_theme_style_profiles.target_audience),
+          visual_keywords = coalesce(excluded.visual_keywords, site_theme_style_profiles.visual_keywords),
+          color_notes = coalesce(excluded.color_notes, site_theme_style_profiles.color_notes),
+          typography_notes = coalesce(excluded.typography_notes, site_theme_style_profiles.typography_notes),
+          layout_notes = coalesce(excluded.layout_notes, site_theme_style_profiles.layout_notes),
+          illustration_notes = coalesce(excluded.illustration_notes, site_theme_style_profiles.illustration_notes),
+          avoid_notes = coalesce(excluded.avoid_notes, site_theme_style_profiles.avoid_notes),
+          user_requests = coalesce(excluded.user_requests, site_theme_style_profiles.user_requests),
+          ai_design_notes = coalesce(excluded.ai_design_notes, site_theme_style_profiles.ai_design_notes),
+          updated_by_account_id = excluded.updated_by_account_id,
+          version = site_theme_style_profiles.version + 1,
+          updated_at = now()
+        returning *
+      `,
+      [
+        site.id,
+        theme.id,
+        nullableString(args.summary),
+        nullableString(args.target_audience),
+        JSON.stringify(visualKeywords),
+        nullableString(args.color_notes),
+        nullableString(args.typography_notes),
+        nullableString(args.layout_notes),
+        nullableString(args.illustration_notes),
+        nullableString(args.avoid_notes),
+        JSON.stringify(userRequests),
+        nullableString(args.ai_design_notes),
+        accountId
+      ]
+    );
+
+    return {
+      ok: true,
+      site,
+      theme,
+      profile: formatStyleProfile(result.rows[0])
+    };
+  }
+
+  async appendThemeStyleProfileRequest(accountId, args) {
+    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
+    const theme = await this.resolveThemeForSite(site.id, args.theme_id);
+    const entry = normalizeUserRequestEntry({
+      request: args.request,
+      ai_notes: args.ai_notes,
+      recorded_at: new Date().toISOString()
+    });
+    const existing = await this.findThemeStyleProfile(theme.id);
+
+    if (!existing) {
+      return this.upsertThemeStyleProfile(accountId, {
+        site_id: site.id,
+        theme_id: theme.id,
+        user_requests: [entry]
+      });
+    }
+
+    const nextRequests = [...normalizeUserRequests(existing.user_requests), entry];
+    const result = await this.pool.query(
+      `
+        update site_theme_style_profiles
+        set user_requests = $1::jsonb,
+            updated_by_account_id = $2,
+            version = version + 1,
+            updated_at = now()
+        where site_page_id = $3
+        returning *
+      `,
+      [JSON.stringify(nextRequests), accountId, theme.id]
+    );
+
+    return {
+      ok: true,
+      site,
+      theme,
+      profile: formatStyleProfile(result.rows[0])
     };
   }
 
@@ -333,18 +515,119 @@ export class WeblessAccountRepository {
 
     for (const sourcePath of files) {
       const relativePath = sourcePath.slice(sourceDirectory.length + 1);
-      let targetPath = `${targetDirectory}/${relativePath}`;
-
-      const bodyMatch = relativePath.match(/^pages\/([^/]+)\/content\.blade\.php$/);
-      if (bodyMatch) {
-        targetPath = `${targetDirectory}/pages/${bodyMatch[1]}/body.blade.php`;
+      if (relativePath.startsWith('pages/')) {
+        continue;
       }
 
       const bytes = await this.storage.readBytes(sourcePath);
       if (bytes !== null) {
+        const targetPath = `${targetDirectory}/${relativePath}`;
         await this.storage.write(targetPath, bytes, contentTypeForPath(targetPath));
       }
     }
+  }
+
+  async listSiteNavItems(siteId) {
+    const result = await this.pool.query(
+      `
+        select id, parent_id, name, item_type, url, icon_svg, icon_path, sort_order
+        from site_nav_items
+        where site_id = $1
+        order by parent_id nulls first, sort_order asc, id asc
+      `,
+      [siteId]
+    );
+
+    return result.rows.map((item) => ({
+      id: item.id,
+      parent_id: item.parent_id,
+      name: item.name,
+      item_type: item.item_type,
+      url: item.url,
+      has_icon: Boolean(item.icon_svg || item.icon_path),
+      icon_svg: item.icon_svg ? '[svg-present]' : null,
+      icon_path: item.icon_path,
+      sort_order: item.sort_order
+    }));
+  }
+
+  async listSiteCategories(siteId) {
+    const result = await this.pool.query(
+      `
+        select id, parent_id, name, icon_svg, icon_path, image_path, sort_order
+        from site_categories
+        where site_id = $1
+        order by parent_id nulls first, sort_order asc, id asc
+      `,
+      [siteId]
+    );
+
+    return result.rows.map((category) => ({
+      id: category.id,
+      parent_id: category.parent_id,
+      name: category.name,
+      has_icon: Boolean(category.icon_svg || category.icon_path),
+      icon_svg: category.icon_svg ? '[svg-present]' : null,
+      icon_path: category.icon_path,
+      image_path: category.image_path,
+      sort_order: category.sort_order
+    }));
+  }
+
+  async getSiteDesignDetails(siteId) {
+    const result = await this.pool.query(
+      `
+        select
+          contact_email,
+          contact_line,
+          contact_wechat,
+          contact_telegram,
+          contact_twitter,
+          contact_instagram,
+          contact_facebook_page,
+          contact_store_address,
+          contact_phone,
+          contact_mobile,
+          contact_tax_id,
+          contact_copyright,
+          use_ai_customer_service,
+          ai_api_key,
+          ai_model_name
+        from sites
+        where id = $1
+        limit 1
+      `,
+      [siteId]
+    );
+
+    return result.rows[0] ?? {};
+  }
+
+  async countSiteFaqs(siteId) {
+    const result = await this.pool.query(
+      `
+        select count(*)::int as count
+        from site_faqs
+        where site_id = $1
+      `,
+      [siteId]
+    );
+
+    return Number.parseInt(result.rows[0]?.count ?? '0', 10);
+  }
+
+  async findThemeStyleProfile(themeId) {
+    const result = await this.pool.query(
+      `
+        select *
+        from site_theme_style_profiles
+        where site_page_id = $1
+        limit 1
+      `,
+      [themeId]
+    );
+
+    return result.rows[0] ? formatStyleProfile(result.rows[0]) : null;
   }
 
   previewUrlFor(site, pageKey, themeId) {
@@ -660,6 +943,120 @@ function formatTheme(theme) {
     is_active: Boolean(theme.is_active),
     theme_mode: theme.is_default ? 'light' : (theme.theme_mode || 'light')
   };
+}
+
+function buildTree(rows, parentId = null) {
+  return rows
+    .filter((row) => row.parent_id === parentId)
+    .map((row) => ({
+      id: row.id,
+      name: row.name,
+      type: row.item_type,
+      url: row.url,
+      has_icon: Boolean(row.has_icon),
+      image_path: row.image_path ?? null,
+      children: buildTree(rows, row.id)
+    }));
+}
+
+function contactItemsFromSiteDetails(site) {
+  const fields = [
+    ['email', 'contact', site.contact_email],
+    ['line', 'social', site.contact_line],
+    ['wechat', 'social', site.contact_wechat],
+    ['telegram', 'social', site.contact_telegram],
+    ['twitter', 'social', site.contact_twitter],
+    ['instagram', 'social', site.contact_instagram],
+    ['facebook', 'social', site.contact_facebook_page],
+    ['address', 'contact', site.contact_store_address],
+    ['phone', 'contact', site.contact_phone],
+    ['mobile', 'contact', site.contact_mobile],
+    ['tax_id', 'business', site.contact_tax_id],
+    ['copyright', 'legal', site.contact_copyright]
+  ];
+
+  return fields
+    .filter(([, , value]) => typeof value === 'string' && value.trim() !== '')
+    .map(([name, kind, value]) => ({
+      name,
+      kind,
+      value
+    }));
+}
+
+function formatStyleProfile(profile) {
+  if (!profile) {
+    return null;
+  }
+
+  return {
+    id: profile.id,
+    site_id: profile.site_id,
+    theme_id: profile.site_page_id,
+    summary: profile.summary,
+    target_audience: profile.target_audience,
+    visual_keywords: normalizeStringArray(profile.visual_keywords),
+    color_notes: profile.color_notes,
+    typography_notes: profile.typography_notes,
+    layout_notes: profile.layout_notes,
+    illustration_notes: profile.illustration_notes,
+    avoid_notes: profile.avoid_notes,
+    user_requests: normalizeUserRequests(profile.user_requests),
+    ai_design_notes: profile.ai_design_notes,
+    version: Number.parseInt(profile.version ?? '1', 10),
+    is_active: profile.is_active !== false,
+    created_at: profile.created_at ?? null,
+    updated_at: profile.updated_at ?? null
+  };
+}
+
+function normalizeStringArray(value) {
+  const raw = typeof value === 'string' ? JSON.parse(value || '[]') : value;
+
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  return raw
+    .map((item) => String(item ?? '').trim())
+    .filter((item) => item !== '');
+}
+
+function normalizeUserRequests(value) {
+  const raw = typeof value === 'string' ? JSON.parse(value || '[]') : value;
+
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  return raw.map(normalizeUserRequestEntry).filter(Boolean);
+}
+
+function normalizeUserRequestEntry(value) {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const request = nullableString(value.request);
+  if (!request) {
+    return null;
+  }
+
+  return {
+    request,
+    ai_notes: nullableString(value.ai_notes),
+    recorded_at: nullableString(value.recorded_at) ?? new Date().toISOString()
+  };
+}
+
+function nullableString(value) {
+  if (value === undefined || value === null) {
+    return null;
+  }
+
+  const text = String(value).trim();
+
+  return text === '' ? null : text;
 }
 
 function themeDirectory(theme) {
