@@ -18,26 +18,18 @@ function safeEqual(left, right) {
   return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer);
 }
 
-export function createSessionToken(account, secret, now = Date.now()) {
+export function createSignedToken(payload, secret) {
   if (!secret) {
     throw new Error('MCP_SESSION_SECRET is required.');
   }
 
-  const payload = {
-    account_id: account.id,
-    email: account.email,
-    name: account.name,
-    google_id: account.google_id,
-    iat: Math.floor(now / 1000),
-    exp: Math.floor(now / 1000) + DEFAULT_TTL_SECONDS
-  };
   const encodedPayload = base64url(JSON.stringify(payload));
   const signature = sign(encodedPayload, secret);
 
   return `${encodedPayload}.${signature}`;
 }
 
-export function verifySessionToken(token, secret, now = Date.now()) {
+export function verifySignedToken(token, secret) {
   if (!token || !secret || !token.includes('.')) {
     return null;
   }
@@ -50,15 +42,33 @@ export function verifySessionToken(token, secret, now = Date.now()) {
   }
 
   try {
-    const payload = JSON.parse(Buffer.from(encodedPayload, 'base64url').toString('utf8'));
-    if (!payload.exp || payload.exp < Math.floor(now / 1000)) {
-      return null;
-    }
-
-    return payload;
+    return JSON.parse(Buffer.from(encodedPayload, 'base64url').toString('utf8'));
   } catch {
     return null;
   }
+}
+
+export function createSessionToken(account, secret, now = Date.now()) {
+  const payload = {
+    account_id: account.id ?? account.account_id ?? null,
+    email: account.email,
+    name: account.name,
+    google_id: account.google_id ?? account.google_sub ?? null,
+    site_id: account.site_id ?? null,
+    iat: Math.floor(now / 1000),
+    exp: Math.floor(now / 1000) + DEFAULT_TTL_SECONDS
+  };
+
+  return createSignedToken(payload, secret);
+}
+
+export function verifySessionToken(token, secret, now = Date.now()) {
+  const payload = verifySignedToken(token, secret);
+  if (!payload || !payload.exp || payload.exp < Math.floor(now / 1000)) {
+    return null;
+  }
+
+  return payload;
 }
 
 export function readSessionToken(request) {

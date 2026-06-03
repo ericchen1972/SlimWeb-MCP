@@ -21,7 +21,7 @@ steps:
       - asia-east1
       - --platform
       - managed
-      - --no-allow-unauthenticated
+      - --allow-unauthenticated
 
 images:
   - asia-east1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/slimweb-mcp:$COMMIT_SHA
