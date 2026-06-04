@@ -1056,13 +1056,23 @@ const MCP_TOOLS = [
         replace_image_by_variant: { type: 'boolean' },
         primary_images: {
           type: 'array',
-          description: `Required with at least one entry when creating. Use source.media_path values returned by slimweb_uploads_commit. ${SIGNED_UPLOAD_RUNTIME_GUIDANCE} Never pass base64, URLs, /mnt/data paths, attachment handles, or invented placeholder URLs.`,
+          description: `Required with at least one entry when creating. When updating, primary_images_mode controls whether these images append to or replace the existing primary image list. Use source.media_path values returned by slimweb_uploads_commit. ${SIGNED_UPLOAD_RUNTIME_GUIDANCE} Never pass base64, URLs, /mnt/data paths, attachment handles, or invented placeholder URLs.`,
           items: PRODUCT_IMAGE_ITEM_SCHEMA
+        },
+        primary_images_mode: {
+          type: 'string',
+          enum: ['append', 'replace'],
+          description: 'Only applies when primary_images is provided. append preserves existing primary images and adds these after them; replace removes existing primary images first. Defaults to append when updating an existing product and replace when creating.'
         },
         content_images: {
           type: 'array',
-          description: 'Optional product content/detail images. Use the same image source rules as primary_images.',
+          description: 'Optional product content/detail images. content_images_mode controls whether these images append to or replace the existing content image list. Use the same image source rules as primary_images.',
           items: PRODUCT_IMAGE_ITEM_SCHEMA
+        },
+        content_images_mode: {
+          type: 'string',
+          enum: ['append', 'replace'],
+          description: 'Only applies when content_images is provided. append preserves existing content images and adds these after them; replace removes existing content images first. Defaults to append when updating an existing product and replace when creating.'
         },
         videos: {
           type: 'array',

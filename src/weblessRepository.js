@@ -4127,19 +4127,33 @@ export class WeblessAccountRepository {
   }
 
   async syncProductChildRecords(site, product, payload) {
-    await this.syncProductImages(site, product, 'primary', payload.primary_images);
-    await this.syncProductImages(site, product, 'content', payload.content_images);
+    await this.syncProductImages(site, product, 'primary', payload.primary_images, payload.primary_images_mode);
+    await this.syncProductImages(site, product, 'content', payload.content_images, payload.content_images_mode);
     await this.syncProductVideos(product.id, payload.videos);
     await this.syncProductVariants(product.id, payload.variant_mode, payload, product.base_price, product.sale_price);
     await this.syncProductQuantityDiscounts(product.id, payload.variant_mode, payload.quantity_discounts);
   }
 
-  async syncProductImages(site, product, type, images) {
+  async syncProductImages(site, product, type, images, mode = 'replace') {
     if (!Array.isArray(images) || images.length === 0) {
       return;
     }
 
-    await this.pool.query('delete from product_images where product_id = $1 and image_type = $2', [product.id, type]);
+    let sortOrderOffset = 0;
+
+    if (mode === 'replace') {
+      await this.pool.query('delete from product_images where product_id = $1 and image_type = $2', [product.id, type]);
+    } else {
+      const result = await this.pool.query(
+        `
+          select coalesce(max(sort_order), -1) + 1 as next_sort_order
+          from product_images
+          where product_id = $1 and image_type = $2
+        `,
+        [product.id, type]
+      );
+      sortOrderOffset = Number.parseInt(result.rows[0]?.next_sort_order ?? '0', 10);
+    }
 
     for (let index = 0; index < images.length; index += 1) {
       const pathOrUrl = await this.resolveProductImagePath(site, product, type, images[index], index);
@@ -4148,7 +4162,7 @@ export class WeblessAccountRepository {
           insert into product_images (product_id, image_type, path, sort_order, alt_text, created_at, updated_at)
           values ($1, $2, $3, $4, $5, now(), now())
         `,
-        [product.id, type, pathOrUrl, index, product.name]
+        [product.id, type, pathOrUrl, sortOrderOffset + index, product.name]
       );
     }
   }
@@ -6892,7 +6906,9 @@ function normalizeProductPayload(args, existing = null) {
     status: normalizeProductStatus(args.status ?? existing?.status ?? 'active'),
     is_service: Boolean(args.is_service ?? existing?.is_service ?? false),
     primary_images: normalizeProductImageInputs(args.primary_images),
+    primary_images_mode: normalizeProductImagesMode(args.primary_images_mode, existing),
     content_images: normalizeProductImageInputs(args.content_images),
+    content_images_mode: normalizeProductImagesMode(args.content_images_mode, existing),
     videos: normalizeStringArray(args.videos),
     same_price_spec_values: Array.isArray(args.same_price_spec_values) ? args.same_price_spec_values : [],
     different_price_variants: Array.isArray(args.different_price_variants) ? args.different_price_variants : [],
@@ -6908,6 +6924,19 @@ function normalizeProductPayload(args, existing = null) {
   }
 
   return payload;
+}
+
+function normalizeProductImagesMode(value, existing = null) {
+  if (value === undefined || value === null || value === '') {
+    return existing ? 'append' : 'replace';
+  }
+
+  const mode = String(value).trim();
+  if (!['append', 'replace'].includes(mode)) {
+    throw codedError('VALIDATION_FAILED', 'image mode must be append or replace.');
+  }
+
+  return mode;
 }
 
 function requireProductName(value) {

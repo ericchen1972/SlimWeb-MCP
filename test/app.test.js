@@ -334,6 +334,9 @@ test('MCP tools list includes homepage editing contract tools', async () => {
     assert.equal(toolsByName.get('slimweb_products_upsert').inputSchema.properties.primary_images.items.anyOf[0].properties.source.properties.image, undefined);
     assert.equal(toolsByName.get('slimweb_products_upsert').inputSchema.properties.primary_images.items.anyOf[0].properties.source.properties.data_base64, undefined);
     assert.equal(toolsByName.get('slimweb_products_upsert').inputSchema.properties.primary_images.items.anyOf[0].properties.source.properties.media_path.type, 'string');
+    assert.deepEqual(toolsByName.get('slimweb_products_upsert').inputSchema.properties.primary_images_mode.enum, ['append', 'replace']);
+    assert.match(toolsByName.get('slimweb_products_upsert').inputSchema.properties.primary_images_mode.description, /Defaults to append when updating/);
+    assert.deepEqual(toolsByName.get('slimweb_products_upsert').inputSchema.properties.content_images_mode.enum, ['append', 'replace']);
     assert.match(toolsByName.get('slimweb_products_upsert').inputSchema.properties.primary_images.description, /runtime/);
     assert.match(toolsByName.get('slimweb_products_upsert').inputSchema.properties.primary_images.description, /ChatGPT Remote MCP/);
     assert.match(toolsByName.get('slimweb_articles_upsert').description, /draft the article and cover-image concept first/);

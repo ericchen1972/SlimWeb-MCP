@@ -775,7 +775,8 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
   - `site_category_id`: 必須是 leaf category；如果分類不存在，先用 `slimweb_categories_upsert` 建立。
   - `name`: 商品名稱必填。
   - `base_price`: 售價必填。
-  - `primary_images`: 建立商品時至少一張主圖。圖片必須先確認 AI runtime 具備讀取圖片 bytes 與 outbound HTTPS `PUT` 能力，再走 `slimweb_uploads_create` -> raw bytes `PUT` -> `slimweb_uploads_commit`，最後把 `asset.media_path` 放進 `source.media_path`。不可傳 base64、`image_url`、`file_url`、`/mnt/data`、attachment handle 或 placeholder URL；ChatGPT Remote MCP 若只有對話附件則應向使用者說明目前不能代傳圖片。
+  - `primary_images`: 建立商品時至少一張主圖。更新既有商品時搭配 `primary_images_mode` 判斷是 `append` 還是 `replace`；預設更新為 `append`、建立為 `replace`。圖片必須先確認 AI runtime 具備讀取圖片 bytes 與 outbound HTTPS `PUT` 能力，再走 `slimweb_uploads_create` -> raw bytes `PUT` -> `slimweb_uploads_commit`，最後把 `asset.media_path` 放進 `source.media_path`。不可傳 base64、`image_url`、`file_url`、`/mnt/data`、attachment handle 或 placeholder URL；ChatGPT Remote MCP 若只有對話附件則應向使用者說明目前不能代傳圖片。
+  - `primary_images_mode` / `content_images_mode`: `append` 保留既有圖片並把這次圖片加到最後；`replace` 先移除同類型既有圖片再插入這次圖片。使用者說「新增、補一張、再放一張」時用 `append`；說「換掉、取代、改成這張」時用 `replace`，若只是替換第一張圖可優先用 `slimweb_products_images_replace`。
   - `status`: 預設 active；若使用者不確定，可說明 active/hidden/sold_out 差異。
 - 錯誤情境: validation failed、duplicate SKU、category not found、category is not leaf、missing primary image、conflict、unauthorized、product not found
 - Audit fields: request ID、user ID、account ID、site ID、product ID、changed fields

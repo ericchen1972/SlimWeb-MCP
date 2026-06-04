@@ -1188,9 +1188,39 @@ function productCatalogPool() {
         return { rows: [product] };
       }
 
+      if (sql.includes('update products')) {
+        const product = state.products.find((item) => item.site_id === params[16] && item.id === params[17]);
+        Object.assign(product, {
+          site_category_id: params[0],
+          variant_mode: params[1],
+          replace_image_by_variant: params[2],
+          sku: params[3],
+          name: params[4],
+          summary: params[5],
+          description: params[6],
+          base_price: params[7],
+          sale_price: params[8],
+          sale_ends_at: params[9],
+          cost_price: params[10],
+          stock: params[11],
+          buy_limit: params[12],
+          gift_coupon_template_id: params[13],
+          status: params[14],
+          is_service: params[15]
+        });
+        return { rows: [product] };
+      }
+
       if (sql.includes('delete from product_images')) {
         state.images = state.images.filter((image) => !(image.product_id === params[0] && image.image_type === params[1]));
         return { rows: [] };
+      }
+
+      if (sql.includes('coalesce(max(sort_order), -1) + 1') && sql.includes('from product_images')) {
+        const sortOrders = state.images
+          .filter((image) => image.product_id === params[0] && image.image_type === params[1])
+          .map((image) => image.sort_order);
+        return { rows: [{ next_sort_order: sortOrders.length === 0 ? 0 : Math.max(...sortOrders) + 1 }] };
       }
 
       if (sql.includes('insert into product_images')) {
@@ -2095,6 +2125,82 @@ test('repository uses committed media paths for product images and rejects base6
     }),
     /source.media_path/
   );
+});
+
+test('repository appends product images by default when updating existing products', async () => {
+  const pool = productCatalogPool();
+  const repository = new WeblessAccountRepository(pool, {
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+
+  const created = await repository.upsertProduct(11, {
+    site_id: 101,
+    site_category_id: 6,
+    name: '可追加圖片商品',
+    base_price: 1200,
+    primary_images: [{
+      source: {
+        media_path: 'sites/101/mcp-uploads/committed/original-main.png'
+      }
+    }]
+  });
+
+  const updated = await repository.upsertProduct(11, {
+    site_id: 101,
+    product_id: created.product.id,
+    site_category_id: 6,
+    name: '可追加圖片商品',
+    base_price: 1200,
+    primary_images: [{
+      source: {
+        media_path: 'sites/101/mcp-uploads/committed/new-main.png'
+      }
+    }]
+  });
+
+  assert.deepEqual(updated.product.primary_images.map((image) => image.path), [
+    'sites/101/mcp-uploads/committed/original-main.png',
+    'sites/101/mcp-uploads/committed/new-main.png'
+  ]);
+  assert.deepEqual(updated.product.primary_images.map((image) => image.sort_order), [0, 1]);
+});
+
+test('repository replaces product images when update mode is replace', async () => {
+  const pool = productCatalogPool();
+  const repository = new WeblessAccountRepository(pool, {
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+
+  const created = await repository.upsertProduct(11, {
+    site_id: 101,
+    site_category_id: 6,
+    name: '可取代圖片商品',
+    base_price: 1200,
+    primary_images: [{
+      source: {
+        media_path: 'sites/101/mcp-uploads/committed/original-main.png'
+      }
+    }]
+  });
+
+  const updated = await repository.upsertProduct(11, {
+    site_id: 101,
+    product_id: created.product.id,
+    site_category_id: 6,
+    name: '可取代圖片商品',
+    base_price: 1200,
+    primary_images_mode: 'replace',
+    primary_images: [{
+      source: {
+        media_path: 'sites/101/mcp-uploads/committed/replacement-main.png'
+      }
+    }]
+  });
+
+  assert.deepEqual(updated.product.primary_images.map((image) => image.path), [
+    'sites/101/mcp-uploads/committed/replacement-main.png'
+  ]);
+  assert.deepEqual(updated.product.primary_images.map((image) => image.sort_order), [0]);
 });
 
 test('repository rejects unsafe inline script content', async () => {
