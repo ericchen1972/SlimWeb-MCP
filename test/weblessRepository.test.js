@@ -2261,6 +2261,7 @@ function orderOperationsPool() {
         payment_method: 'cvs_pickup_cod',
         payment_provider: 'ecpay',
         payment_completed_at: new Date('2026-06-01T01:00:00Z'),
+        payment_completed_at_display: '2026-06-01 01:00:00',
         logistics_completed_at: null,
         logistics_details: null,
         pickup_store_provider: 'ecpay',
@@ -2277,7 +2278,8 @@ function orderOperationsPool() {
         grand_total_amount: 1200,
         item_count: 1,
         total_quantity: 1,
-        created_at: new Date('2026-06-01T01:00:00Z')
+        created_at: new Date('2026-06-01T01:00:00Z'),
+        created_at_display: '2026-06-01 01:00:00'
       },
       {
         id: 2,
@@ -2369,6 +2371,8 @@ test('repository exposes order actions and validates logistics creation', async 
 
   const orders = await repository.listOrders(11, { site_id: 101 });
   assert.equal(orders.orders[0].order_no, 'SWCVS');
+  assert.equal(orders.orders[0].created_at, '2026-06-01 01:00:00');
+  assert.equal(orders.orders[0].payment_completed_at, '2026-06-01 01:00:00');
   assert.deepEqual(orders.orders[0].available_actions.filter((action) => action.action === 'create_logistics').map((action) => [action.provider, action.store_type]), [['ecpay', 'seven']]);
 
   await assert.rejects(

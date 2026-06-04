@@ -162,6 +162,16 @@ const PAYMENT_METHOD_LABELS = {
   online_payment: '線上付款',
   linepay: 'LINE Pay'
 };
+const ORDER_DATE_FIELDS = [
+  'payment_completed_at',
+  'logistics_completed_at',
+  'return_requested_at',
+  'return_cancelled_at',
+  'return_completed_at',
+  'refund_completed_at',
+  'placed_at',
+  'created_at'
+];
 const MASKED_PROVIDER_CREDENTIAL = '••••••••••••••••';
 const FIXED_TEMPLATE_PAGE_KEYS = new Set([
   'index',
@@ -1077,7 +1087,8 @@ export class WeblessAccountRepository {
 
     const result = await this.pool.query(
       `
-        select *
+        select orders.*,
+               ${orderDateDisplaySelectSql()}
         from orders
         where ${where.join(' and ')}
         order by placed_at desc nulls last, created_at desc, id desc
@@ -1137,7 +1148,8 @@ export class WeblessAccountRepository {
 
     const result = await this.pool.query(
       `
-        select *
+        select orders.*,
+               ${orderDateDisplaySelectSql()}
         from orders
         where ${where.join(' and ')}
         order by return_requested_at desc nulls last, created_at desc, id desc
@@ -3663,7 +3675,8 @@ export class WeblessAccountRepository {
 
     const result = await this.pool.query(
       `
-        select *
+        select orders.*,
+               ${orderDateDisplaySelectSql()}
         from orders
         where site_id = $1
           and ($2::bigint is null or id = $2::bigint)
@@ -8375,13 +8388,13 @@ function formatOrderForMcp(order, context) {
     payment_method_label: PAYMENT_METHOD_LABELS[order.payment_method] ?? order.payment_method ?? '',
     payment_provider: order.payment_provider ?? '',
     payment_completed: order.payment_completed_at !== null && order.payment_completed_at !== undefined,
-    payment_completed_at: dateString(order.payment_completed_at),
+    payment_completed_at: orderDateString(order, 'payment_completed_at'),
     payment_details: paymentDetails,
     payment_status_label: order.payment_completed_at ? '已完成' : '未完成',
     logistics_status: logisticsStatus,
     logistics_status_label: WORKFLOW_STATUS_LABELS[logisticsStatus] ?? logisticsStatus,
     logistics_raw_status_label: logisticsRawStatusLabel(logisticsDetails),
-    logistics_completed_at: dateString(order.logistics_completed_at),
+    logistics_completed_at: orderDateString(order, 'logistics_completed_at'),
     logistics_details: logisticsDetails,
     pickup_store_provider: order.pickup_store_provider ?? '',
     pickup_store_type: order.pickup_store_type ?? '',
@@ -8390,9 +8403,9 @@ function formatOrderForMcp(order, context) {
     pickup_store_address: order.pickup_store_address ?? '',
     return_status: returnStatus,
     return_status_label: WORKFLOW_STATUS_LABELS[returnStatus] ?? returnStatus,
-    return_requested_at: dateString(order.return_requested_at),
-    return_cancelled_at: dateString(order.return_cancelled_at),
-    return_completed_at: dateString(order.return_completed_at),
+    return_requested_at: orderDateString(order, 'return_requested_at'),
+    return_cancelled_at: orderDateString(order, 'return_cancelled_at'),
+    return_completed_at: orderDateString(order, 'return_completed_at'),
     return_logistics_provider: order.return_logistics_provider ?? '',
     return_logistics_type: order.return_logistics_type ?? '',
     return_logistics_tracking_no: order.return_logistics_tracking_no ?? '',
@@ -8404,7 +8417,7 @@ function formatOrderForMcp(order, context) {
     refund_status_label: WORKFLOW_STATUS_LABELS[refundStatus] ?? refundStatus,
     refund_provider: order.refund_provider ?? '',
     refund_amount: Number.parseInt(order.refund_amount ?? '0', 10),
-    refund_completed_at: dateString(order.refund_completed_at),
+    refund_completed_at: orderDateString(order, 'refund_completed_at'),
     refund_details: refundDetails,
     buyer_name: order.buyer_name ?? '',
     buyer_email: order.buyer_email ?? '',
@@ -8420,14 +8433,24 @@ function formatOrderForMcp(order, context) {
     grand_total_amount: Number.parseInt(order.grand_total_amount ?? '0', 10),
     item_count: Number.parseInt(order.item_count ?? '0', 10),
     total_quantity: Number.parseInt(order.total_quantity ?? '0', 10),
-    placed_at: dateString(order.placed_at),
-    created_at: dateString(order.created_at),
+    placed_at: orderDateString(order, 'placed_at'),
+    created_at: orderDateString(order, 'created_at'),
     available_actions: actions,
     action_policy: {
       ask_user_when_requires_choice: actions.some((action) => action.requires_user_choice),
       note: 'Only call action tools using an item from available_actions. If more than one logistics provider is available, ask the user to choose before creating logistics.'
     }
   };
+}
+
+function orderDateDisplaySelectSql() {
+  return ORDER_DATE_FIELDS
+    .map((field) => `to_char(${field}, 'YYYY-MM-DD HH24:MI:SS') as ${field}_display`)
+    .join(',\n               ');
+}
+
+function orderDateString(order, field) {
+  return dateString(order[`${field}_display`] ?? order[field]);
 }
 
 function orderLogisticsActions(order, logisticsProviders) {

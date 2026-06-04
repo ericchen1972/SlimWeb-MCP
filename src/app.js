@@ -19,6 +19,11 @@ const EMPTY_INPUT_SCHEMA = {
   type: 'object',
   properties: {}
 };
+const DEFAULT_OUTPUT_SCHEMA = {
+  type: 'object',
+  properties: {},
+  additionalProperties: true
+};
 function orderIdentityInputSchema() {
   return {
     type: 'object',
@@ -1918,8 +1923,13 @@ function sessionIdentity(session) {
 }
 
 async function toolsForSession(session, context) {
+  const withDefaultOutputSchema = (tool) => ({
+    ...tool,
+    outputSchema: tool.outputSchema ?? DEFAULT_OUTPUT_SCHEMA
+  });
+
   if (!session) {
-    return MCP_TOOLS;
+    return MCP_TOOLS.map(withDefaultOutputSchema);
   }
 
   const identity = sessionIdentity(session);
@@ -1942,7 +1952,7 @@ async function toolsForSession(session, context) {
 
     const required = TOOL_PERMISSION_RULES[tool.name] ?? [];
     return hasAnyPermission(Array.from(union), required);
-  });
+  }).map(withDefaultOutputSchema);
 }
 
 function forbiddenError(message) {

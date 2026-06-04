@@ -158,6 +158,32 @@ test('MCP tools list includes input schemas', async () => {
   });
 });
 
+test('MCP tools list includes output schemas for structured content', async () => {
+  await withServer(async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/mcp`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 22,
+        method: 'tools/list'
+      })
+    });
+
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(body.id, 22);
+    assert.ok(Array.isArray(body.result.tools));
+
+    for (const tool of body.result.tools) {
+      assert.equal(typeof tool.outputSchema, 'object');
+      assert.equal(tool.outputSchema.type, 'object');
+      assert.equal(typeof tool.outputSchema.properties, 'object');
+    }
+  });
+});
+
 test('README main tool table lists every discoverable tool as available', async () => {
   await withServer(async (baseUrl) => {
     const response = await fetch(`${baseUrl}/mcp`, {
