@@ -1051,9 +1051,8 @@ export class WeblessAccountRepository {
 
   async listOrders(accountId, args, scope = 'orders') {
     const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const limit = Math.min(requireOptionalPositiveInteger(args.limit, 'limit') ?? 20, 100);
+    const limit = Math.min(requireOptionalPositiveInteger(args.limit, 'limit') ?? 20, 20);
     const offset = requireOptionalNonNegativeInteger(args.offset, 'offset') ?? 0;
-    const searchOrderNo = nullableString(args.search_order_no);
     const statuses = normalizeOrderStatuses(args.statuses);
     const [paymentProviders, logisticsProviders] = await Promise.all([
       this.listPaymentProvidersForSite(site.id),
@@ -1070,14 +1069,29 @@ export class WeblessAccountRepository {
       where.push('(return_requested_at is null or return_cancelled_at is not null)');
     }
 
-    if (statuses.length > 0) {
-      params.push(statuses);
-      where.push(`status = any($${params.length}::text[])`);
-    }
+    applyOrderListFilters(where, params, args, statuses);
 
-    if (searchOrderNo) {
-      params.push(`%${searchOrderNo}%`);
-      where.push(`order_no ilike $${params.length}`);
+    const countResult = await this.pool.query(
+      `
+        select count(*)::int as total
+        from orders
+        where ${where.join(' and ')}
+      `,
+      params
+    );
+    const total = Number.parseInt(countResult.rows[0]?.total ?? '0', 10);
+    const filters = normalizedOrderListFilters(args, statuses, limit, offset);
+
+    if (total > 20) {
+      return {
+        site,
+        scope,
+        filters,
+        total,
+        too_many: true,
+        message: 'Order search matched more than 20 orders. Ask the user to open the admin backend and narrow the search.',
+        orders: []
+      };
     }
 
     params.push(limit);
@@ -1105,18 +1119,15 @@ export class WeblessAccountRepository {
     return {
       site,
       scope,
-      filters: {
-        search_order_no: searchOrderNo ?? '',
-        statuses,
-        limit,
-        offset
-      },
+      filters,
+      total,
+      too_many: false,
       orders
     };
   }
 
   async listPendingOrders(accountId, args) {
-    return this.listOrders(accountId, { ...args, statuses: ['pending'] }, 'orders');
+    return this.listOrders(accountId, { ...args, logistics_status: 'pending' }, 'orders');
   }
 
   async listPendingReturns(accountId, args) {
@@ -8358,6 +8369,117 @@ function nullableString(value) {
   const text = String(value).trim();
 
   return text === '' ? null : text;
+}
+
+function normalizedOrderListFilters(args, statuses, limit, offset) {
+  return {
+    search_order_no: nullableString(args.search_order_no) ?? '',
+    search_field: nullableString(args.search_field) ?? '',
+    search_value: nullableString(args.search_value) ?? '',
+    fuzzy: Boolean(args.fuzzy),
+    date_from: nullableString(args.date_from) ?? '',
+    date_to: nullableString(args.date_to) ?? '',
+    amount_min: args.amount_min ?? null,
+    amount_max: args.amount_max ?? null,
+    logistics_status: nullableString(args.logistics_status) ?? '',
+    statuses,
+    limit,
+    offset
+  };
+}
+
+function applyOrderListFilters(where, params, args, statuses) {
+  const searchOrderNo = nullableString(args.search_order_no);
+  if (searchOrderNo) {
+    params.push(`%${searchOrderNo}%`);
+    where.push(`order_no ilike $${params.length}`);
+  }
+
+  if (statuses.length > 0) {
+    params.push(statuses);
+    where.push(`status = any($${params.length}::text[])`);
+  }
+
+  if (nullableString(args.logistics_status) === 'pending') {
+    where.push('payment_completed_at is not null');
+    where.push('logistics_completed_at is null');
+  }
+
+  const searchField = nullableString(args.search_field);
+  if (!searchField) {
+    return;
+  }
+
+  if (searchField === 'date_range') {
+    const dateFrom = nullableString(args.date_from);
+    const dateTo = nullableString(args.date_to);
+    if (dateFrom) {
+      params.push(dateFrom);
+      where.push(`placed_at::date >= $${params.length}::date`);
+    }
+    if (dateTo) {
+      params.push(dateTo);
+      where.push(`placed_at::date <= $${params.length}::date`);
+    }
+    return;
+  }
+
+  if (searchField === 'amount_range') {
+    const amountMin = args.amount_min === undefined || args.amount_min === null || args.amount_min === '' ? null : Number.parseInt(args.amount_min, 10);
+    const amountMax = args.amount_max === undefined || args.amount_max === null || args.amount_max === '' ? null : Number.parseInt(args.amount_max, 10);
+    if (Number.isInteger(amountMin) && amountMin >= 0) {
+      params.push(amountMin);
+      where.push(`grand_total_amount >= $${params.length}`);
+    }
+    if (Number.isInteger(amountMax) && amountMax >= 0) {
+      params.push(amountMax);
+      where.push(`grand_total_amount <= $${params.length}`);
+    }
+    return;
+  }
+
+  if (searchField === 'payment_incomplete') {
+    where.push('payment_completed_at is null');
+    return;
+  }
+
+  const allowedFields = new Set(['order_no', 'buyer_name', 'buyer_phone', 'buyer_email', 'recipient_name', 'recipient_phone', 'product_name']);
+  if (!allowedFields.has(searchField)) {
+    throw codedError('VALIDATION_FAILED', 'search_field must match a supported admin order search field.');
+  }
+
+  const searchValue = nullableString(args.search_value);
+  if (!searchValue) {
+    return;
+  }
+
+  const operator = args.fuzzy ? 'ilike' : '=';
+  const value = args.fuzzy ? `%${searchValue}%` : searchValue;
+
+  params.push(value);
+  const valueIndex = params.length;
+
+  if (searchField === 'product_name') {
+    where.push(`exists (select 1 from order_items oi where oi.order_id = orders.id and oi.product_name ${operator} $${valueIndex})`);
+    return;
+  }
+
+  if (searchField === 'buyer_name') {
+    where.push(`(buyer_name ${operator} $${valueIndex} or exists (select 1 from members m where m.id = orders.member_id and m.name ${operator} $${valueIndex}))`);
+    return;
+  }
+
+  if (searchField === 'buyer_phone') {
+    where.push(`(recipient_phone ${operator} $${valueIndex} or exists (select 1 from members m where m.id = orders.member_id and m.mobile ${operator} $${valueIndex}))`);
+    return;
+  }
+
+  if (searchField === 'buyer_email') {
+    where.push(`(buyer_email ${operator} $${valueIndex} or exists (select 1 from members m where m.id = orders.member_id and m.email ${operator} $${valueIndex}))`);
+    return;
+  }
+
+  where.push(`${searchField} ${operator} $${valueIndex}`);
 }
 
 function normalizeOrderStatuses(value) {

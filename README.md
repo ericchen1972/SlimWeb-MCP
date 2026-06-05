@@ -223,8 +223,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 | `slimweb_uploads_create` | Available | asset write | 向 Webless 申請短效 signed upload URL，讓 AI client Python sandbox 直接 PUT 圖片 bytes。 |
 | `slimweb_uploads_commit` | Available | asset write | 提交已上傳圖片，讓 Webless 走後台同一套圖片驗證與 resize，回傳 `media_path`。 |
 | `slimweb_pages_delete` | Available | content write | 刪除自訂頁面內容；固定系統頁不可刪除。 |
-| `slimweb_orders_list` | Available | order read | 列出正常訂單，包含金流、物流、退款狀態與 `available_actions`。 |
-| `slimweb_orders_pending_list` | Available | order read | 列出待處理正常訂單，供 AI 判斷下一步可做操作。 |
+| `slimweb_orders_list` | Available | order read | 用後台同一套搜尋參數查正常訂單；「待處理」請用 `logistics_status=pending`，代表金流完成但物流未完成。超過 20 筆時 AI 應請用戶到後台縮小條件。 |
 | `slimweb_orders_get` | Available | order read | 讀取單一訂單，包含品項、付款、物流、退貨、退款與 `available_actions`。 |
 | `slimweb_orders_create_logistics` | Available | order write | 依 `available_actions` 建立正物流單。 |
 | `slimweb_orders_mark_shipped` | Available | order write | 無物流單時手動標記出貨完成。 |
@@ -877,7 +876,6 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - Scope: active site
 - Read tools:
   - `slimweb_orders_list`: 列出正常訂單。
-  - `slimweb_orders_pending_list`: 列出待處理正常訂單。
   - `slimweb_orders_get`: 讀取單一訂單與品項。
   - `slimweb_returns_pending_list`: 列出仍需處理的退貨單。
 - Write tools:

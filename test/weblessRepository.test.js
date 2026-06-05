@@ -2402,6 +2402,7 @@ test('repository updates root element fragments and css for a custom theme', asy
 
 function orderOperationsPool() {
   const state = {
+    queries: [],
     site: {
       id: 101,
       slug: 'site-1',
@@ -2474,6 +2475,35 @@ function orderOperationsPool() {
         recipient_zip: '104',
         recipient_address: '台北市內湖區',
         created_at: new Date('2026-06-01T02:00:00Z')
+      },
+      {
+        id: 3,
+        site_id: 101,
+        order_no: 'SWUNPAID',
+        status: 'pending',
+        payment_method: 'home_delivery_online_payment',
+        payment_provider: 'ecpay',
+        payment_completed_at: null,
+        logistics_completed_at: null,
+        logistics_details: null,
+        pickup_store_provider: null,
+        pickup_store_type: null,
+        pickup_store_id: null,
+        return_requested_at: null,
+        return_cancelled_at: null,
+        return_status: null,
+        return_logistics_tracking_no: null,
+        refund_status: null,
+        refund_completed_at: null,
+        refund_amount: 0,
+        grand_total_amount: 1600,
+        item_count: 1,
+        total_quantity: 1,
+        buyer_name: '陳 Bobo',
+        buyer_email: 'bobo@example.com',
+        recipient_name: '陳 Bobo',
+        recipient_phone: '0911111111',
+        created_at: new Date('2026-06-01T04:00:00Z')
       }
     ]
   };
@@ -2481,6 +2511,26 @@ function orderOperationsPool() {
   return {
     state,
     async query(sql, params) {
+      state.queries.push({ sql, params });
+      const filterOrdersForSql = () => state.orders.filter((order) => {
+        if (sql.includes('return_requested_at is not null') && !order.return_requested_at) {
+          return false;
+        }
+        if (sql.includes('(return_requested_at is null or return_cancelled_at is not null)') && order.return_requested_at && !order.return_cancelled_at) {
+          return false;
+        }
+        if (sql.includes('payment_completed_at is not null') && !order.payment_completed_at) {
+          return false;
+        }
+        if (sql.includes('payment_completed_at is null') && order.payment_completed_at) {
+          return false;
+        }
+        if (sql.includes('logistics_completed_at is null') && order.logistics_completed_at) {
+          return false;
+        }
+        return true;
+      });
+
       if (sql.includes('from sites') && sql.includes('account_id = $1 and id = $2')) {
         return { rows: [state.site] };
       }
@@ -2490,11 +2540,14 @@ function orderOperationsPool() {
       if (sql.includes('from site_logistics_providers') && sql.includes('where site_id = $1')) {
         return { rows: state.logisticsProviders };
       }
+      if (sql.includes('select count(*)::int as total') && sql.includes('from orders')) {
+        return { rows: [{ total: String(filterOrdersForSql().length) }] };
+      }
       if (sql.includes('from orders') && sql.includes('limit $') && sql.includes('return_requested_at is not null')) {
-        return { rows: state.orders.filter((order) => order.return_requested_at && !order.return_cancelled_at) };
+        return { rows: filterOrdersForSql() };
       }
       if (sql.includes('from orders') && sql.includes('limit $') && sql.includes('(return_requested_at is null or return_cancelled_at is not null)')) {
-        return { rows: state.orders.filter((order) => !order.return_requested_at || order.return_cancelled_at) };
+        return { rows: filterOrdersForSql() };
       }
       if (sql.includes('from orders') && sql.includes('limit 1')) {
         return {
@@ -2553,4 +2606,40 @@ test('repository exposes order actions and validates logistics creation', async 
   assert.ok(returnActions.includes('cancel_return'));
   assert.ok(returnActions.includes('complete_return'));
   assert.ok(returnActions.includes('create_return_logistics'));
+});
+
+test('repository searches orders with admin pending and payment incomplete filters', async () => {
+  const pool = orderOperationsPool();
+  const repository = new WeblessAccountRepository(pool, {
+    laravelAppKey: 'base64:' + Buffer.from('12345678901234567890123456789012').toString('base64')
+  });
+
+  const pending = await repository.listOrders(11, { site_id: 101, logistics_status: 'pending' });
+  assert.deepEqual(pending.orders.map((order) => order.order_no), ['SWCVS']);
+  assert.equal(pending.filters.logistics_status, 'pending');
+  assert.equal(pending.total, 1);
+
+  const unpaid = await repository.listOrders(11, { site_id: 101, search_field: 'payment_incomplete' });
+  assert.deepEqual(unpaid.orders.map((order) => order.order_no), ['SWUNPAID']);
+  assert.equal(unpaid.filters.search_field, 'payment_incomplete');
+  assert.equal(unpaid.total, 1);
+});
+
+test('repository returns too many orders instead of listing more than twenty matches', async () => {
+  const pool = orderOperationsPool();
+  for (let index = 0; index < 21; index += 1) {
+    pool.state.orders.push({
+      ...pool.state.orders[0],
+      id: 100 + index,
+      order_no: `SWBULK${index}`
+    });
+  }
+  const repository = new WeblessAccountRepository(pool, {
+    laravelAppKey: 'base64:' + Buffer.from('12345678901234567890123456789012').toString('base64')
+  });
+
+  const result = await repository.listOrders(11, { site_id: 101, logistics_status: 'pending' });
+  assert.equal(result.too_many, true);
+  assert.equal(result.total, 22);
+  assert.deepEqual(result.orders, []);
 });

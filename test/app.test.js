@@ -245,7 +245,6 @@ test('MCP tools list includes homepage editing contract tools', async () => {
       'slimweb_payment_logistics_get',
       'slimweb_payment_logistics_update',
       'slimweb_orders_list',
-      'slimweb_orders_pending_list',
       'slimweb_orders_get',
       'slimweb_orders_create_logistics',
       'slimweb_orders_mark_shipped',
@@ -339,6 +338,10 @@ test('MCP tools list includes homepage editing contract tools', async () => {
     assert.deepEqual(toolsByName.get('slimweb_products_upsert').inputSchema.properties.content_images_mode.enum, ['append', 'replace']);
     assert.match(toolsByName.get('slimweb_products_upsert').inputSchema.properties.primary_images.description, /runtime/);
     assert.match(toolsByName.get('slimweb_products_upsert').inputSchema.properties.primary_images.description, /ChatGPT Remote MCP/);
+    assert.equal(toolsByName.get('slimweb_orders_pending_list'), undefined);
+    assert.ok(toolsByName.get('slimweb_orders_list').inputSchema.properties.search_field.enum.includes('buyer_name'));
+    assert.ok(toolsByName.get('slimweb_orders_list').inputSchema.properties.search_field.enum.includes('payment_incomplete'));
+    assert.match(toolsByName.get('slimweb_orders_list').inputSchema.properties.logistics_status.description, /payment is completed/);
     assert.match(toolsByName.get('slimweb_articles_upsert').description, /draft the article and cover-image concept first/);
     assert.match(toolsByName.get('slimweb_articles_upsert').description, /ask the user to paste or re-upload the selected image/);
     assert.match(toolsByName.get('slimweb_articles_upsert').inputSchema.properties.cover_image.description, /16:9/);
@@ -491,10 +494,6 @@ test('homepage editing tools call repository implementations', async () => {
     listOrders: async (accountId, args) => {
       calls.push(['orders_list', accountId, args]);
       return { orders: [{ order_no: 'SW1', available_actions: [] }] };
-    },
-    listPendingOrders: async (accountId, args) => {
-      calls.push(['orders_pending_list', accountId, args]);
-      return { orders: [{ order_no: 'SWP', available_actions: [] }] };
     },
     getOrder: async (accountId, args) => {
       calls.push(['orders_get', accountId, args]);
@@ -814,7 +813,6 @@ test('homepage editing tools call repository implementations', async () => {
     assert.equal((await callTool(34, 'slimweb_payment_logistics_get', { site_id: 101 })).result.structuredContent.supported_payment_providers[0].provider, 'ecpay');
     assert.equal((await callTool(35, 'slimweb_payment_logistics_update', { site_id: 101, payments: [{ provider: 'ecpay', is_enabled: true }] })).result.structuredContent.payment_providers[0].provider, 'ecpay');
     assert.equal((await callTool(36, 'slimweb_orders_list', { site_id: 101 })).result.structuredContent.orders[0].order_no, 'SW1');
-    assert.equal((await callTool(37, 'slimweb_orders_pending_list', { site_id: 101 })).result.structuredContent.orders[0].order_no, 'SWP');
     assert.equal((await callTool(38, 'slimweb_orders_get', { site_id: 101, order_no: 'SW1' })).result.structuredContent.order.order_no, 'SW1');
     assert.equal((await callTool(39, 'slimweb_orders_create_logistics', { site_id: 101, order_no: 'SW1', provider: 'hct' })).result.structuredContent.order.logistics_status, 'created');
     assert.equal((await callTool(40, 'slimweb_orders_mark_shipped', { site_id: 101, order_no: 'SW1' })).result.structuredContent.order.logistics_status, 'completed');
@@ -900,8 +898,8 @@ test('homepage editing tools call repository implementations', async () => {
     })).result.structuredContent.public_url, /hero\.png/);
     assert.equal((await callTool(68, 'slimweb_themes_delete', { site_id: 101, theme_id: 22 })).result.structuredContent.deleted_theme_id, 22);
 
-		    assert.deepEqual(calls.map((call) => call[0]), ['select', 'themes_list', 'themes_create', 'shell_context', 'profile_get', 'profile_upsert', 'profile_append', 'site_readiness_get', 'seo_get', 'seo_update', 'integration_get', 'integration_update', 'payment_logistics_get', 'payment_logistics_update', 'orders_list', 'orders_pending_list', 'orders_get', 'orders_create_logistics', 'orders_mark_shipped', 'returns_pending_list', 'returns_create_logistics', 'returns_cancel', 'returns_complete', 'refunds_complete', 'refunds_create', 'dashboard_summary', 'settings_get', 'settings_update', 'admins_list', 'admin_upsert', 'admin_delete', 'external_assets_list', 'external_asset_upsert', 'external_asset_delete', 'external_assets_reorder', 'articles_list', 'article_upsert', 'categories_list', 'category_upsert', 'category_delete', 'nav_items_list', 'nav_item_upsert', 'nav_item_delete', 'products_list', 'product_get', 'upload_create', 'upload_commit', 'chatgpt_attachment_import', 'product_upsert', 'product_delete', 'product_import_inspect', 'product_import_validate', 'product_import_commit', 'coupon_templates_list', 'coupon_template_upsert', 'member_coupon_issue', 'members_list', 'member_get', 'discount_codes_list', 'discount_code_upsert', 'member_tiers_list', 'member_tier_upsert', 'threshold_gifts_list', 'threshold_gift_upsert', 'product_add_ons_list', 'product_add_on_upsert', 'faqs_list', 'faq_upsert', 'customer_service_logs_list', 'customer_service_settings_get', 'customer_service_settings_update', 'export_create', 'audit_list', 'themes_root', 'preview', 'get_home', 'update_home', 'page_upsert', 'page_delete', 'upload', 'themes_delete']);
-		    assert.deepEqual(calls.map((call) => call[1].email), Array.from({ length: 81 }, () => 'owner@example.com'));
+		    assert.deepEqual(calls.map((call) => call[0]), ['select', 'themes_list', 'themes_create', 'shell_context', 'profile_get', 'profile_upsert', 'profile_append', 'site_readiness_get', 'seo_get', 'seo_update', 'integration_get', 'integration_update', 'payment_logistics_get', 'payment_logistics_update', 'orders_list', 'orders_get', 'orders_create_logistics', 'orders_mark_shipped', 'returns_pending_list', 'returns_create_logistics', 'returns_cancel', 'returns_complete', 'refunds_complete', 'refunds_create', 'dashboard_summary', 'settings_get', 'settings_update', 'admins_list', 'admin_upsert', 'admin_delete', 'external_assets_list', 'external_asset_upsert', 'external_asset_delete', 'external_assets_reorder', 'articles_list', 'article_upsert', 'categories_list', 'category_upsert', 'category_delete', 'nav_items_list', 'nav_item_upsert', 'nav_item_delete', 'products_list', 'product_get', 'upload_create', 'upload_commit', 'chatgpt_attachment_import', 'product_upsert', 'product_delete', 'product_import_inspect', 'product_import_validate', 'product_import_commit', 'coupon_templates_list', 'coupon_template_upsert', 'member_coupon_issue', 'members_list', 'member_get', 'discount_codes_list', 'discount_code_upsert', 'member_tiers_list', 'member_tier_upsert', 'threshold_gifts_list', 'threshold_gift_upsert', 'product_add_ons_list', 'product_add_on_upsert', 'faqs_list', 'faq_upsert', 'customer_service_logs_list', 'customer_service_settings_get', 'customer_service_settings_update', 'export_create', 'audit_list', 'themes_root', 'preview', 'get_home', 'update_home', 'page_upsert', 'page_delete', 'upload', 'themes_delete']);
+		    assert.deepEqual(calls.map((call) => call[1].email), Array.from({ length: 80 }, () => 'owner@example.com'));
   });
 });
 

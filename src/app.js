@@ -42,6 +42,21 @@ function orderListInputSchema() {
     properties: {
       site_id: { type: 'integer' },
       search_order_no: { type: 'string' },
+      search_field: {
+        type: 'string',
+        enum: ['order_no', 'buyer_name', 'buyer_phone', 'buyer_email', 'recipient_name', 'recipient_phone', 'product_name', 'date_range', 'amount_range', 'payment_incomplete']
+      },
+      search_value: { type: 'string' },
+      fuzzy: { type: 'boolean' },
+      date_from: { type: 'string' },
+      date_to: { type: 'string' },
+      amount_min: { type: 'integer' },
+      amount_max: { type: 'integer' },
+      logistics_status: {
+        type: 'string',
+        enum: ['pending'],
+        description: 'Use pending for the admin pending-order button: payment is completed but logistics is not completed.'
+      },
       statuses: {
         type: 'array',
         items: { type: 'string', enum: ['pending', 'confirmed', 'returning', 'returned', 'cancelled'] }
@@ -547,12 +562,7 @@ const MCP_TOOLS = [
   },
   {
     name: 'slimweb_orders_list',
-    description: 'List normal SlimWeb orders with payment/logistics/refund state and available_actions for AI-safe order operations.',
-    inputSchema: orderListInputSchema()
-  },
-  {
-    name: 'slimweb_orders_pending_list',
-    description: 'List pending normal SlimWeb orders that need admin handling. Each order includes available_actions.',
+    description: 'Search normal SlimWeb orders with the same admin filters. For "unhandled/pending orders", use logistics_status=pending, which means payment completed and logistics not completed. If total exceeds 20, tell the user there are too many results and ask them to use the admin backend.',
     inputSchema: orderListInputSchema()
   },
   {
@@ -1843,7 +1853,6 @@ const TOOL_PERMISSION_RULES = {
   slimweb_payment_logistics_get: ['payment_logistics'],
   slimweb_payment_logistics_update: ['payment_logistics'],
   slimweb_orders_list: ['orders_management'],
-  slimweb_orders_pending_list: ['orders_management'],
   slimweb_orders_get: ['orders_management'],
   slimweb_orders_create_logistics: ['orders_management'],
   slimweb_orders_mark_shipped: ['orders_management'],
@@ -2298,19 +2307,6 @@ async function toolResultForCall(message, request, context) {
     case 'slimweb_orders_list': {
       try {
         const result = await context.accountRepository.listOrders(
-          await actorForTool(session, name, toolArgs(message), context),
-          toolArgs(message)
-        );
-
-        return mcpResult(message.id ?? null, mcpJsonContent(result));
-      } catch (error) {
-        return toolExceptionToMcpError(message?.id ?? null, error);
-      }
-    }
-
-    case 'slimweb_orders_pending_list': {
-      try {
-        const result = await context.accountRepository.listPendingOrders(
           await actorForTool(session, name, toolArgs(message), context),
           toolArgs(message)
         );
