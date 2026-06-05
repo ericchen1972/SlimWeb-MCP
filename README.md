@@ -224,6 +224,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 | `slimweb_uploads_commit` | Available | asset write | 提交已上傳圖片，讓 Webless 走後台同一套圖片驗證與 resize，回傳 `media_path`。 |
 | `slimweb_pages_delete` | Available | content write | 刪除自訂頁面內容；固定系統頁不可刪除。 |
 | `slimweb_orders_list` | Available | order read | 用後台同一套搜尋參數查正常訂單；「待處理」請用 `logistics_status=pending`，代表金流完成但物流未完成。超過 20 筆時 AI 應請用戶到後台縮小條件。 |
+| `slimweb_orders_profit_statistics` | Available | order read | 計算已付款且未取消訂單的純利；不帶日期代表全部，問「這個月」時由 AI 帶入當月起訖日期。 |
 | `slimweb_orders_get` | Available | order read | 讀取單一訂單，包含品項、付款、物流、退貨、退款與 `available_actions`。 |
 | `slimweb_orders_create_logistics` | Available | order write | 依 `available_actions` 建立正物流單。 |
 | `slimweb_orders_mark_shipped` | Available | order write | 無物流單時手動標記出貨完成。 |

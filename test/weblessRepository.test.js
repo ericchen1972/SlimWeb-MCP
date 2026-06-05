@@ -584,7 +584,8 @@ function paymentLogisticsPool() {
       name: '測試網站',
       domain: '',
       callback_code: 'swcb_test101',
-      site_status: 'active'
+      site_status: 'active',
+      shipping_fee: 120
     },
     paymentProviders: [
       { id: 1, site_id: 101, provider: 'newebpay', mode: 'production', is_enabled: true, settings: null, sort_order: 20 }
@@ -2505,6 +2506,15 @@ function orderOperationsPool() {
         recipient_phone: '0911111111',
         created_at: new Date('2026-06-01T04:00:00Z')
       }
+    ],
+    orderItems: [
+      { id: 1, order_id: 1, product_id: 1, quantity: 2 },
+      { id: 2, order_id: 2, product_id: 2, quantity: 1 },
+      { id: 3, order_id: 3, product_id: 1, quantity: 1 }
+    ],
+    products: [
+      { id: 1, cost_price: 500 },
+      { id: 2, cost_price: 0 }
     ]
   };
 
@@ -2534,6 +2544,9 @@ function orderOperationsPool() {
       if (sql.includes('from sites') && sql.includes('account_id = $1 and id = $2')) {
         return { rows: [state.site] };
       }
+      if (sql.includes('select shipping_fee') && sql.includes('from sites')) {
+        return { rows: [{ shipping_fee: 120 }] };
+      }
       if (sql.includes('from site_payment_providers') && sql.includes('where site_id = $1')) {
         return { rows: state.paymentProviders };
       }
@@ -2554,6 +2567,39 @@ function orderOperationsPool() {
           rows: state.orders.filter((order) => order.site_id === params[0]
             && (params[1] === null || order.id === params[1])
             && (params[2] === null || order.order_no === params[2])).slice(0, 1)
+        };
+      }
+      if (sql.includes('sum(coalesce(p.cost_price, 0)') && sql.includes('from orders o')) {
+        const dateFrom = params[1] ?? null;
+        const dateTo = params[2] ?? null;
+        return {
+          rows: state.orders
+            .filter((order) => order.site_id === params[0])
+            .filter((order) => order.payment_completed_at)
+            .filter((order) => order.status !== 'cancelled')
+            .filter((order) => !dateFrom || String(order.created_at_display ?? order.created_at).slice(0, 10) >= dateFrom)
+            .filter((order) => !dateTo || String(order.created_at_display ?? order.created_at).slice(0, 10) <= dateTo)
+            .map((order) => {
+              const items = state.orderItems.filter((item) => item.order_id === order.id);
+              const hasMissingCost = items.length === 0 || items.some((item) => {
+                const product = state.products.find((candidate) => candidate.id === item.product_id);
+                return !product || Number.parseInt(product.cost_price ?? '0', 10) <= 0;
+              });
+              const productCostTotal = items.reduce((total, item) => {
+                const product = state.products.find((candidate) => candidate.id === item.product_id);
+                return total + (Number.parseInt(product?.cost_price ?? '0', 10) * Number.parseInt(item.quantity ?? '0', 10));
+              }, 0);
+
+              return {
+                id: order.id,
+                order_no: order.order_no,
+                grand_total_amount: order.grand_total_amount,
+                shipping_fee_amount: order.shipping_fee_amount ?? 0,
+                product_cost_total: productCostTotal,
+                item_count: items.length,
+                has_missing_cost: hasMissingCost
+              };
+            })
         };
       }
       if (sql.includes('from order_items')) {
@@ -2623,6 +2669,45 @@ test('repository searches orders with admin pending and payment incomplete filte
   assert.deepEqual(unpaid.orders.map((order) => order.order_no), ['SWUNPAID']);
   assert.equal(unpaid.filters.search_field, 'payment_incomplete');
   assert.equal(unpaid.total, 1);
+});
+
+test('repository calculates order profit statistics with optional date range', async () => {
+  const pool = orderOperationsPool();
+  pool.state.orders[0].shipping_fee_amount = 0;
+  pool.state.orders[0].grand_total_amount = 3000;
+  pool.state.orders[0].created_at_display = '2026-06-02 10:00:00';
+  pool.state.orders[1].shipping_fee_amount = 80;
+  pool.state.orders[1].grand_total_amount = 2000;
+  pool.state.orders[1].created_at = new Date('2026-06-03T10:00:00Z');
+  pool.state.orders[1].created_at_display = '2026-06-03 10:00:00';
+  pool.state.orders.push({
+    ...pool.state.orders[0],
+    id: 4,
+    order_no: 'SWOUTSIDE',
+    grand_total_amount: 2500,
+    shipping_fee_amount: 100,
+    created_at_display: '2026-05-01 10:00:00'
+  });
+  pool.state.orderItems.push({ id: 4, order_id: 4, product_id: 1, quantity: 2 });
+  const repository = new WeblessAccountRepository(pool, {
+    laravelAppKey: 'base64:' + Buffer.from('12345678901234567890123456789012').toString('base64')
+  });
+
+  const ranged = await repository.calculateOrderProfitStatistics(11, {
+    site_id: 101,
+    date_from: '2026-06-01',
+    date_to: '2026-06-30'
+  });
+  assert.equal(ranged.profit.total_amount, 1880);
+  assert.equal(ranged.profit.calculated_order_count, 1);
+  assert.equal(ranged.profit.skipped_order_count, 1);
+  assert.equal(ranged.profit.gross_order_total, 3000);
+  assert.equal(ranged.profit.product_cost_total, 1000);
+  assert.equal(ranged.profit.free_shipping_cost_total, 120);
+
+  const all = await repository.calculateOrderProfitStatistics(11, { site_id: 101 });
+  assert.equal(all.profit.total_amount, 3380);
+  assert.equal(all.profit.calculated_order_count, 2);
 });
 
 test('repository returns too many orders instead of listing more than twenty matches', async () => {

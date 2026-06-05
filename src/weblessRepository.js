@@ -1126,6 +1126,81 @@ export class WeblessAccountRepository {
     };
   }
 
+  async calculateOrderProfitStatistics(accountId, args) {
+    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
+    const dateFrom = requireOptionalDate(args.date_from, 'date_from');
+    const dateTo = requireOptionalDate(args.date_to, 'date_to');
+    const siteSettings = await this.pool.query(
+      'select shipping_fee from sites where id = $1 limit 1',
+      [site.id]
+    );
+    const shippingCost = Math.max(0, Number.parseInt(siteSettings.rows[0]?.shipping_fee ?? '0', 10) || 0);
+    const result = await this.pool.query(
+      `
+        select o.id,
+               o.order_no,
+               o.grand_total_amount,
+               o.shipping_fee_amount,
+               coalesce(sum(coalesce(p.cost_price, 0) * coalesce(oi.quantity, 0)), 0)::bigint as product_cost_total,
+               count(oi.id)::int as item_count,
+               bool_or(oi.id is null or p.id is null or coalesce(p.cost_price, 0) <= 0) as has_missing_cost
+        from orders o
+        left join order_items oi on oi.order_id = o.id
+        left join products p on p.id = oi.product_id
+        where o.site_id = $1
+          and o.payment_completed_at is not null
+          and coalesce(o.status, '') <> 'cancelled'
+          and ($2::date is null or coalesce(o.placed_at, o.created_at)::date >= $2::date)
+          and ($3::date is null or coalesce(o.placed_at, o.created_at)::date <= $3::date)
+        group by o.id, o.order_no, o.grand_total_amount, o.shipping_fee_amount
+        order by o.id asc
+      `,
+      [site.id, dateFrom, dateTo]
+    );
+
+    let grossOrderTotal = 0;
+    let productCostTotal = 0;
+    let freeShippingCostTotal = 0;
+    let calculatedOrderCount = 0;
+    let skippedOrderCount = 0;
+
+    for (const order of result.rows) {
+      const hasMissingCost = Boolean(order.has_missing_cost) || Number.parseInt(order.item_count ?? '0', 10) <= 0;
+      if (hasMissingCost) {
+        skippedOrderCount += 1;
+        continue;
+      }
+
+      const orderTotal = Number.parseInt(order.grand_total_amount ?? '0', 10) || 0;
+      const orderProductCost = Number.parseInt(order.product_cost_total ?? '0', 10) || 0;
+      const freeShippingCost = (Number.parseInt(order.shipping_fee_amount ?? '0', 10) || 0) === 0 ? shippingCost : 0;
+
+      grossOrderTotal += orderTotal;
+      productCostTotal += orderProductCost;
+      freeShippingCostTotal += freeShippingCost;
+      calculatedOrderCount += 1;
+    }
+
+    return {
+      site,
+      filters: {
+        date_from: dateFrom ?? '',
+        date_to: dateTo ?? ''
+      },
+      profit: {
+        total_amount: grossOrderTotal - productCostTotal - freeShippingCostTotal,
+        gross_order_total: grossOrderTotal,
+        product_cost_total: productCostTotal,
+        free_shipping_cost_total: freeShippingCostTotal,
+        calculated_order_count: calculatedOrderCount,
+        skipped_order_count: skippedOrderCount,
+        formula: 'net_profit = order_grand_total - product_cost_total - free_shipping_cost. Order grand total already includes coupons, discount codes, and member tier discounts.',
+        date_from: dateFrom ?? null,
+        date_to: dateTo ?? null
+      }
+    };
+  }
+
   async listPendingOrders(accountId, args) {
     return this.listOrders(accountId, { ...args, logistics_status: 'pending' }, 'orders');
   }
@@ -5302,6 +5377,19 @@ function requireOptionalNonNegativeInteger(value, name) {
   }
 
   return parsed;
+}
+
+function requireOptionalDate(value, name) {
+  const text = nullableString(value);
+  if (!text) {
+    return null;
+  }
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+    throw codedError('VALIDATION_FAILED', `${name} must use YYYY-MM-DD format.`);
+  }
+
+  return text;
 }
 
 function requireNonEmptyString(value, name) {

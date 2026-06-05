@@ -68,6 +68,24 @@ function orderListInputSchema() {
   };
 }
 
+function orderProfitStatisticsInputSchema() {
+  return {
+    type: 'object',
+    properties: {
+      site_id: { type: 'integer' },
+      date_from: {
+        type: 'string',
+        description: 'optional YYYY-MM-DD start date. Omit date_from and date_to to calculate all paid non-cancelled orders.'
+      },
+      date_to: {
+        type: 'string',
+        description: 'optional YYYY-MM-DD end date. For "this month", the AI should fill the first and last calendar date of the month.'
+      }
+    },
+    required: ['site_id']
+  };
+}
+
 const SIGNED_UPLOAD_RUNTIME_GUIDANCE = 'Before using signed image upload, the AI must identify its own runtime. Continue only when the runtime can both read the source image bytes and make outbound HTTPS PUT requests, such as Codex or Hermes with local/code execution access. In ChatGPT Remote MCP, conversation attachments, /mnt/data paths, and hidden attachment rewrite are not reliable for remote MCP tools; if no downloadable URL or accessible local file bytes are available, explain that this client cannot upload the image and ask the user to use Codex/Hermes or provide a directly downloadable image URL.';
 const IMAGE_SOURCE_SCHEMA = {
   type: 'object',
@@ -564,6 +582,11 @@ const MCP_TOOLS = [
     name: 'slimweb_orders_list',
     description: 'Search normal SlimWeb orders with the same admin filters. For "unhandled/pending orders", use logistics_status=pending, which means payment completed and logistics not completed. If total exceeds 20, tell the user there are too many results and ask them to use the admin backend.',
     inputSchema: orderListInputSchema()
+  },
+  {
+    name: 'slimweb_orders_profit_statistics',
+    description: 'Calculate store net profit for paid non-cancelled orders. Use no date filters for questions like "how much money has our website made"; for "this month", fill date_from/date_to with the current month range. Formula: order grand total minus product cost total minus free-shipping cost; discounts are already included in grand total.',
+    inputSchema: orderProfitStatisticsInputSchema()
   },
   {
     name: 'slimweb_orders_get',
@@ -1853,6 +1876,7 @@ const TOOL_PERMISSION_RULES = {
   slimweb_payment_logistics_get: ['payment_logistics'],
   slimweb_payment_logistics_update: ['payment_logistics'],
   slimweb_orders_list: ['orders_management'],
+  slimweb_orders_profit_statistics: ['orders_management'],
   slimweb_orders_get: ['orders_management'],
   slimweb_orders_create_logistics: ['orders_management'],
   slimweb_orders_mark_shipped: ['orders_management'],
@@ -2307,6 +2331,19 @@ async function toolResultForCall(message, request, context) {
     case 'slimweb_orders_list': {
       try {
         const result = await context.accountRepository.listOrders(
+          await actorForTool(session, name, toolArgs(message), context),
+          toolArgs(message)
+        );
+
+        return mcpResult(message.id ?? null, mcpJsonContent(result));
+      } catch (error) {
+        return toolExceptionToMcpError(message?.id ?? null, error);
+      }
+    }
+
+    case 'slimweb_orders_profit_statistics': {
+      try {
+        const result = await context.accountRepository.calculateOrderProfitStatistics(
           await actorForTool(session, name, toolArgs(message), context),
           toolArgs(message)
         );
