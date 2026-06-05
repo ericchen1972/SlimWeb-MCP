@@ -1062,7 +1062,7 @@ const MCP_TOOLS = [
         primary_images_mode: {
           type: 'string',
           enum: ['append', 'replace'],
-          description: 'Only applies when primary_images is provided. append preserves existing primary images and adds these after them; replace removes existing primary images first. Defaults to append when updating an existing product and replace when creating.'
+          description: 'Only applies when primary_images is provided. append preserves existing primary images and adds these after them, skipping image paths that already exist; replace removes existing primary images first. Defaults to append when updating an existing product and replace when creating.'
         },
         content_images: {
           type: 'array',
@@ -1072,7 +1072,7 @@ const MCP_TOOLS = [
         content_images_mode: {
           type: 'string',
           enum: ['append', 'replace'],
-          description: 'Only applies when content_images is provided. append preserves existing content images and adds these after them; replace removes existing content images first. Defaults to append when updating an existing product and replace when creating.'
+          description: 'Only applies when content_images is provided. append preserves existing content images and adds these after them, skipping image paths that already exist; replace removes existing content images first. Defaults to append when updating an existing product and replace when creating.'
         },
         videos: {
           type: 'array',

@@ -1216,11 +1216,23 @@ function productCatalogPool() {
         return { rows: [] };
       }
 
+      if (sql.includes('select count(*)::int as total') && sql.includes('from product_images')) {
+        return { rows: [{
+          total: String(state.images.filter((image) => image.product_id === params[0] && image.image_type === params[1]).length)
+        }] };
+      }
+
       if (sql.includes('coalesce(max(sort_order), -1) + 1') && sql.includes('from product_images')) {
         const sortOrders = state.images
           .filter((image) => image.product_id === params[0] && image.image_type === params[1])
           .map((image) => image.sort_order);
         return { rows: [{ next_sort_order: sortOrders.length === 0 ? 0 : Math.max(...sortOrders) + 1 }] };
+      }
+
+      if (sql.includes('select path') && sql.includes('from product_images')) {
+        return { rows: state.images
+          .filter((image) => image.product_id === params[0] && image.image_type === params[1])
+          .map((image) => ({ path: image.path })) };
       }
 
       if (sql.includes('insert into product_images')) {
@@ -2163,6 +2175,53 @@ test('repository appends product images by default when updating existing produc
     'sites/101/mcp-uploads/committed/new-main.png'
   ]);
   assert.deepEqual(updated.product.primary_images.map((image) => image.sort_order), [0, 1]);
+});
+
+test('repository skips existing product images when appending', async () => {
+  const pool = productCatalogPool();
+  const repository = new WeblessAccountRepository(pool, {
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+
+  const created = await repository.upsertProduct(11, {
+    site_id: 101,
+    site_category_id: 6,
+    name: '可避免重複圖片商品',
+    base_price: 1200,
+    content_images: [{
+      source: {
+        media_path: 'sites/101/mcp-uploads/committed/original-content.png'
+      }
+    }],
+    primary_images: [{
+      source: {
+        media_path: 'sites/101/mcp-uploads/committed/original-main.png'
+      }
+    }]
+  });
+
+  const updated = await repository.upsertProduct(11, {
+    site_id: 101,
+    product_id: created.product.id,
+    site_category_id: 6,
+    name: '可避免重複圖片商品',
+    base_price: 1200,
+    content_images: [{
+      source: {
+        media_path: 'sites/101/mcp-uploads/committed/original-content.png'
+      }
+    }, {
+      source: {
+        media_path: 'sites/101/mcp-uploads/committed/new-content.png'
+      }
+    }]
+  });
+
+  assert.deepEqual(updated.product.content_images.map((image) => image.path), [
+    'sites/101/mcp-uploads/committed/original-content.png',
+    'sites/101/mcp-uploads/committed/new-content.png'
+  ]);
+  assert.deepEqual(updated.product.content_images.map((image) => image.sort_order), [0, 1]);
 });
 
 test('repository replaces product images when update mode is replace', async () => {

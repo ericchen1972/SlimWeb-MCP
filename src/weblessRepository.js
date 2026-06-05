@@ -4140,10 +4140,19 @@ export class WeblessAccountRepository {
     }
 
     let sortOrderOffset = 0;
+    const existingPaths = new Set();
 
     if (mode === 'replace') {
       await this.pool.query('delete from product_images where product_id = $1 and image_type = $2', [product.id, type]);
     } else {
+      const existingResult = await this.pool.query(
+        'select path from product_images where product_id = $1 and image_type = $2',
+        [product.id, type]
+      );
+      for (const row of existingResult.rows) {
+        existingPaths.add(String(row.path ?? ''));
+      }
+
       const result = await this.pool.query(
         `
           select coalesce(max(sort_order), -1) + 1 as next_sort_order
@@ -4155,15 +4164,21 @@ export class WeblessAccountRepository {
       sortOrderOffset = Number.parseInt(result.rows[0]?.next_sort_order ?? '0', 10);
     }
 
+    let insertedCount = 0;
     for (let index = 0; index < images.length; index += 1) {
       const pathOrUrl = await this.resolveProductImagePath(site, product, type, images[index], index);
+      if (mode === 'append' && existingPaths.has(pathOrUrl)) {
+        continue;
+      }
       await this.pool.query(
         `
           insert into product_images (product_id, image_type, path, sort_order, alt_text, created_at, updated_at)
           values ($1, $2, $3, $4, $5, now(), now())
         `,
-        [product.id, type, pathOrUrl, sortOrderOffset + index, product.name]
+        [product.id, type, pathOrUrl, sortOrderOffset + insertedCount, product.name]
       );
+      existingPaths.add(pathOrUrl);
+      insertedCount += 1;
     }
   }
 
