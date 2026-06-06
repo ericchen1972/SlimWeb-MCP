@@ -237,6 +237,8 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 | `slimweb_members_list` | Available | member read | 列出會員與篩選會員資料。 |
 | `slimweb_members_get` | Available | member read | 讀取單一會員摘要、訂單摘要、優惠券與等級。 |
 | `slimweb_members_coupons_issue` | Available | member write + promotion write | 手動發券給指定會員，只接受 active manual coupon template。 |
+| `slimweb_member_email_preview` | Available | member read | 預覽 AI 撰寫的會員 Email，套用郵件版型、商品卡與 HTML sanitizer，回傳 draft/confirmation token。 |
+| `slimweb_member_email_send` | Available | member write | 送出已預覽且使用者確認的會員 Email；只接受 preview 產生的 `email_draft_token` 與 `confirmation_token`。 |
 | `slimweb_coupon_templates_list` | Available | promotion read | 列出優惠券模板，含 manual、all_members、order_threshold、birthday、product_bundle。 |
 | `slimweb_coupon_templates_upsert` | Available | promotion write | 新增或更新優惠券模板，套用與後台優惠券表單一致的發放規則。 |
 | `slimweb_discount_codes_list` | Available | promotion read | 列出折扣碼。 |
@@ -934,6 +936,37 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 是否需要 confirmation: yes。若使用者沒有指定會員，AI 必須先詢問；不能把手動發放猜成發給所有會員。
 - 錯誤情境: member not found、coupon template not found、non-manual template、inactive template、duplicate active coupon、validation failed、permission denied
 - Audit fields: request ID、user ID、account ID、site ID、member ID、coupon template ID
+
+### `slimweb_member_email_preview`
+
+- 狀態: Available
+- 權限: member read
+- Scope: active site
+- 用途: 預覽 AI 撰寫的會員 Email。AI 必須先確認目標資料：
+  - 指定會員時，先用 `slimweb_members_list` / `slimweb_members_get` 確認會員存在並取得 `member_id`。
+  - 指定商品時，先用商品工具確認商品存在並取得 `product_id`。
+  - 發給所有會員時，不需查會員，但必須明確告知收件範圍是所有會員。
+- Input: `site_id`、`recipient_scope=members|all_members`、`member_ids`、`product_ids`、`subject`、`html_content`
+- Output: sanitized HTML、套用共用郵件版型後的 `preview_html`、商品卡摘要、收件範圍摘要、`email_draft_token`、`confirmation_token`
+- Side effects: none；此工具只產生短效簽章 draft，不寄信。
+- 是否需要 confirmation: no；但 AI 必須把 preview 給使用者看，取得確認後才可呼叫 send tool。
+- 安全規則: 移除 `<script>`、`<iframe>` 與 inline event handler。商品卡由後端根據 `product_ids` 組出，包含商品頁與 AI 客服連結。
+- 錯誤情境: member not found、product not found、unsafe/empty content、invalid recipient scope、permission denied
+- Audit fields: request ID、user ID、account ID、site ID、member IDs、product IDs、recipient scope
+
+### `slimweb_member_email_send`
+
+- 狀態: Available
+- 權限: member write
+- Scope: active site
+- 用途: 送出已預覽且使用者確認的會員 Email。
+- Input: `site_id`、`email_draft_token`、`confirmation_token`
+- Output: delivery mode、recipient count、queue status、BCC contact email
+- Side effects: sends or queues email in Webless. 每次寄送都會 BCC 到站台聯絡 Email（若有設定）。
+- 是否需要 confirmation: yes。只能使用 `slimweb_member_email_preview` 回傳的 token；send tool 不接受 raw HTML，避免 preview A、送出 B。
+- 大量寄送: Webless 端依收件人數與 `recipient_scope` 自動判斷 direct 或 queue；`all_members` 走 queue。
+- 錯誤情境: expired draft token、confirmation mismatch、missing SMTP settings、upstream error、permission denied
+- Audit fields: request ID、user ID、account ID、site ID、recipient scope、product IDs、delivery mode
 
 ### `slimweb_coupon_templates_list`
 

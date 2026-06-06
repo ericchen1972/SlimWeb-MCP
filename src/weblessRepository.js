@@ -3047,6 +3047,108 @@ export class WeblessAccountRepository {
 	    };
 	  }
 
+  async previewMemberEmail(accountId, args) {
+    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
+    const recipientScope = normalizeEmailRecipientScope(args.recipient_scope);
+    const memberIds = normalizeIntegerList(args.member_ids, 'member_ids');
+    const productIds = normalizeIntegerList(args.product_ids, 'product_ids');
+    const subject = normalizeEmailSubject(args.subject);
+    const sanitizedContent = sanitizeEmailHtml(args.html_content);
+
+    if (recipientScope === 'members' && memberIds.length === 0) {
+      throw codedError('VALIDATION_FAILED', 'member_ids is required when recipient_scope is members.');
+    }
+    if (recipientScope === 'all_members' && memberIds.length > 0) {
+      throw codedError('VALIDATION_FAILED', 'member_ids must be omitted when recipient_scope is all_members.');
+    }
+
+    const [members, products, layout, contactEmail] = await Promise.all([
+      recipientScope === 'members' ? this.findMembersForEmail(site.id, memberIds) : Promise.resolve([]),
+      productIds.length > 0 ? this.findProductsForEmail(site, productIds) : Promise.resolve([]),
+      this.findMailLayoutForSite(site.id),
+      this.findSiteContactEmail(site.id)
+    ]);
+
+    const productCardsHtml = renderEmailProductCards(products);
+    const bodyHtml = `${sanitizedContent}${productCardsHtml}`;
+    const previewHtml = renderEmailLayout(layout, site, this.publicSiteBaseUrl, bodyHtml);
+    const confirmationToken = `confirm_${randomBytes(12).toString('hex')}`;
+    const draftPayload = {
+      version: 1,
+      site_id: site.id,
+      site_slug: site.slug,
+      recipient_scope: recipientScope,
+      member_ids: memberIds,
+      product_ids: productIds,
+      subject,
+      html_content: sanitizedContent,
+      rendered_html: previewHtml,
+      bcc_contact_email: contactEmail,
+      confirmation_token: confirmationToken,
+      expires_at: Math.floor(Date.now() / 1000) + 30 * 60
+    };
+
+    return {
+      ok: true,
+      site,
+      subject,
+      recipient_summary: {
+        scope: recipientScope,
+        count: recipientScope === 'members' ? members.length : null,
+        members: members.map((member) => formatMemberSummary(member)),
+        all_members: recipientScope === 'all_members'
+      },
+      products,
+      bcc_contact_email: contactEmail,
+      sanitized_html_content: sanitizedContent,
+      preview_html: previewHtml,
+      email_draft_token: this.signMemberEmailDraft(draftPayload),
+      confirmation_token: confirmationToken,
+      guidance: {
+        final_confirmation_required: true,
+        send_tool: 'slimweb_member_email_send',
+        send_rule: 'Only call slimweb_member_email_send after the user confirms this preview. Pass email_draft_token and confirmation_token unchanged.'
+      }
+    };
+  }
+
+  async sendMemberEmail(accountId, args) {
+    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
+    const payload = this.verifyMemberEmailDraft(requireNonEmptyString(args.email_draft_token, 'email_draft_token'));
+    const confirmationToken = requireNonEmptyString(args.confirmation_token, 'confirmation_token');
+
+    if (Number.parseInt(payload.site_id, 10) !== Number.parseInt(site.id, 10)) {
+      throw codedError('VALIDATION_FAILED', 'email_draft_token site does not match site_id.');
+    }
+    if (payload.confirmation_token !== confirmationToken) {
+      throw codedError('VALIDATION_FAILED', 'confirmation_token does not match email_draft_token.');
+    }
+
+    const response = await this.fetch(`${this.weblessAppBaseUrl}/sites/${encodeURIComponent(site.slug)}/mcp-member-emails/send`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-slimweb-mcp-secret': this.requireWeblessMcpSecret()
+      },
+      body: JSON.stringify({
+        recipient_scope: payload.recipient_scope,
+        member_ids: payload.member_ids,
+        product_ids: payload.product_ids,
+        subject: payload.subject,
+        html_content: payload.html_content,
+        rendered_html: payload.rendered_html,
+        bcc_contact_email: payload.bcc_contact_email
+      })
+    });
+
+    const result = await parseJsonResponse(response, 'Unable to send Webless member email');
+    return {
+      ok: true,
+      site,
+      ...result
+    };
+  }
+
 	  async listDiscountCodes(accountId, args) {
 	    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
 	    const page = clampPositiveInteger(args.page, 1, 1, 1000);
@@ -4940,6 +5042,93 @@ export class WeblessAccountRepository {
 	
 	    return result.rows[0];
 	  }
+
+  async findMembersForEmail(siteId, memberIds) {
+    const result = await this.pool.query(
+      `
+        select id, site_id, email, name, birthday, gender, mobile, status, country, zip, address,
+               total_spent_amount, last_login_at, created_at, updated_at
+        from members
+        where site_id = $1 and id = any($2::bigint[])
+        order by id asc
+      `,
+      [siteId, memberIds]
+    );
+    const foundIds = new Set(result.rows.map((member) => Number.parseInt(member.id, 10)));
+    const missing = memberIds.filter((id) => !foundIds.has(id));
+
+    if (missing.length > 0) {
+      throw codedError('NOT_FOUND', `Member not found or not accessible: ${missing.join(', ')}`);
+    }
+
+    return result.rows;
+  }
+
+  async findProductsForEmail(site, productIds) {
+    const result = await this.pool.query(
+      `
+        select p.id, p.site_id, p.site_category_id, p.sku, p.name, p.summary, p.base_price, p.sale_price,
+               p.stock, p.status, p.sales_volume, p.created_at, p.updated_at,
+               (select path from product_images where product_id = p.id and image_type = 'primary' order by sort_order asc, id asc limit 1) as primary_image_path
+        from products p
+        where p.site_id = $1 and p.id = any($2::bigint[])
+        order by array_position($2::bigint[], p.id)
+      `,
+      [site.id, productIds]
+    );
+    const foundIds = new Set(result.rows.map((product) => Number.parseInt(product.id, 10)));
+    const missing = productIds.filter((id) => !foundIds.has(id));
+
+    if (missing.length > 0) {
+      throw codedError('NOT_FOUND', `Product not found or not accessible: ${missing.join(', ')}`);
+    }
+
+    return result.rows.map((product) => formatEmailProduct(product, this.publicSiteBaseUrl, site.slug));
+  }
+
+  async findSiteContactEmail(siteId) {
+    const result = await this.pool.query(
+      'select contact_email from sites where id = $1 limit 1',
+      [siteId]
+    );
+
+    return normalizeEmailAddress(result.rows[0]?.contact_email) ?? null;
+  }
+
+  signMemberEmailDraft(payload) {
+    const body = base64UrlEncode(JSON.stringify(payload));
+    const signature = createHmac('sha256', this.requireWeblessMcpSecret()).update(body).digest('base64url');
+
+    return `${body}.${signature}`;
+  }
+
+  verifyMemberEmailDraft(token) {
+    const [body, signature] = token.split('.', 2);
+    if (!body || !signature) {
+      throw codedError('VALIDATION_FAILED', 'email_draft_token is invalid.');
+    }
+
+    const expected = createHmac('sha256', this.requireWeblessMcpSecret()).update(body).digest('base64url');
+    if (!timingSafeStringEqual(signature, expected)) {
+      throw codedError('VALIDATION_FAILED', 'email_draft_token signature is invalid.');
+    }
+
+    let payload;
+    try {
+      payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
+    } catch {
+      throw codedError('VALIDATION_FAILED', 'email_draft_token payload is invalid.');
+    }
+
+    if (!payload || typeof payload !== 'object') {
+      throw codedError('VALIDATION_FAILED', 'email_draft_token payload is invalid.');
+    }
+    if (Number.parseInt(payload.expires_at ?? '0', 10) < Math.floor(Date.now() / 1000)) {
+      throw codedError('VALIDATION_FAILED', 'email_draft_token has expired. Preview the email again.');
+    }
+
+    return payload;
+  }
 
 	  async findThresholdGiftForSite(siteId, thresholdGiftId) {
 	    const result = await this.pool.query(
@@ -7216,6 +7405,23 @@ function formatProductSummary(product) {
   };
 }
 
+function formatEmailProduct(product, publicSiteBaseUrl, siteSlug) {
+  const price = product.sale_price === null || product.sale_price === undefined
+    ? Number.parseInt(product.base_price ?? '0', 10)
+    : Number.parseInt(product.sale_price, 10);
+  const slug = encodeURIComponent(siteSlug ?? `site-${product.site_id}`);
+  const productUrl = `${publicSiteBaseUrl}/sites/${slug}/default-preview/products/${product.id}`;
+  const aiUrl = `${publicSiteBaseUrl}/sites/${slug}/default-preview/products/${product.id}/ai`;
+
+  return {
+    ...formatProductSummary(product),
+    price,
+    primary_image_url: product.primary_image_path ? mediaUrlFor(publicSiteBaseUrl, product.primary_image_path) : null,
+    product_url: productUrl,
+    ai_url: aiUrl
+  };
+}
+
 function formatProduct(product, images, videos, variants, quantityDiscounts, publicSiteBaseUrl) {
   return {
     ...formatProductSummary(product),
@@ -8306,6 +8512,123 @@ function toCsv(rows) {
 
 function mediaUrlFor(publicSiteBaseUrl, storagePath) {
   return `${publicSiteBaseUrl}/media/${storagePath.split('/').map(encodeURIComponent).join('/')}`;
+}
+
+function base64UrlEncode(value) {
+  return Buffer.from(String(value), 'utf8').toString('base64url');
+}
+
+function timingSafeStringEqual(a, b) {
+  const left = Buffer.from(String(a));
+  const right = Buffer.from(String(b));
+  return left.length === right.length && timingSafeEqual(left, right);
+}
+
+function normalizeEmailRecipientScope(value) {
+  const scope = String(value ?? '').trim();
+  if (!['members', 'all_members'].includes(scope)) {
+    throw codedError('VALIDATION_FAILED', 'recipient_scope must be members or all_members.');
+  }
+  return scope;
+}
+
+function normalizeIntegerList(value, name) {
+  if (value === undefined || value === null) {
+    return [];
+  }
+  if (!Array.isArray(value)) {
+    throw codedError('VALIDATION_FAILED', `${name} must be an array.`);
+  }
+
+  return [...new Set(value.map((item) => requireInteger(item, name)))];
+}
+
+function normalizeEmailSubject(value) {
+  const subject = requireNonEmptyString(value, 'subject');
+  if (subject.length > 160) {
+    throw codedError('VALIDATION_FAILED', 'subject must be at most 160 characters.');
+  }
+  return subject;
+}
+
+function normalizeEmailAddress(value) {
+  const email = nullableString(value);
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return null;
+  }
+  return email.toLowerCase();
+}
+
+function sanitizeEmailHtml(value) {
+  let html = requireNonEmptyString(value, 'html_content');
+  if (html.length > 50000) {
+    throw codedError('VALIDATION_FAILED', 'html_content must be at most 50000 characters.');
+  }
+
+  html = html
+    .replace(/<\s*(script|iframe)\b[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/gi, '')
+    .replace(/<\s*(script|iframe)\b[^>]*\/?\s*>/gi, '')
+    .replace(/\s+on[a-z]+\s*=\s*"[^"]*"/gi, '')
+    .replace(/\s+on[a-z]+\s*=\s*'[^']*'/gi, '')
+    .replace(/\s+on[a-z]+\s*=\s*[^\s>]+/gi, '')
+    .trim();
+
+  if (html === '') {
+    throw codedError('VALIDATION_FAILED', 'html_content is empty after sanitization.');
+  }
+
+  return html;
+}
+
+function renderEmailLayout(layout, site, publicSiteBaseUrl, contentHtml) {
+  const siteUrl = `${publicSiteBaseUrl}/sites/${encodeURIComponent(site.slug ?? `site-${site.id}`)}/default-preview`;
+  const html = layout && !layout.uses_default_layout && layout.html
+    ? layout.html
+    : DEFAULT_MAIL_LAYOUT_HTML;
+  const rendered = html
+    .replaceAll('{content}', contentHtml)
+    .replaceAll('{site_name}', escapeHtml(site.name ?? 'SlimWeb'))
+    .replaceAll('{site_url}', siteUrl)
+    .replaceAll('{logo_url}', `${publicSiteBaseUrl}/favicon.ico`);
+
+  return rendered.includes(contentHtml) ? rendered : `${rendered}${contentHtml}`;
+}
+
+function renderEmailProductCards(products) {
+  if (!Array.isArray(products) || products.length === 0) {
+    return '';
+  }
+
+  return [
+    '<section style="margin-top:24px;">',
+    ...products.map((product) => {
+      const image = product.primary_image_url
+        ? `<img src="${escapeHtml(product.primary_image_url)}" alt="${escapeHtml(product.name)}" style="width:100%;max-width:220px;border-radius:8px;object-fit:cover;">`
+        : '';
+      const price = Number.isFinite(product.price) ? `NT$${Number(product.price).toLocaleString('en-US')}` : '';
+      return `
+        <article style="border:1px solid #e5e7eb;border-radius:10px;padding:16px;margin:12px 0;">
+          ${image}
+          <h3 style="font-size:18px;line-height:1.4;margin:12px 0 6px;">${escapeHtml(product.name)}</h3>
+          <p style="margin:0 0 8px;color:#4b5563;">${escapeHtml(product.summary ?? '')}</p>
+          <p style="margin:0 0 12px;font-weight:700;">${escapeHtml(price)}</p>
+          <p style="margin:0;">
+            <a href="${escapeHtml(product.product_url)}" style="display:inline-block;padding:9px 14px;background:#111827;color:#ffffff;text-decoration:none;border-radius:6px;">開啟商品</a>
+            <a href="${escapeHtml(product.ai_url)}" style="display:inline-block;padding:9px 14px;margin-left:8px;background:#0f766e;color:#ffffff;text-decoration:none;border-radius:6px;">詢問 AI 客服</a>
+          </p>
+        </article>`;
+    }),
+    '</section>'
+  ].join('');
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
 }
 
 function normalizeCommittedMediaPath(source, siteId, fieldName) {

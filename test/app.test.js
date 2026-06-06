@@ -184,6 +184,39 @@ test('MCP tools list includes output schemas for structured content', async () =
   });
 });
 
+test('MCP resources expose member email preview widget', async () => {
+  await withServer(async (baseUrl) => {
+    const listResponse = await fetch(`${baseUrl}/mcp`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 23,
+        method: 'resources/list'
+      })
+    });
+    const listBody = await listResponse.json();
+    const resource = listBody.result.resources.find((item) => item.uri === 'ui://slimweb/member-email-preview.html');
+
+    assert.ok(resource);
+
+    const readResponse = await fetch(`${baseUrl}/mcp`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 24,
+        method: 'resources/read',
+        params: { uri: resource.uri }
+      })
+    });
+    const readBody = await readResponse.json();
+
+    assert.equal(readBody.result.contents[0].mimeType, 'text/html');
+    assert.match(readBody.result.contents[0].text, /Email 預覽/);
+  });
+});
+
 test('README main tool table lists every discoverable tool as available', async () => {
   await withServer(async (baseUrl) => {
     const response = await fetch(`${baseUrl}/mcp`, {
@@ -285,11 +318,13 @@ test('MCP tools list includes homepage editing contract tools', async () => {
 	      'slimweb_products_import_commit',
 	      'slimweb_coupon_templates_list',
 	      'slimweb_coupon_templates_upsert',
-	      'slimweb_members_coupons_issue',
-	      'slimweb_members_list',
-	      'slimweb_members_get',
-	      'slimweb_discount_codes_list',
-	      'slimweb_discount_codes_upsert',
+      'slimweb_members_coupons_issue',
+      'slimweb_members_list',
+      'slimweb_members_get',
+      'slimweb_member_email_preview',
+      'slimweb_member_email_send',
+      'slimweb_discount_codes_list',
+      'slimweb_discount_codes_upsert',
 	      'slimweb_member_tiers_list',
 	      'slimweb_member_tiers_upsert',
 	      'slimweb_threshold_gifts_list',
@@ -343,6 +378,9 @@ test('MCP tools list includes homepage editing contract tools', async () => {
     assert.ok(toolsByName.get('slimweb_orders_list').inputSchema.properties.search_field.enum.includes('buyer_name'));
     assert.ok(toolsByName.get('slimweb_orders_list').inputSchema.properties.search_field.enum.includes('payment_incomplete'));
     assert.match(toolsByName.get('slimweb_orders_list').inputSchema.properties.logistics_status.description, /payment is completed/);
+    assert.deepEqual(toolsByName.get('slimweb_member_email_preview').inputSchema.properties.recipient_scope.enum, ['members', 'all_members']);
+    assert.match(toolsByName.get('slimweb_member_email_preview').description, /preview/i);
+    assert.match(toolsByName.get('slimweb_member_email_send').description, /email_draft_token/);
     assert.equal(toolsByName.get('slimweb_orders_profit_statistics').inputSchema.properties.date_from.description.includes('optional'), true);
     assert.match(toolsByName.get('slimweb_articles_upsert').description, /draft the article and cover-image concept first/);
     assert.match(toolsByName.get('slimweb_articles_upsert').description, /ask the user to paste or re-upload the selected image/);
@@ -673,6 +711,14 @@ test('homepage editing tools call repository implementations', async () => {
 	      calls.push(['member_get', accountId, args]);
 	      return { member: { id: args.member_id, email: 'member@example.com' }, orders: [], coupon_templates: [] };
 	    },
+    previewMemberEmail: async (accountId, args) => {
+      calls.push(['member_email_preview', accountId, args]);
+      return { ok: true, email_draft_token: 'draft-token', confirmation_token: 'confirm-token', preview_html: '<p>Preview</p>' };
+    },
+    sendMemberEmail: async (accountId, args) => {
+      calls.push(['member_email_send', accountId, args]);
+      return { ok: true, delivery_mode: 'direct', recipient_count: 1 };
+    },
 	    listDiscountCodes: async (accountId, args) => {
 	      calls.push(['discount_codes_list', accountId, args]);
 	      return { discount_codes: [{ id: 4, code: 'VIP200' }], pagination: { page: 1, last_page: 1, total: 1 } };
@@ -876,6 +922,8 @@ test('homepage editing tools call repository implementations', async () => {
 	    assert.equal((await callTool(60, 'slimweb_members_coupons_issue', { site_id: 101, member_id: 88, coupon_template_id: 3 })).result.structuredContent.member_coupon.member_id, 88);
 	    assert.equal((await callTool(61, 'slimweb_members_list', { site_id: 101, keyword: 'member@example.com' })).result.structuredContent.members[0].email, 'member@example.com');
 	    assert.equal((await callTool(62, 'slimweb_members_get', { site_id: 101, member_id: 88 })).result.structuredContent.member.id, 88);
+    assert.equal((await callTool(621, 'slimweb_member_email_preview', { site_id: 101, recipient_scope: 'members', member_ids: [88], product_ids: [7], subject: '到貨通知', html_content: '<p>到貨了</p>' })).result.structuredContent.email_draft_token, 'draft-token');
+    assert.equal((await callTool(622, 'slimweb_member_email_send', { site_id: 101, email_draft_token: 'draft-token', confirmation_token: 'confirm-token' })).result.structuredContent.delivery_mode, 'direct');
 	    assert.equal((await callTool(63, 'slimweb_discount_codes_list', { site_id: 101 })).result.structuredContent.discount_codes[0].code, 'VIP200');
 	    assert.equal((await callTool(64, 'slimweb_discount_codes_upsert', { site_id: 101, code: 'VIP200', discount_amount: 200 })).result.structuredContent.discount_code.code, 'VIP200');
 	    assert.equal((await callTool(65, 'slimweb_member_tiers_list', { site_id: 101 })).result.structuredContent.member_tiers[0].name, 'VIP');
@@ -905,8 +953,8 @@ test('homepage editing tools call repository implementations', async () => {
     })).result.structuredContent.public_url, /hero\.png/);
     assert.equal((await callTool(68, 'slimweb_themes_delete', { site_id: 101, theme_id: 22 })).result.structuredContent.deleted_theme_id, 22);
 
-		    assert.deepEqual(calls.map((call) => call[0]), ['select', 'themes_list', 'themes_create', 'shell_context', 'profile_get', 'profile_upsert', 'profile_append', 'site_readiness_get', 'seo_get', 'seo_update', 'integration_get', 'integration_update', 'payment_logistics_get', 'payment_logistics_update', 'orders_list', 'orders_profit_statistics', 'orders_get', 'orders_create_logistics', 'orders_mark_shipped', 'returns_pending_list', 'returns_create_logistics', 'returns_cancel', 'returns_complete', 'refunds_complete', 'refunds_create', 'dashboard_summary', 'settings_get', 'settings_update', 'admins_list', 'admin_upsert', 'admin_delete', 'external_assets_list', 'external_asset_upsert', 'external_asset_delete', 'external_assets_reorder', 'articles_list', 'article_upsert', 'categories_list', 'category_upsert', 'category_delete', 'nav_items_list', 'nav_item_upsert', 'nav_item_delete', 'products_list', 'product_get', 'upload_create', 'upload_commit', 'chatgpt_attachment_import', 'product_upsert', 'product_delete', 'product_import_inspect', 'product_import_validate', 'product_import_commit', 'coupon_templates_list', 'coupon_template_upsert', 'member_coupon_issue', 'members_list', 'member_get', 'discount_codes_list', 'discount_code_upsert', 'member_tiers_list', 'member_tier_upsert', 'threshold_gifts_list', 'threshold_gift_upsert', 'product_add_ons_list', 'product_add_on_upsert', 'faqs_list', 'faq_upsert', 'customer_service_logs_list', 'customer_service_settings_get', 'customer_service_settings_update', 'export_create', 'audit_list', 'themes_root', 'preview', 'get_home', 'update_home', 'page_upsert', 'page_delete', 'upload', 'themes_delete']);
-		    assert.deepEqual(calls.map((call) => call[1].email), Array.from({ length: 81 }, () => 'owner@example.com'));
+		    assert.deepEqual(calls.map((call) => call[0]), ['select', 'themes_list', 'themes_create', 'shell_context', 'profile_get', 'profile_upsert', 'profile_append', 'site_readiness_get', 'seo_get', 'seo_update', 'integration_get', 'integration_update', 'payment_logistics_get', 'payment_logistics_update', 'orders_list', 'orders_profit_statistics', 'orders_get', 'orders_create_logistics', 'orders_mark_shipped', 'returns_pending_list', 'returns_create_logistics', 'returns_cancel', 'returns_complete', 'refunds_complete', 'refunds_create', 'dashboard_summary', 'settings_get', 'settings_update', 'admins_list', 'admin_upsert', 'admin_delete', 'external_assets_list', 'external_asset_upsert', 'external_asset_delete', 'external_assets_reorder', 'articles_list', 'article_upsert', 'categories_list', 'category_upsert', 'category_delete', 'nav_items_list', 'nav_item_upsert', 'nav_item_delete', 'products_list', 'product_get', 'upload_create', 'upload_commit', 'chatgpt_attachment_import', 'product_upsert', 'product_delete', 'product_import_inspect', 'product_import_validate', 'product_import_commit', 'coupon_templates_list', 'coupon_template_upsert', 'member_coupon_issue', 'members_list', 'member_get', 'member_email_preview', 'member_email_send', 'discount_codes_list', 'discount_code_upsert', 'member_tiers_list', 'member_tier_upsert', 'threshold_gifts_list', 'threshold_gift_upsert', 'product_add_ons_list', 'product_add_on_upsert', 'faqs_list', 'faq_upsert', 'customer_service_logs_list', 'customer_service_settings_get', 'customer_service_settings_update', 'export_create', 'audit_list', 'themes_root', 'preview', 'get_home', 'update_home', 'page_upsert', 'page_delete', 'upload', 'themes_delete']);
+		    assert.deepEqual(calls.map((call) => call[1].email), Array.from({ length: calls.length }, () => 'owner@example.com'));
   });
 });
 

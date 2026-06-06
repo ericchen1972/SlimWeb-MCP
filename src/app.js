@@ -13,6 +13,50 @@ import { WeblessAccountRepository } from './weblessRepository.js';
 
 const SERVICE_NAME = 'slimweb-mcp';
 const SERVICE_VERSION = '0.1.0';
+const MEMBER_EMAIL_PREVIEW_WIDGET_URI = 'ui://slimweb/member-email-preview.html';
+const MEMBER_EMAIL_PREVIEW_WIDGET_HTML = `<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    body{margin:0;background:#0b0f14;color:#e5e7eb;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    .wrap{padding:16px}
+    .meta{display:grid;gap:8px;margin-bottom:14px;font-size:13px;color:#9ca3af}
+    .subject{font-size:18px;font-weight:700;color:#f9fafb}
+    .frame{background:#fff;border:1px solid #253041;border-radius:8px;overflow:hidden}
+    iframe{width:100%;min-height:520px;border:0;background:#fff}
+    .empty{padding:24px;border:1px solid #253041;border-radius:8px;color:#9ca3af}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div id="meta" class="meta"></div>
+    <div id="preview"></div>
+  </div>
+  <script>
+    const data = window.openai?.toolOutput || window.openai?.structuredContent || {};
+    const meta = document.getElementById('meta');
+    const preview = document.getElementById('preview');
+    const scope = data.recipient_summary?.scope === 'all_members' ? '所有會員' : '指定會員';
+    meta.innerHTML = '<div class="subject"></div><div></div><div></div>';
+    meta.children[0].textContent = data.subject || 'Email 預覽';
+    meta.children[1].textContent = '收件範圍：' + scope + (data.recipient_summary?.count ? '（' + data.recipient_summary.count + ' 位）' : '');
+    meta.children[2].textContent = data.bcc_contact_email ? 'BCC：' + data.bcc_contact_email : 'BCC：未設定聯絡 Email';
+    if (data.preview_html) {
+      const frame = document.createElement('iframe');
+      frame.setAttribute('sandbox', 'allow-popups allow-popups-to-escape-sandbox');
+      frame.srcdoc = data.preview_html;
+      const holder = document.createElement('div');
+      holder.className = 'frame';
+      holder.appendChild(frame);
+      preview.appendChild(holder);
+    } else {
+      preview.innerHTML = '<div class="empty">尚無預覽內容。</div>';
+    }
+  </script>
+</body>
+</html>`;
 const OAUTH_CODE_TTL_SECONDS = 10 * 60;
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7;
 const EMPTY_INPUT_SCHEMA = {
@@ -1315,6 +1359,53 @@ const MCP_TOOLS = [
 	      required: ['site_id', 'member_id']
 	    }
 	  },
+    {
+      name: 'slimweb_member_email_preview',
+      description: 'Preview an AI-composed member email before sending. The AI must first verify target members when recipient_scope=members and verify referenced products before calling this tool. Returns sanitized rendered HTML, product cards, recipient summary, email_draft_token, and confirmation_token. In ChatGPT, use this as the preview step before asking the user to confirm; in SlimAI, show the returned preview_html/summary.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          site_id: { type: 'integer' },
+          recipient_scope: {
+            type: 'string',
+            enum: ['members', 'all_members'],
+            description: 'Use members for explicit member_ids. Use all_members only when the user clearly asked to email every member.'
+          },
+          member_ids: {
+            type: 'array',
+            items: { type: 'integer' },
+            description: 'Required when recipient_scope=members. Omit or pass [] when recipient_scope=all_members.'
+          },
+          product_ids: {
+            type: 'array',
+            items: { type: 'integer' },
+            description: 'Optional verified product IDs to render as email product cards. Omit when the email does not reference products.'
+          },
+          subject: { type: 'string' },
+          html_content: {
+            type: 'string',
+            description: 'AI-composed HTML body. script, iframe, and inline event handlers are rejected/removed before rendering.'
+          }
+        },
+        required: ['site_id', 'recipient_scope', 'subject', 'html_content']
+      },
+      _meta: {
+        'openai/outputTemplate': 'ui://slimweb/member-email-preview.html'
+      }
+    },
+    {
+      name: 'slimweb_member_email_send',
+      description: 'Send a previously previewed member email. Call only after the user confirms the preview. This tool accepts email_draft_token and confirmation_token from slimweb_member_email_preview, not raw HTML, so the sent content matches the preview.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          site_id: { type: 'integer' },
+          email_draft_token: { type: 'string' },
+          confirmation_token: { type: 'string' }
+        },
+        required: ['site_id', 'email_draft_token', 'confirmation_token']
+      }
+    },
 	  {
 	    name: 'slimweb_discount_codes_list',
 	    description: 'List discount codes for campaign tracking and storefront checkout rules.',
@@ -1919,6 +2010,8 @@ const TOOL_PERMISSION_RULES = {
   slimweb_members_coupons_issue: ['discount_management', 'coupon_templates'],
   slimweb_members_list: ['member_management', 'member_list'],
   slimweb_members_get: ['member_management', 'member_list'],
+  slimweb_member_email_preview: ['member_management', 'member_list'],
+  slimweb_member_email_send: ['member_management', 'member_list'],
   slimweb_discount_codes_list: ['discount_management', 'discount_codes'],
   slimweb_discount_codes_upsert: ['discount_management', 'discount_codes'],
   slimweb_member_tiers_list: ['member_management', 'member_tiers'],
@@ -2900,6 +2993,32 @@ async function toolResultForCall(message, request, context) {
 	      }
 	    }
 
+      case 'slimweb_member_email_preview': {
+        try {
+          const result = await context.accountRepository.previewMemberEmail(
+            await actorForTool(session, name, toolArgs(message), context),
+            toolArgs(message)
+          );
+
+          return mcpResult(message.id ?? null, mcpJsonContent(result));
+        } catch (error) {
+          return toolExceptionToMcpError(message?.id ?? null, error);
+        }
+      }
+
+      case 'slimweb_member_email_send': {
+        try {
+          const result = await context.accountRepository.sendMemberEmail(
+            await actorForTool(session, name, toolArgs(message), context),
+            toolArgs(message)
+          );
+
+          return mcpResult(message.id ?? null, mcpJsonContent(result));
+        } catch (error) {
+          return toolExceptionToMcpError(message?.id ?? null, error);
+        }
+      }
+
 	    case 'slimweb_discount_codes_list': {
 	      try {
 	        const result = await context.accountRepository.listDiscountCodes(
@@ -3188,6 +3307,9 @@ async function handleMcpMessage(message, request, context) {
         capabilities: {
           tools: {
             listChanged: false
+          },
+          resources: {
+            listChanged: false
           }
         },
         serverInfo: {
@@ -3206,6 +3328,38 @@ async function handleMcpMessage(message, request, context) {
 
     case 'tools/call':
       return toolResultForCall(message, request, context);
+
+    case 'resources/list':
+      return mcpResult(id, {
+        resources: [{
+          uri: MEMBER_EMAIL_PREVIEW_WIDGET_URI,
+          name: 'SlimWeb member email preview',
+          mimeType: 'text/html'
+        }]
+      });
+
+    case 'resources/read': {
+      const uri = String(message?.params?.uri ?? '');
+      if (uri !== MEMBER_EMAIL_PREVIEW_WIDGET_URI) {
+        return mcpError(id, -32602, `Unknown MCP resource: ${uri || 'undefined'}`);
+      }
+
+      return mcpResult(id, {
+        contents: [{
+          uri: MEMBER_EMAIL_PREVIEW_WIDGET_URI,
+          mimeType: 'text/html',
+          text: MEMBER_EMAIL_PREVIEW_WIDGET_HTML,
+          _meta: {
+            'openai/widgetDescription': 'Preview the rendered member email before sending.',
+            'openai/widgetPrefersBorder': true,
+            'openai/widgetCSP': {
+              connect_domains: [],
+              resource_domains: ['https://slimweb.tw']
+            }
+          }
+        }]
+      });
+    }
 
     default:
       return mcpError(id, -32601, `Unknown MCP method: ${message?.method ?? 'undefined'}`);

@@ -2728,3 +2728,137 @@ test('repository returns too many orders instead of listing more than twenty mat
   assert.equal(result.total, 22);
   assert.deepEqual(result.orders, []);
 });
+
+function memberEmailPool() {
+  const site = {
+    id: 101,
+    slug: 'site-1',
+    name: '測試網站',
+    domain: '',
+    site_status: 'active',
+    contact_email: 'owner@example.com'
+  };
+
+  return {
+    async query(sql, params) {
+      if (sql.includes('from sites') && sql.includes('account_id = $1 and id = $2')) {
+        return { rows: [site] };
+      }
+
+      if (sql.includes('from members') && sql.includes('where site_id = $1 and id = any')) {
+        return {
+          rows: [
+            { id: 7, site_id: 101, email: 'bobo@example.com', name: '陳bobo', status: 'active' }
+          ]
+        };
+      }
+
+      if (sql.includes('from products p') && sql.includes('where p.site_id = $1 and p.id = any')) {
+        return {
+          rows: [
+            {
+              id: 8,
+              site_id: 101,
+              site_category_id: 23,
+              sku: 'AURORA-X1',
+              name: 'Aurora X1 NeoCyber 88鍵旗艦智慧電鋼琴',
+              summary: '旗艦智慧電鋼琴',
+              base_price: 128000,
+              sale_price: null,
+              stock: 12,
+              status: 'active',
+              sales_volume: 0,
+              created_at: null,
+              updated_at: null,
+              primary_image_path: 'sites/101/mcp-uploads/committed/aurora.png'
+            }
+          ]
+        };
+      }
+
+      if (sql.includes('from site_mail_layouts')) {
+        return { rows: [] };
+      }
+
+      if (sql.includes('select contact_email from sites where id = $1')) {
+        return { rows: [{ contact_email: 'owner@example.com' }] };
+      }
+
+      throw new Error(`Unexpected query: ${sql}`);
+    }
+  };
+}
+
+test('repository previews member email with sanitized html and signed draft token', async () => {
+  const repository = new WeblessAccountRepository(memberEmailPool(), {
+    weblessMcpSecret: 'secret-for-tests',
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+
+  const preview = await repository.previewMemberEmail(11, {
+    site_id: 101,
+    recipient_scope: 'members',
+    member_ids: [7],
+    product_ids: [8],
+    subject: '到貨通知',
+    html_content: '<p onclick="alert(1)">到貨了</p><script>alert(1)</script><iframe src="https://evil.test"></iframe>'
+  });
+
+  assert.equal(preview.ok, true);
+  assert.equal(preview.recipient_summary.scope, 'members');
+  assert.equal(preview.recipient_summary.count, 1);
+  assert.equal(preview.products[0].id, 8);
+  assert.match(preview.preview_html, /到貨了/);
+  assert.doesNotMatch(preview.preview_html, /onclick|script|iframe/i);
+  assert.equal(typeof preview.email_draft_token, 'string');
+  assert.equal(typeof preview.confirmation_token, 'string');
+});
+
+test('repository sends only a confirmed member email draft through Webless', async () => {
+  const calls = [];
+  const repository = new WeblessAccountRepository(memberEmailPool(), {
+    weblessMcpSecret: 'secret-for-tests',
+    publicSiteBaseUrl: 'https://slimweb.tw',
+    weblessAppBaseUrl: 'https://app.slimweb.tw',
+    fetchImpl: async (url, options) => {
+      calls.push({ url: String(url), options });
+      return {
+        ok: true,
+        status: 200,
+        async json() {
+          return {
+            ok: true,
+            delivery_mode: 'queue',
+            queued: true,
+            recipient_count: 42,
+            bcc_email: 'owner@example.com'
+          };
+        }
+      };
+    }
+  });
+
+  const preview = await repository.previewMemberEmail(11, {
+    site_id: 101,
+    recipient_scope: 'all_members',
+    product_ids: [8],
+    subject: '母親節特惠',
+    html_content: '<p>Aurora 特價中</p>'
+  });
+  const sent = await repository.sendMemberEmail(11, {
+    site_id: 101,
+    email_draft_token: preview.email_draft_token,
+    confirmation_token: preview.confirmation_token
+  });
+
+  assert.equal(sent.ok, true);
+  assert.equal(sent.delivery_mode, 'queue');
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, 'https://app.slimweb.tw/sites/site-1/mcp-member-emails/send');
+  assert.equal(calls[0].options.headers['x-slimweb-mcp-secret'], 'secret-for-tests');
+  const body = JSON.parse(calls[0].options.body);
+  assert.equal(body.recipient_scope, 'all_members');
+  assert.equal(body.subject, '母親節特惠');
+  assert.equal(body.bcc_contact_email, 'owner@example.com');
+  assert.deepEqual(body.product_ids, [8]);
+});
