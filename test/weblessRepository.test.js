@@ -2814,6 +2814,26 @@ test('repository previews member email with sanitized html and signed draft toke
   assert.equal(typeof preview.confirmation_token, 'string');
 });
 
+test('repository previews member email with singular member and product id aliases', async () => {
+  const repository = new WeblessAccountRepository(memberEmailPool(), {
+    weblessMcpSecret: 'secret-for-tests',
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+
+  const preview = await repository.previewMemberEmail(11, {
+    site_id: 101,
+    recipient_scope: 'members',
+    member_id: 7,
+    product_id: 8,
+    subject: '到貨通知',
+    html_content: '<p>到貨了</p>'
+  });
+
+  assert.equal(preview.recipient_summary.count, 1);
+  assert.deepEqual(preview.recipient_summary.members.map((member) => member.id), [7]);
+  assert.deepEqual(preview.products.map((product) => product.id), [8]);
+});
+
 test('repository sends only a confirmed member email draft through Webless', async () => {
   const calls = [];
   const repository = new WeblessAccountRepository(memberEmailPool(), {

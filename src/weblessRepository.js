@@ -3050,8 +3050,8 @@ export class WeblessAccountRepository {
   async previewMemberEmail(accountId, args) {
     const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
     const recipientScope = normalizeEmailRecipientScope(args.recipient_scope);
-    const memberIds = normalizeIntegerList(args.member_ids, 'member_ids');
-    const productIds = normalizeIntegerList(args.product_ids, 'product_ids');
+    const memberIds = normalizeIntegerListWithAlias(args.member_ids, args.member_id, 'member_ids', 'member_id');
+    const productIds = normalizeIntegerListWithAlias(args.product_ids, args.product_id, 'product_ids', 'product_id');
     const subject = normalizeEmailSubject(args.subject);
     const sanitizedContent = sanitizeEmailHtml(args.html_content);
 
@@ -8541,6 +8541,15 @@ function normalizeIntegerList(value, name) {
   }
 
   return [...new Set(value.map((item) => requireInteger(item, name)))];
+}
+
+function normalizeIntegerListWithAlias(value, aliasValue, name, aliasName) {
+  const values = normalizeIntegerList(value, name);
+  if (values.length > 0 || aliasValue === undefined || aliasValue === null || aliasValue === '') {
+    return values;
+  }
+
+  return [requireInteger(aliasValue, aliasName)];
 }
 
 function normalizeEmailSubject(value) {

@@ -1376,10 +1376,18 @@ const MCP_TOOLS = [
             items: { type: 'integer' },
             description: 'Required when recipient_scope=members. Omit or pass [] when recipient_scope=all_members.'
           },
+          member_id: {
+            type: 'integer',
+            description: 'Optional shorthand for a single target member. Prefer member_ids when possible; member_id is normalized to member_ids=[member_id].'
+          },
           product_ids: {
             type: 'array',
             items: { type: 'integer' },
             description: 'Optional verified product IDs to render as email product cards. Omit when the email does not reference products.'
+          },
+          product_id: {
+            type: 'integer',
+            description: 'Optional shorthand for one product card. Prefer product_ids when possible; product_id is normalized to product_ids=[product_id].'
           },
           subject: { type: 'string' },
           html_content: {
