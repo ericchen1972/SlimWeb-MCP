@@ -183,7 +183,10 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 | `slimweb_sites_list` | Available | account read | 列出使用者可操作的 SlimWeb sites。 |
 | `slimweb_site_select` | Available | account read | 驗證並回傳 AI 後續 tool 呼叫要操作的 site。 |
 | `slimweb_themes_list` | Available | content read | 列出站台的 Default 與自訂版型。 |
-| `slimweb_themes_create_from_default` | Available | content write | 建立新版型，並只複製 Default shell/root-element template；內容頁預設沿用 Default。 |
+| `slimweb_site_theme_mode_get` | Available | content read | 讀取站台層級色系；Default 與所有自訂版型都沿用這個 light/dark 設定。 |
+| `slimweb_site_theme_mode_update` | Available | content write | 將站台層級色系切換為 light 或 dark。 |
+| `slimweb_themes_create_from_default` | Available | content write | 建立新版型，並只複製 Default shell/root-element template；首頁不屬於版型，非首頁內容頁預設沿用 Default。 |
+| `slimweb_themes_activate` | Available | content write | 將指定版型設為前台啟用版型；會影響實際前台呈現。 |
 | `slimweb_themes_delete` | Available | content write | 刪除非 Default 版型與其 template 內容；Default 不能刪除。 |
 | `slimweb_theme_shell_get_context` | Available | content read | 回傳設計用 reference-only JSON，包含 nav、分類、購物車/登入按鈕、footer 聯絡資訊與線上客服狀態。 |
 | `slimweb_themes_update_root_elements` | Available | content write | 更新非 Default 版型的 navbar、footer、online support 與 root CSS。 |
@@ -360,11 +363,33 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - Scope: active site
 - 用途: 列出目前站台可用版型，讓 AI 知道 Default、active theme 與可設計的自訂版型。
 - Input: `site_id`
-- Output: site summary、theme IDs、names、is default、is active、theme mode
+- Output: site summary、site-level theme mode、theme IDs、names、is default、is active、inherits site theme mode
 - Side effects: none
 - 是否需要 confirmation: no
 - 錯誤情境: site not found、site not accessible
 - Audit fields: request ID、user ID、account ID、site ID
+
+### `slimweb_site_theme_mode_get`
+
+- 狀態: Available
+- 權限: content read
+- Scope: active site
+- 用途: 讀取站台層級色系。此設定是 Default 與所有自訂版型的唯一 light/dark 來源。
+- Input: `site_id`
+- Output: site summary、`theme_mode` (`light` 或 `dark`)、scope
+- Side effects: none
+- 是否需要 confirmation: no
+
+### `slimweb_site_theme_mode_update`
+
+- 狀態: Available
+- 權限: content write
+- Scope: active site
+- 用途: 更新站台層級色系。使用者要求 neon、螢光字、暗色高對比或明亮極簡時，AI 應先確認色調屬於 `light` 或 `dark`，必要時呼叫此 tool。
+- Input: `site_id`、`theme_mode` (`light` 或 `dark`)
+- Output: updated site summary、`theme_mode`、scope
+- Side effects: updates `sites.theme_mode`; custom style schemes inherit this value.
+- 是否需要 confirmation: yes when changing an existing site color mode
 
 ### `slimweb_themes_create_from_default`
 
@@ -372,11 +397,25 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 權限: content write
 - Scope: active site
 - 用途: 建立新版型。此 tool 會新增一筆非 Default `site_pages` 記錄，並只將 Default 的 shell/root-element template storage 複製到新版型目錄。
-- Input: `site_id`、`name`、optional `theme_mode` (`light`, `dark`, `system`)
-- Output: site summary、created theme summary、copied flag、`copied_scope`、`content_fallback`、preview URL
+- Input: `site_id`、`name`
+- Output: site summary、created theme summary、copied flag、`copied_scope`、`content_fallback`、`inherits_site_theme_mode`、preview URL
 - Side effects: creates site page style scheme and copies Default shell files. It does not copy `pages/*` body/content files.
+- 色系規則: 此 tool 不選擇 light/dark；新版型沿用 `sites.theme_mode`。若設計需求跟色調有關，先用 `slimweb_site_theme_mode_get/update`。
 - 是否需要 confirmation: yes when user did not explicitly ask to create a new theme
 - 錯誤情境: site not found、invalid name、storage adapter not configured、upstream write failed
+- Audit fields: request ID、user ID、account ID、site ID、theme ID
+
+### `slimweb_themes_activate`
+
+- 狀態: Available
+- 權限: content write
+- Scope: active site and selected theme
+- 用途: 將指定版型設為前台啟用版型。AI 必須在使用者明確確認要切換前台版型後才呼叫。
+- Input: `site_id`、`theme_id`
+- Output: site summary、activated theme summary、updated themes list、preview URL
+- Side effects: sets all other site themes inactive and selected theme active
+- 是否需要 confirmation: yes
+- 錯誤情境: site not found、theme not found、database write failed
 - Audit fields: request ID、user ID、account ID、site ID、theme ID
 
 ### `slimweb_theme_shell_get_context`
@@ -1227,34 +1266,34 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 狀態: Available
 - 權限: content read
 - Scope: active site
-- 用途: 讀取首頁 body/content。Default 讀取 `content.blade.php`；自訂版型若有專屬 `body.blade.php` 則讀取該檔，否則 runtime 會沿用 Default 內容。
-- Input: `site_id`、optional `theme_id`、optional `include_default`
+- 用途: 讀取站台唯一首頁 body/content。首頁不屬於 Default 或自訂版型；切換版型不會切換首頁內容或設計。
+- Input: `site_id`
 - Output: site summary、page key、theme summary、storage path、content HTML、exists flag
 - Side effects: none
 - 是否需要 confirmation: no
-- 錯誤情境: site not found、theme not found、storage adapter not configured
-- Audit fields: request ID、user ID、account ID、site ID、theme ID、page key
+- 錯誤情境: site not found、storage adapter not configured
+- Audit fields: request ID、user ID、account ID、site ID、page key
 
 ### `slimweb_pages_update_home_content`
 
 - 狀態: Available
 - 權限: content write
 - Scope: active site
-- 用途: 替換首頁 body/content。AI 應先使用 `slimweb_assets_upload` 保存圖片，並在 HTML 使用回傳 URL。
-- Input: `site_id`、optional `theme_id`、`content.html` or `content.body_html`、optional `replacement_mode`
+- 用途: 替換站台唯一首頁 body/content。AI 應先使用 `slimweb_assets_upload` 保存圖片，並在 HTML 使用回傳 URL；不要建立 theme-specific homepage。
+- Input: `site_id`、`content.html` or `content.body_html`、optional `replacement_mode`
 - Output: write summary、site summary、theme summary、storage path、bytes written
 - Side effects: overwrites homepage template file in configured Webless template storage
 - 是否需要 confirmation: yes when replacing customer-facing content
-- 錯誤情境: unsafe content、missing HTML、site/theme not found、storage adapter not configured
-- Audit fields: request ID、user ID、account ID、site ID、theme ID、page key、bytes written
+- 錯誤情境: unsafe content、missing HTML、site not found、storage adapter not configured
+- Audit fields: request ID、user ID、account ID、site ID、page key、bytes written
 
 ### `slimweb_preview_get_page_url`
 
 - 狀態: Available
 - 權限: content read
 - Scope: active site
-- 用途: 回傳 AI 可開啟並自行截圖的頁面預覽 URL。
-- Input: `site_id`、`page_key`、optional `theme_id`、optional `mode`
+- 用途: 回傳 AI 可開啟並自行截圖的頁面預覽 URL。`page_key=index` 會回傳站台唯一首頁預覽並忽略 theme；其他頁面才支援 `theme_id`。
+- Input: `site_id`、`page_key`、optional `theme_id` for non-home pages、optional `mode`
 - Output: site summary、page key、theme summary、preview URL、mode、theme parameter support hint
 - Side effects: none
 - 是否需要 confirmation: no
@@ -1376,7 +1415,8 @@ Default 與版型限制：
 - 在 Default 狀態下，AI 只能修改首頁內容與自訂頁面內容；不得新增或修改 Default 的版型級 external assets。
 - 若 Default 頁面內容需要外部資源，AI 應優先使用 page scope，並說明為何該頁需要該資源。
 - 當使用者要求 AI 建立或修改非 Default 版型時，theme scope 可用，但必須明確指定目標 theme。
-- 版型與內容分離：非 Default 版型只管理 navbar、body/background styling、online support、footer。除非使用者明確要求「某版型的某頁內容」，否則內容頁沿用 Default。
+- 版型與內容分離：`index` 首頁是站台層級唯一首頁，不屬於任何版型；非 Default 版型只管理 navbar、body/background styling、online support、footer，以及非首頁頁面。除非使用者明確要求「某版型的某個非首頁頁面」，否則非首頁內容頁沿用 Default。
+- 色系與版型分離：`sites.theme_mode` 是唯一 light/dark 來源，Default 與所有自訂版型都沿用。AI 不應在一般版型或頁面任務中硬寫文字顏色、按鈕底色等全域 theme CSS；除非使用者明確指定。若使用者要求 neon、螢光、暗色高對比等風格，先確認或切換為 `dark`。
 - 建立或修改版型前，AI 必須先讀 `slimweb_theme_shell_get_context` 與 `slimweb_theme_style_profile_get`；前者描述實際資料形狀，後者描述風格意圖與變更歷史。
 - `slimweb_theme_shell_get_context` 回傳的是 reference-only JSON。AI 可以用它決定 spacing、icon、容器容量與 responsive 行為，但不可把 nav/footer/contact 等真實資料寫死到版型片段。
 
@@ -1442,7 +1482,10 @@ MCP tools 應回傳可預期的錯誤類型：
 - `slimweb_sites_list`
 - `slimweb_site_select`
 - `slimweb_themes_list`
+- `slimweb_site_theme_mode_get`
+- `slimweb_site_theme_mode_update`
 - `slimweb_themes_create_from_default`
+- `slimweb_themes_activate`
 - `slimweb_themes_update_root_elements`
 - `slimweb_assets_upload`
 - `slimweb_pages_get_home_content`

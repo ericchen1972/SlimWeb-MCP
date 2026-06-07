@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { generateKeyPairSync } from 'node:crypto';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 
 import {
   GcsStorageAdapter,
+  LocalStorageAdapter,
   databaseConfigFromEnv,
   WeblessAccountRepository,
   createStorageAdapter
@@ -24,7 +26,22 @@ function fakePool() {
             slug: 'site-1',
             name: '測試網站',
             domain: '',
-            site_status: 'active'
+            site_status: 'active',
+            theme_mode: 'dark'
+          }]
+        };
+      }
+
+      if (sql.includes('update sites') && sql.includes('set theme_mode = $2')) {
+        return {
+          rows: [{
+            id: params[0],
+            slug: 'site-1',
+            name: '測試網站',
+            domain: '',
+            callback_code: 'swcb_test',
+            site_status: 'active',
+            theme_mode: params[1]
           }]
         };
       }
@@ -94,9 +111,30 @@ test('repository exposes only current Webless site status fields', async () => {
 function themeMutationPool() {
   const queries = [];
   let insertedThemeId = 22;
+  const themes = [
+    {
+      id: 7,
+      site_id: 101,
+      name: 'Default',
+      is_default: true,
+      is_active: true,
+      theme_mode: 'light',
+      sort_order: 0
+    },
+    {
+      id: 22,
+      site_id: 101,
+      name: '可愛版型',
+      is_default: false,
+      is_active: false,
+      theme_mode: 'light',
+      sort_order: 3
+    }
+  ];
 
   return {
     queries,
+    themes,
     async query(sql, params) {
       queries.push({ sql, params });
 
@@ -111,7 +149,22 @@ function themeMutationPool() {
             slug: 'site-1',
             name: '測試網站',
             domain: '',
-            site_status: 'active'
+            site_status: 'active',
+            theme_mode: 'dark'
+          }]
+        };
+      }
+
+      if (sql.includes('update sites') && sql.includes('set theme_mode = $2')) {
+        return {
+          rows: [{
+            id: params[0],
+            slug: 'site-1',
+            name: '測試網站',
+            domain: '',
+            callback_code: 'swcb_test',
+            site_status: 'active',
+            theme_mode: params[1]
           }]
         };
       }
@@ -121,28 +174,52 @@ function themeMutationPool() {
       }
 
       if (sql.includes('insert into site_pages')) {
+        const theme = {
+          id: insertedThemeId++,
+          site_id: params[0],
+          name: params[1],
+          is_default: false,
+          is_active: false,
+          theme_mode: params[2],
+          sort_order: params[3]
+        };
+        themes.push(theme);
+
         return {
-          rows: [{
-            id: insertedThemeId++,
-            site_id: params[0],
-            name: params[1],
-            is_default: false,
-            is_active: false,
-            theme_mode: params[2]
-          }]
+          rows: [theme]
         };
       }
 
+      if (sql.includes('set is_active = false') && sql.includes('where site_id = $1 and is_active = true')) {
+        for (const theme of themes) {
+          if (theme.site_id === params[0] && theme.is_active) {
+            theme.is_active = false;
+          }
+        }
+
+        return { rows: [] };
+      }
+
+      if (sql.includes('set is_active = true') && sql.includes('where site_id = $1 and id = $2')) {
+        const theme = themes.find((item) => item.site_id === params[0] && item.id === params[1]);
+        theme.is_active = true;
+
+        return { rows: [theme] };
+      }
+
       if (sql.includes('where site_id = $1 and id = $2')) {
+        const theme = themes.find((item) => item.site_id === params[0] && item.id === params[1]);
+
         return {
-          rows: [{
-            id: params[1],
-            site_id: params[0],
-            name: '可愛版型',
-            is_default: false,
-            is_active: false,
-            theme_mode: 'light'
-          }]
+          rows: theme ? [theme] : []
+        };
+      }
+
+      if (sql.includes('from site_pages') && sql.includes('order by is_default desc, sort_order asc')) {
+        return {
+          rows: themes
+            .filter((theme) => theme.site_id === params[0])
+            .sort((left, right) => Number(right.is_default) - Number(left.is_default) || left.sort_order - right.sort_order || left.id - right.id)
         };
       }
 
@@ -162,6 +239,65 @@ function designContextPool() {
             name: '測試網站',
             domain: '',
             site_status: 'active'
+          }]
+        };
+      }
+
+      if (sql.includes('from site_admins a') && sql.includes('inner join sites s on s.id = a.site_id')) {
+        return {
+          rows: [{
+            id: params[0],
+            slug: 'site-1',
+            name: '測試網站',
+            domain: '',
+            callback_code: 'swcb_test',
+            site_status: 'active',
+            icon_path: null,
+            account_id: 2,
+            site_admin_id: 7,
+            google_email: 'admin@example.test',
+            google_sub: '',
+            permissions: ['backend_ai_assistant', 'page_management_templates'],
+            first_admin_id: 7
+          }]
+        };
+      }
+
+      if (sql.includes('from site_admins a') && sql.includes('inner join sites s on s.id = a.site_id')) {
+        return {
+          rows: [{
+            id: params[0],
+            slug: 'site-1',
+            name: '測試網站',
+            domain: '',
+            callback_code: 'swcb_test',
+            site_status: 'active',
+            icon_path: null,
+            account_id: 2,
+            site_admin_id: 7,
+            google_email: 'admin@example.test',
+            google_sub: '',
+            permissions: ['backend_ai_assistant', 'page_management_templates'],
+            first_admin_id: 7
+          }]
+        };
+      }
+
+      if (sql.includes('from site_admins a') && sql.includes('inner join sites s on s.id = a.site_id')) {
+        return {
+          rows: [{
+            id: params[0],
+            slug: 'site-1',
+            name: '測試網站',
+            domain: '',
+            callback_code: 'swcb_test',
+            site_status: 'active',
+            icon_path: null,
+            site_admin_id: 7,
+            google_email: 'admin@example.test',
+            google_sub: '',
+            permissions: ['backend_ai_assistant', 'page_management_templates'],
+            first_admin_id: 7
           }]
         };
       }
@@ -247,6 +383,26 @@ function styleProfilePool() {
         };
       }
 
+      if (sql.includes('from site_admins a') && sql.includes('inner join sites s on s.id = a.site_id')) {
+        return {
+          rows: [{
+            id: params[0],
+            slug: 'site-1',
+            name: '測試網站',
+            domain: '',
+            callback_code: 'swcb_test',
+            site_status: 'active',
+            icon_path: null,
+            account_id: 2,
+            site_admin_id: 7,
+            google_email: 'admin@example.test',
+            google_sub: '',
+            permissions: ['backend_ai_assistant', 'page_management_templates'],
+            first_admin_id: 7
+          }]
+        };
+      }
+
       if (sql.includes('from site_pages') && sql.includes('where site_id = $1 and id = $2')) {
         return {
           rows: [{
@@ -278,7 +434,9 @@ function styleProfilePool() {
           version: 1,
           is_active: true,
           created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
+          updated_at: new Date().toISOString(),
+          created_by_account_id: params[12],
+          updated_by_account_id: params[12]
         };
 
         return { rows: [state.profile] };
@@ -293,7 +451,8 @@ function styleProfilePool() {
         state.profile = {
           ...state.profile,
           user_requests: nextRequests,
-          version: state.profile.version + 1
+          version: state.profile.version + 1,
+          updated_by_account_id: params[1]
         };
 
         return { rows: [state.profile] };
@@ -1085,14 +1244,14 @@ function productCatalogPool() {
       }
 
       if (sql.includes('insert into site_categories')) {
-        const category = { id: state.nextCategoryId++, site_id: params[0], parent_id: params[1], name: params[2], icon_svg: params[3], sort_order: params[4], icon_path: null, image_path: null };
+        const category = { id: state.nextCategoryId++, site_id: params[0], parent_id: params[1], name: params[2], icon_svg: params[3], image_path: params[4], sort_order: params[5], icon_path: null };
         state.categories.push(category);
         return { rows: [category] };
       }
 
       if (sql.includes('update site_categories')) {
-        const category = state.categories.find((item) => item.site_id === params[4] && item.id === params[5]);
-        Object.assign(category, { parent_id: params[0], name: params[1], icon_svg: params[2], sort_order: params[3] });
+        const category = state.categories.find((item) => item.site_id === params[5] && item.id === params[6]);
+        Object.assign(category, { parent_id: params[0], name: params[1], icon_svg: params[2], image_path: params[3], sort_order: params[4] });
         return { rows: [category] };
       }
 
@@ -1305,6 +1464,87 @@ test('storage adapter uses GCS when GCS_BUCKET is configured', () => {
   });
 
   assert.equal(adapter instanceof GcsStorageAdapter, true);
+});
+
+test('storage adapter respects Laravel local filesystem disk over GCS env', () => {
+  const previousDisk = process.env.FILESYSTEM_DISK;
+  const previousBucket = process.env.GCS_BUCKET;
+  const previousRoot = process.env.WEBLESS_STORAGE_ROOT;
+
+  process.env.FILESYSTEM_DISK = 'local';
+  process.env.GCS_BUCKET = 'webless_bucket';
+  process.env.WEBLESS_STORAGE_ROOT = '/tmp/webless-storage';
+
+  try {
+    const adapter = createStorageAdapter();
+    assert.equal(adapter instanceof LocalStorageAdapter, true);
+  } finally {
+    if (previousDisk === undefined) {
+      delete process.env.FILESYSTEM_DISK;
+    } else {
+      process.env.FILESYSTEM_DISK = previousDisk;
+    }
+
+    if (previousBucket === undefined) {
+      delete process.env.GCS_BUCKET;
+    } else {
+      process.env.GCS_BUCKET = previousBucket;
+    }
+
+    if (previousRoot === undefined) {
+      delete process.env.WEBLESS_STORAGE_ROOT;
+    } else {
+      process.env.WEBLESS_STORAGE_ROOT = previousRoot;
+    }
+  }
+});
+
+test('GCS storage adapter uses service account credentials before metadata token', async () => {
+  const credentialsRoot = await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-gcs-creds-'));
+  const credentialsPath = path.join(credentialsRoot, 'service-account.json');
+  const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+  await writeFile(credentialsPath, JSON.stringify({
+    type: 'service_account',
+    client_email: 'local-test@example.iam.gserviceaccount.com',
+    private_key: privateKey.export({ type: 'pkcs8', format: 'pem' })
+  }));
+  const requests = [];
+  const fetchImpl = async (url, options = {}) => {
+    requests.push({ url, options });
+
+    if (url === 'https://oauth2.googleapis.com/token') {
+      assert.equal(options.method, 'POST');
+      assert.equal(options.headers['content-type'], 'application/x-www-form-urlencoded');
+      const body = new URLSearchParams(String(options.body));
+      assert.equal(body.get('grant_type'), 'urn:ietf:params:oauth:grant-type:jwt-bearer');
+      assert.ok(body.get('assertion')?.split('.').length === 3);
+
+      return new Response(JSON.stringify({
+        access_token: 'service-account-token',
+        expires_in: 3600
+      }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      });
+    }
+
+    if (String(url).startsWith('https://storage.googleapis.com/storage/v1/b/webless_bucket/o/')) {
+      assert.equal(options.headers.authorization, 'Bearer service-account-token');
+      return new Response('template html', { status: 200 });
+    }
+
+    throw new Error(`Unexpected fetch: ${url}`);
+  };
+  const adapter = new GcsStorageAdapter({
+    bucket: 'webless_bucket',
+    fetchImpl,
+    credentialsPath
+  });
+
+  const content = await adapter.readText('sites/101/templates/default/root-elements/navbar.blade.php');
+
+  assert.equal(content, 'template html');
+  assert.equal(requests.some((request) => request.url === 'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token'), false);
 });
 
 test('repository creates and commits Webless signed image uploads', async () => {
@@ -1797,7 +2037,10 @@ test('repository creates categories and products with required primary images', 
   const category = await repository.upsertCategory(11, {
     site_id: 101,
     name: '女童',
-    icon_svg_base64: iconSvgBase64
+    icon_svg_base64: iconSvgBase64,
+    image: {
+      media_path: 'sites/101/mcp-uploads/committed/kids-category.webp'
+    }
   });
   const movedCategory = await repository.upsertCategory(11, {
     site_id: 101,
@@ -1826,6 +2069,7 @@ test('repository creates categories and products with required primary images', 
   assert.equal(categories.categories[0].name, '童裝');
   assert.equal(category.category.name, '女童');
   assert.equal(category.category.parent_id, null);
+  assert.equal(category.category.image_path, 'sites/101/mcp-uploads/committed/kids-category.webp');
   assert.match(category.category.icon_svg, /<svg/);
   assert.equal(movedCategory.category.parent_id, 5);
   assert.equal(product.product.name, '男童牛仔外套');
@@ -2000,6 +2244,36 @@ test('repository updates and reads Webless homepage content files', async () => 
 
   assert.equal(read.exists, true);
   assert.equal(read.content.html, '<section class="hero">Hello</section>\n');
+});
+
+test('repository homepage content ignores theme_id and remains site-level', async () => {
+  const storageRoot = await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-'));
+  const repository = new WeblessAccountRepository(fakePool(), {
+    storageRoot,
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+
+  const update = await repository.updateHomeContent(11, {
+    site_id: 101,
+    theme_id: 22,
+    content: {
+      html: '<section class="hero">One homepage</section>'
+    }
+  });
+
+  assert.equal(update.storage_path, 'sites/101/templates/default/pages/index/content.blade.php');
+  await assert.rejects(
+    readFile(path.join(storageRoot, 'sites/101/templates/schemes/22/pages/index/body.blade.php'), 'utf8'),
+    /ENOENT/
+  );
+
+  const read = await repository.getHomeContent(11, {
+    site_id: 101,
+    theme_id: 22
+  });
+
+  assert.equal(read.storage_path, 'sites/101/templates/default/pages/index/content.blade.php');
+  assert.equal(read.content.html, '<section class="hero">One homepage</section>\n');
 });
 
 test('repository updates and reads Webless homepage content files in GCS', async () => {
@@ -2295,13 +2569,16 @@ test('repository creates a theme by copying only default shell files', async () 
   const result = await repository.createThemeFromDefault(11, {
     site_id: 101,
     name: '可愛版型',
-    theme_mode: 'light'
+    theme_mode: 'dark'
   });
 
   assert.equal(result.theme.id, 22);
   assert.equal(result.theme.name, '可愛版型');
+  assert.equal(result.theme.theme_mode, 'light');
+  assert.equal(result.inherits_site_theme_mode, true);
+  assert.equal(result.site_theme_mode, 'dark');
   assert.equal(result.copied_from_default, true);
-  assert.equal(result.content_fallback, 'default');
+  assert.equal(result.content_fallback, 'site_level_homepage');
   await assert.rejects(
     readFile(path.join(storageRoot, 'sites/101/templates/schemes/22/pages/index/body.blade.php'), 'utf8'),
     /ENOENT/
@@ -2314,6 +2591,44 @@ test('repository creates a theme by copying only default shell files', async () 
     await readFile(path.join(storageRoot, 'sites/101/templates/schemes/22/assets/root-elements/css/00-base.css'), 'utf8'),
     '.nav{display:flex}'
   );
+  assert.equal(pool.queries.some((query) => query.sql === 'BEGIN'), true);
+  assert.equal(pool.queries.some((query) => query.sql === 'COMMIT'), true);
+});
+
+test('repository updates site-level theme mode', async () => {
+  const pool = themeMutationPool();
+  const repository = new WeblessAccountRepository(pool, {
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+
+  const result = await repository.updateSiteThemeMode(11, {
+    site_id: 101,
+    theme_mode: 'dark'
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.theme_mode, 'dark');
+  assert.equal(result.scope, 'site');
+});
+
+test('repository activates a selected theme for a site', async () => {
+  const pool = themeMutationPool();
+  const repository = new WeblessAccountRepository(pool, {
+    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+
+  const result = await repository.activateTheme(11, {
+    site_id: 101,
+    theme_id: '22'
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.theme.id, 22);
+  assert.equal(result.theme.is_active, true);
+  assert.equal(result.themes.find((theme) => theme.id === 7).is_active, false);
+  assert.equal(result.themes.find((theme) => theme.id === 22).is_active, true);
+  assert.match(result.preview_url, /preview_style_scheme=22/);
   assert.equal(pool.queries.some((query) => query.sql === 'BEGIN'), true);
   assert.equal(pool.queries.some((query) => query.sql === 'COMMIT'), true);
 });
@@ -2336,6 +2651,36 @@ test('repository returns theme shell context for design reference', async () => 
   assert.equal(context.product_categories.counts.total_items, 1);
   assert.equal(context.footer.counts.contact_items, 8);
   assert.equal(context.online_support.enabled, true);
+});
+
+test('repository accepts model-shaped theme id values for theme shell context', async () => {
+  const repository = new WeblessAccountRepository(designContextPool(), {
+    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+
+  const context = await repository.getThemeShellContext(11, {
+    site_id: 101,
+    theme_id: { id: 22, name: '可愛版型' }
+  });
+
+  assert.equal(context.theme.id, 22);
+  assert.equal(context.navbar.counts.total_items, 2);
+});
+
+test('repository accepts string theme id values for theme shell context', async () => {
+  const repository = new WeblessAccountRepository(designContextPool(), {
+    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+
+  const context = await repository.getThemeShellContext(11, {
+    site_id: 101,
+    theme_id: '22'
+  });
+
+  assert.equal(context.theme.id, 22);
+  assert.equal(context.reference_only, true);
 });
 
 test('repository stores and appends theme style profile', async () => {
@@ -2366,6 +2711,35 @@ test('repository stores and appends theme style profile', async () => {
   assert.equal(upserted.profile.summary, '童趣、柔和、手繪插圖');
   assert.equal(appended.profile.user_requests.length, 2);
   assert.equal(read.profile.visual_keywords[0], '童趣');
+});
+
+test('repository stores theme style profile actor id from admin identity object', async () => {
+  const pool = styleProfilePool();
+  const repository = new WeblessAccountRepository(pool, {
+    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-'))
+  });
+  const actor = {
+    account_id: 11,
+    email: 'admin@example.test',
+    site_id: 101,
+    permissions: ['backend_ai_assistant', 'page_management_templates']
+  };
+
+  const upserted = await repository.upsertThemeStyleProfile(actor, {
+    site_id: 101,
+    theme_id: 22,
+    summary: '暗色版型',
+    visual_keywords: ['dark mode']
+  });
+  const appended = await repository.appendThemeStyleProfileRequest(actor, {
+    site_id: 101,
+    theme_id: 22,
+    request: '補上黑底白字規格'
+  });
+
+  assert.equal(pool.state.profile.created_by_account_id, 2);
+  assert.equal(pool.state.profile.updated_by_account_id, 2);
+  assert.equal(appended.profile.user_requests.length, 1);
 });
 
 test('repository updates root element fragments and css for a custom theme', async () => {
@@ -2736,6 +3110,7 @@ function memberEmailPool() {
     name: '測試網站',
     domain: '',
     site_status: 'active',
+    icon_path: 'sites/101/settings/site-logo.png',
     contact_email: 'owner@example.com'
   };
 
@@ -2762,7 +3137,7 @@ function memberEmailPool() {
               site_category_id: 23,
               sku: 'AURORA-X1',
               name: 'Aurora X1 NeoCyber 88鍵旗艦智慧電鋼琴',
-              summary: '旗艦智慧電鋼琴',
+              summary: '<p>旗艦智慧電鋼琴</p>',
               base_price: 128000,
               sale_price: null,
               stock: 12,
@@ -2809,6 +3184,12 @@ test('repository previews member email with sanitized html and signed draft toke
   assert.equal(preview.recipient_summary.count, 1);
   assert.equal(preview.products[0].id, 8);
   assert.match(preview.preview_html, /到貨了/);
+  assert.match(preview.preview_html, /https:\/\/slimweb\.tw\/media\/sites\/101\/settings\/site-logo\.png/);
+  assert.match(preview.preview_html, /Aurora X1 NeoCyber 88鍵旗艦智慧電鋼琴/);
+  assert.match(preview.preview_html, /https:\/\/slimweb\.tw\/media\/sites\/101\/mcp-uploads\/committed\/aurora\.png/);
+  assert.match(preview.preview_html, /開啟商品/);
+  assert.match(preview.preview_html, /旗艦智慧電鋼琴/);
+  assert.doesNotMatch(preview.preview_html, /&lt;p&gt;|&lt;\/p&gt;/);
   assert.doesNotMatch(preview.preview_html, /onclick|script|iframe/i);
   assert.equal(typeof preview.email_draft_token, 'string');
   assert.equal(typeof preview.confirmation_token, 'string');
@@ -2830,6 +3211,44 @@ test('repository previews member email with singular member and product id alias
   });
 
   assert.equal(preview.recipient_summary.count, 1);
+  assert.deepEqual(preview.recipient_summary.members.map((member) => member.id), [7]);
+  assert.deepEqual(preview.products.map((product) => product.id), [8]);
+});
+
+test('repository previews member email with scalar member_ids and product_ids values', async () => {
+  const repository = new WeblessAccountRepository(memberEmailPool(), {
+    weblessMcpSecret: 'secret-for-tests',
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+
+  const preview = await repository.previewMemberEmail(11, {
+    site_id: 101,
+    recipient_scope: 'members',
+    member_ids: 7,
+    product_ids: 8,
+    subject: '到貨通知',
+    html_content: '<p>到貨了</p>'
+  });
+
+  assert.deepEqual(preview.recipient_summary.members.map((member) => member.id), [7]);
+  assert.deepEqual(preview.products.map((product) => product.id), [8]);
+});
+
+test('repository previews member email with model-shaped id values', async () => {
+  const repository = new WeblessAccountRepository(memberEmailPool(), {
+    weblessMcpSecret: 'secret-for-tests',
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+
+  const preview = await repository.previewMemberEmail(11, {
+    site_id: 101,
+    recipient_scope: 'members',
+    member_ids: '[7]',
+    product_ids: [{ id: 8 }],
+    subject: '到貨通知',
+    html_content: '<p>到貨了</p>'
+  });
+
   assert.deepEqual(preview.recipient_summary.members.map((member) => member.id), [7]);
   assert.deepEqual(preview.products.map((product) => product.id), [8]);
 });

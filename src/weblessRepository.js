@@ -1,5 +1,5 @@
 import pg from 'pg';
-import { createCipheriv, createDecipheriv, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHmac, createSign, randomBytes, timingSafeEqual } from 'node:crypto';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import ExcelJS from 'exceljs';
@@ -7,6 +7,8 @@ import ExcelJS from 'exceljs';
 const { Pool } = pg;
 const MAX_ASSET_BYTES = 10 * 1024 * 1024;
 const METADATA_TOKEN_URL = 'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token';
+const GOOGLE_OAUTH_TOKEN_URL = 'https://oauth2.googleapis.com/token';
+const GCS_TOKEN_SCOPE = 'https://www.googleapis.com/auth/devstorage.read_write';
 const SEO_SETTINGS_COLUMNS = [
   'seo_title',
   'seo_description',
@@ -239,6 +241,10 @@ function siteStatusLabel(status) {
   return normalizeSiteStatus(status) === 'maintenance' ? '維護中' : '正常運作';
 }
 
+function normalizeSiteThemeMode(value) {
+  return String(value ?? 'light').trim() === 'dark' ? 'dark' : 'light';
+}
+
 export function databaseConfigFromEnv(env = process.env) {
   const sslMode = String(env.DB_SSLMODE ?? '').toLowerCase();
   const config = {
@@ -304,6 +310,9 @@ export class WeblessAccountRepository {
           s.domain,
           s.callback_code,
           s.site_status,
+          s.theme_mode,
+          s.icon_path,
+          s.account_id,
           a.id as site_admin_id,
           a.google_email,
           a.google_sub,
@@ -353,7 +362,11 @@ export class WeblessAccountRepository {
           s.slug,
           s.name,
           s.domain,
+          s.callback_code,
           s.site_status,
+          s.theme_mode,
+          s.icon_path,
+          s.account_id,
           a.id as site_admin_id,
           a.google_email,
           a.google_sub,
@@ -387,6 +400,7 @@ export class WeblessAccountRepository {
 
     return {
       ...identity,
+      account_id: site.account_id ?? identity.account_id,
       site_admin_id: site.site_admin_id,
       site_id: site.site_id,
       permissions: site.permissions,
@@ -397,7 +411,7 @@ export class WeblessAccountRepository {
   async listSitesForAccount(accountId) {
     const result = await this.pool.query(
       `
-        select id, slug, name, domain, callback_code, site_status
+        select id, slug, name, domain, callback_code, site_status, theme_mode, icon_path
         from sites
         where account_id = $1
         order by id asc
@@ -413,7 +427,8 @@ export class WeblessAccountRepository {
       callback_code: site.callback_code ?? null,
       client_mcp_url: clientMcpUrlForSite(site, this.clientMcpBaseUrl),
       site_status: normalizeSiteStatus(site.site_status),
-      site_status_label: siteStatusLabel(site.site_status)
+      site_status_label: siteStatusLabel(site.site_status),
+      theme_mode: normalizeSiteThemeMode(site.theme_mode)
     }));
   }
 
@@ -434,14 +449,50 @@ export class WeblessAccountRepository {
 
     return {
       site,
+      site_theme_mode: site.theme_mode,
       themes
+    };
+  }
+
+  async getSiteThemeMode(accountId, args) {
+    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
+
+    return {
+      site,
+      theme_mode: site.theme_mode,
+      scope: 'site',
+      applies_to: ['Default', 'custom_style_schemes']
+    };
+  }
+
+  async updateSiteThemeMode(accountId, args) {
+    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
+    const themeMode = normalizeSiteThemeMode(args.theme_mode);
+
+    const result = await this.pool.query(
+      `
+        update sites
+        set theme_mode = $2, updated_at = now()
+        where id = $1
+        returning id, slug, name, domain, callback_code, site_status, theme_mode
+      `,
+      [site.id, themeMode]
+    );
+
+    const updatedSite = formatSite(result.rows[0], this.clientMcpBaseUrl);
+
+    return {
+      ok: true,
+      site: updatedSite,
+      theme_mode: updatedSite.theme_mode,
+      scope: 'site',
+      note: 'Style schemes inherit this site-level color mode. Do not store light/dark on site_pages.'
     };
   }
 
   async createThemeFromDefault(accountId, args) {
     const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
     const name = requireThemeName(args.name);
-    const themeMode = normalizeThemeMode(args.theme_mode);
 
     await this.pool.query('BEGIN');
 
@@ -465,7 +516,7 @@ export class WeblessAccountRepository {
           values ($1, $2, false, false, $3, 'default', 'default', 'default', 'default', null, $4)
           returning id, site_id, name, is_default, is_active, theme_mode
         `,
-        [site.id, name, themeMode, sortOrder]
+        [site.id, name, 'light', sortOrder]
       );
       const theme = formatTheme(result.rows[0]);
 
@@ -477,9 +528,11 @@ export class WeblessAccountRepository {
         theme,
         copied_from_default: true,
         copied_scope: 'theme_shell_only',
-        content_fallback: 'default',
+        content_fallback: 'site_level_homepage',
+        inherits_site_theme_mode: true,
+        site_theme_mode: site.theme_mode,
         source_theme: 'Default',
-        preview_url: this.previewUrlFor(site, 'index', theme.id)
+        preview_url: this.previewUrlFor(site, 'profile', theme.id)
       };
     } catch (error) {
       await this.pool.query('ROLLBACK');
@@ -528,6 +581,49 @@ export class WeblessAccountRepository {
     };
   }
 
+  async activateTheme(accountId, args) {
+    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
+    const theme = await this.resolveThemeForSite(site.id, args.theme_id);
+
+    await this.pool.query('BEGIN');
+
+    try {
+      await this.pool.query(
+        `
+          update site_pages
+          set is_active = false, updated_at = now()
+          where site_id = $1 and is_active = true
+        `,
+        [site.id]
+      );
+
+      const result = await this.pool.query(
+        `
+          update site_pages
+          set is_active = true, updated_at = now()
+          where site_id = $1 and id = $2
+          returning id, site_id, name, is_default, is_active, theme_mode
+        `,
+        [site.id, theme.id]
+      );
+
+      await this.pool.query('COMMIT');
+
+      const activatedTheme = formatTheme(result.rows[0]);
+
+      return {
+        ok: true,
+        site,
+        theme: activatedTheme,
+        themes: await this.listThemesForSite(site.id),
+        preview_url: this.previewUrlFor(site, 'profile', activatedTheme.id)
+      };
+    } catch (error) {
+      await this.pool.query('ROLLBACK');
+      throw error;
+    }
+  }
+
   async updateThemeRootElements(accountId, args) {
     const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
     const theme = await this.resolveThemeForSite(site.id, args.theme_id);
@@ -554,7 +650,7 @@ export class WeblessAccountRepository {
       theme,
       updated_fragments: updatedFragments,
       updated_css: typeof args.css === 'string' && args.css.trim() !== '',
-      preview_url: this.previewUrlFor(site, 'index', theme.id)
+      preview_url: this.previewUrlFor(site, 'profile', theme.id)
     };
   }
 
@@ -633,6 +729,7 @@ export class WeblessAccountRepository {
 
   async upsertThemeStyleProfile(accountId, args) {
     const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
+    const actorAccountId = requireActorAccountId(site.account_id ?? accountId);
     const theme = await this.resolveThemeForSite(site.id, args.theme_id);
     const userRequests = normalizeUserRequests(args.user_requests ?? (args.user_request ? [{ request: args.user_request }] : []));
     const visualKeywords = normalizeStringArray(args.visual_keywords);
@@ -686,7 +783,7 @@ export class WeblessAccountRepository {
         nullableString(args.avoid_notes),
         JSON.stringify(userRequests),
         nullableString(args.ai_design_notes),
-        accountId
+        actorAccountId
       ]
     );
 
@@ -700,6 +797,7 @@ export class WeblessAccountRepository {
 
   async appendThemeStyleProfileRequest(accountId, args) {
     const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
+    const actorAccountId = requireActorAccountId(site.account_id ?? accountId);
     const theme = await this.resolveThemeForSite(site.id, args.theme_id);
     const entry = normalizeUserRequestEntry({
       request: args.request,
@@ -727,7 +825,7 @@ export class WeblessAccountRepository {
         where site_page_id = $3
         returning *
       `,
-      [JSON.stringify(nextRequests), accountId, theme.id]
+      [JSON.stringify(nextRequests), actorAccountId, theme.id]
     );
 
     return {
@@ -2232,6 +2330,9 @@ export class WeblessAccountRepository {
     const existing = categoryId ? await this.findCategoryForSite(site.id, categoryId) : null;
     const parentId = categoryId && args.parent_id === undefined ? existing.parent_id ?? null : normalizeNullableInteger(args.parent_id, 'parent_id');
     const iconSvg = normalizeGeneratedSvgIcon(args.icon_svg_base64 ?? args.generated_icon_svg, existing?.icon_svg ?? null, categoryId ? false : true);
+    const imagePath = args.image === undefined
+      ? existing?.image_path ?? null
+      : normalizeNullableCommittedMediaPath(args.image, site.id, 'image');
 
     if (categoryId && parentId === categoryId) {
       throw codedError('VALIDATION_FAILED', 'A category cannot be its own parent.');
@@ -2248,6 +2349,9 @@ export class WeblessAccountRepository {
     await this.assertCategoryNameAvailable(site.id, parentId, name, categoryId);
     if ((args.icon_svg_base64 !== undefined || args.generated_icon_svg !== undefined) && existing?.icon_path) {
       await this.storage.delete(existing.icon_path);
+    }
+    if (args.image !== undefined && existing?.image_path && existing.image_path !== imagePath) {
+      await this.storage.delete(existing.image_path);
     }
 
     let sortOrder;
@@ -2267,20 +2371,21 @@ export class WeblessAccountRepository {
               name = $2,
               icon_svg = $3,
               icon_path = case when $3::text is null then icon_path else null end,
-              sort_order = $4,
+              image_path = $4,
+              sort_order = $5,
               updated_at = now()
-          where site_id = $5 and id = $6
+          where site_id = $6 and id = $7
           returning id, site_id, parent_id, name, icon_svg, icon_path, image_path, sort_order, created_at, updated_at
         `,
-        [parentId, name, iconSvg, sortOrder, site.id, categoryId]
+        [parentId, name, iconSvg, imagePath, sortOrder, site.id, categoryId]
       )
       : await this.pool.query(
         `
-          insert into site_categories (site_id, parent_id, name, icon_svg, sort_order, created_at, updated_at)
-          values ($1, $2, $3, $4, $5, now(), now())
+          insert into site_categories (site_id, parent_id, name, icon_svg, image_path, sort_order, created_at, updated_at)
+          values ($1, $2, $3, $4, $5, $6, now(), now())
           returning id, site_id, parent_id, name, icon_svg, icon_path, image_path, sort_order, created_at, updated_at
         `,
-        [site.id, parentId, name, iconSvg, sortOrder]
+        [site.id, parentId, name, iconSvg, imagePath, sortOrder]
       );
 
     return {
@@ -3686,10 +3791,12 @@ export class WeblessAccountRepository {
 	    };
 	  }
 	
-	  async getPagePreviewUrl(accountId, args) {
+  async getPagePreviewUrl(accountId, args) {
     const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
     const pageKey = normalizePageKey(args.page_key ?? 'index');
-    const theme = await this.resolveThemeForSite(site.id, args.theme_id);
+    const theme = pageKey === 'index'
+      ? siteLevelHomepageTheme(site)
+      : await this.resolveThemeForSite(site.id, args.theme_id);
     const url = new URL(this.previewUrlFor(site, pageKey, theme.id));
 
     return {
@@ -3698,7 +3805,7 @@ export class WeblessAccountRepository {
       theme,
       url: url.toString(),
       mode: args.mode === 'published' ? 'published' : 'preview',
-      supports_theme_parameter: false
+      supports_theme_parameter: pageKey !== 'index'
     };
   }
 
@@ -3734,8 +3841,8 @@ export class WeblessAccountRepository {
 
   async getHomeContent(accountId, args) {
     const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const theme = await this.resolveThemeForSite(site.id, args.theme_id);
-    const storagePath = homeContentStoragePath(site.id, theme);
+    const theme = siteLevelHomepageTheme(site);
+    const storagePath = homeContentStoragePath(site.id);
     const html = await this.storage.readText(storagePath);
 
     return {
@@ -3750,9 +3857,9 @@ export class WeblessAccountRepository {
 
   async updateHomeContent(accountId, args) {
     const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const theme = await this.resolveThemeForSite(site.id, args.theme_id);
+    const theme = siteLevelHomepageTheme(site);
     const html = extractHtmlContent(args.content);
-    const storagePath = homeContentStoragePath(site.id, theme);
+    const storagePath = homeContentStoragePath(site.id);
 
     await this.storage.write(storagePath, Buffer.from(html.trim() + '\n', 'utf8'), 'text/x-php; charset=utf-8');
 
@@ -3830,7 +3937,7 @@ export class WeblessAccountRepository {
 
     const result = await this.pool.query(
       `
-        select id, slug, name, domain, callback_code, site_status
+        select id, slug, name, domain, callback_code, site_status, theme_mode
         from sites
         where account_id = $1 and id = $2
         limit 1
@@ -3849,8 +3956,10 @@ export class WeblessAccountRepository {
       name: site.name,
       domain: site.domain,
       callback_code: site.callback_code ?? null,
+      icon_path: site.icon_path ?? null,
       site_status: normalizeSiteStatus(site.site_status),
-      site_status_label: siteStatusLabel(site.site_status)
+      site_status_label: siteStatusLabel(site.site_status),
+      theme_mode: normalizeSiteThemeMode(site.theme_mode)
     };
   }
 
@@ -5265,9 +5374,11 @@ export class WeblessAccountRepository {
 
     url.searchParams.set('mcp_site_id', String(site.id));
     url.searchParams.set('mcp_page_key', pageKey);
-    url.searchParams.set('mcp_theme_id', String(themeId));
     url.searchParams.set('preview_page', pageKey);
-    url.searchParams.set('preview_style_scheme', String(themeId));
+    if (pageKey !== 'index') {
+      url.searchParams.set('mcp_theme_id', String(themeId));
+      url.searchParams.set('preview_style_scheme', String(themeId));
+    }
 
     return url.toString();
   }
@@ -5275,18 +5386,33 @@ export class WeblessAccountRepository {
 }
 
 export function createStorageAdapter(options = {}) {
-  const driver = (options.storageDriver ?? process.env.WEBLESS_STORAGE_DRIVER ?? (options.gcsBucket || process.env.GCS_BUCKET ? 'gcs' : 'local')).toLowerCase();
+  const driver = storageDriverFromOptions(options);
 
   if (driver === 'gcs') {
     return new GcsStorageAdapter({
       bucket: options.gcsBucket ?? process.env.GCS_BUCKET,
-      fetchImpl: options.fetchImpl
+      fetchImpl: options.fetchImpl,
+      credentialsPath: options.googleApplicationCredentials ?? process.env.GOOGLE_APPLICATION_CREDENTIALS
     });
   }
 
   return new LocalStorageAdapter({
     root: options.storageRoot ?? process.env.WEBLESS_STORAGE_ROOT ?? ''
   });
+}
+
+function storageDriverFromOptions(options = {}) {
+  const explicitDriver = options.storageDriver ?? process.env.WEBLESS_STORAGE_DRIVER;
+  if (explicitDriver) {
+    return String(explicitDriver).toLowerCase();
+  }
+
+  const filesystemDisk = String(process.env.FILESYSTEM_DISK ?? '').toLowerCase();
+  if (filesystemDisk === 'local') {
+    return 'local';
+  }
+
+  return options.gcsBucket || process.env.GCS_BUCKET ? 'gcs' : 'local';
 }
 
 export class LocalStorageAdapter {
@@ -5370,9 +5496,11 @@ export class LocalStorageAdapter {
 }
 
 export class GcsStorageAdapter {
-  constructor({ bucket, fetchImpl = fetch }) {
+  constructor({ bucket, fetchImpl = fetch, credentialsPath = '' }) {
     this.bucket = bucket;
     this.fetch = fetchImpl;
+    this.credentialsPath = credentialsPath;
+    this.cachedCredentials = null;
     this.cachedAccessToken = null;
     this.cachedAccessTokenExpiresAt = 0;
   }
@@ -5504,6 +5632,10 @@ export class GcsStorageAdapter {
       return this.cachedAccessToken;
     }
 
+    if (this.credentialsPath) {
+      return this.serviceAccountAccessToken(now);
+    }
+
     const response = await this.fetch(METADATA_TOKEN_URL, {
       headers: {
         'metadata-flavor': 'Google'
@@ -5526,6 +5658,78 @@ export class GcsStorageAdapter {
 
     return accessToken;
   }
+
+  async serviceAccountAccessToken(now = Date.now()) {
+    const credentials = await this.readServiceAccountCredentials();
+    const clientEmail = String(credentials.client_email ?? '');
+    const privateKey = String(credentials.private_key ?? '');
+
+    if (!clientEmail || !privateKey) {
+      throw codedError('UPSTREAM_NOT_CONFIGURED', 'Google application credentials must include client_email and private_key.', {
+        env: 'GOOGLE_APPLICATION_CREDENTIALS'
+      });
+    }
+
+    const iat = Math.floor(now / 1000);
+    const assertion = signServiceAccountJwt({
+      iss: clientEmail,
+      scope: GCS_TOKEN_SCOPE,
+      aud: GOOGLE_OAUTH_TOKEN_URL,
+      iat,
+      exp: iat + 3600
+    }, privateKey);
+    const body = new URLSearchParams({
+      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+      assertion
+    });
+    const response = await this.fetch(GOOGLE_OAUTH_TOKEN_URL, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/x-www-form-urlencoded'
+      },
+      body
+    });
+
+    if (!response.ok) {
+      throw codedError('UPSTREAM_ERROR', `Unable to obtain Google OAuth token: HTTP ${response.status}`);
+    }
+
+    const payload = await response.json();
+    const accessToken = String(payload.access_token ?? '');
+
+    if (!accessToken) {
+      throw codedError('UPSTREAM_ERROR', 'Google OAuth token response did not include access_token.');
+    }
+
+    this.cachedAccessToken = accessToken;
+    this.cachedAccessTokenExpiresAt = now + Math.max(0, Number(payload.expires_in ?? 0) - 60) * 1000;
+
+    return accessToken;
+  }
+
+  async readServiceAccountCredentials() {
+    if (this.cachedCredentials) {
+      return this.cachedCredentials;
+    }
+
+    try {
+      this.cachedCredentials = JSON.parse(await readFile(this.credentialsPath, 'utf8'));
+      return this.cachedCredentials;
+    } catch (error) {
+      throw codedError('UPSTREAM_NOT_CONFIGURED', `Unable to read Google application credentials: ${error.message}`, {
+        env: 'GOOGLE_APPLICATION_CREDENTIALS'
+      });
+    }
+  }
+}
+
+function signServiceAccountJwt(claims, privateKey) {
+  const header = Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT' })).toString('base64url');
+  const payload = Buffer.from(JSON.stringify(claims)).toString('base64url');
+  const input = `${header}.${payload}`;
+  const signature = createSign('RSA-SHA256').update(input).end().sign(privateKey, 'base64url');
+
+  return `${input}.${signature}`;
 }
 
 function codedError(code, message, data = undefined) {
@@ -5539,12 +5743,33 @@ function codedError(code, message, data = undefined) {
 }
 
 function requireInteger(value, name) {
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isInteger(parsed) || parsed <= 0 || String(value).trim() === '') {
+  const normalizedValue = modelIntegerValue(value);
+  const parsed = Number.parseInt(normalizedValue, 10);
+  if (!Number.isInteger(parsed) || parsed <= 0 || String(normalizedValue).trim() === '') {
     throw codedError('VALIDATION_FAILED', `${name} must be a positive integer.`);
   }
 
   return parsed;
+}
+
+function requireActorAccountId(value) {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return requireInteger(value.account_id ?? value.site?.account_id ?? value.id, 'account_id');
+  }
+
+  return requireInteger(value, 'account_id');
+}
+
+function modelIntegerValue(value) {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    for (const key of ['id', 'theme_id', 'site_page_id', 'site_id', 'member_id', 'product_id', 'value']) {
+      if (value[key] !== undefined && value[key] !== null && value[key] !== '') {
+        return value[key];
+      }
+    }
+  }
+
+  return value;
 }
 
 function requireOptionalPositiveInteger(value, name) {
@@ -5676,16 +5901,6 @@ function requireThemeName(value) {
   }
 
   return name;
-}
-
-function normalizeThemeMode(value) {
-  const mode = String(value ?? 'light').trim();
-
-  if (!['light', 'dark', 'system'].includes(mode)) {
-    throw codedError('VALIDATION_FAILED', 'theme_mode must be light, dark, or system.');
-  }
-
-  return mode;
 }
 
 function normalizeRootFragments(value) {
@@ -6947,6 +7162,21 @@ function normalizeStoredPermissions(value) {
   return [];
 }
 
+function formatSite(row, clientMcpBaseUrl = '') {
+  return {
+    id: row.id,
+    slug: row.slug,
+    name: row.name,
+    domain: row.domain,
+    callback_code: row.callback_code ?? null,
+    icon_path: row.icon_path ?? null,
+    client_mcp_url: clientMcpUrlForSite(row, clientMcpBaseUrl),
+    site_status: normalizeSiteStatus(row.site_status),
+    site_status_label: siteStatusLabel(row.site_status),
+    theme_mode: normalizeSiteThemeMode(row.theme_mode)
+  };
+}
+
 function formatAdminSite(row, clientMcpBaseUrl = '') {
   const isFirstAdmin = String(row.site_admin_id) === String(row.first_admin_id);
   const permissions = isFirstAdmin
@@ -6956,12 +7186,15 @@ function formatAdminSite(row, clientMcpBaseUrl = '') {
   return {
     id: row.id,
     site_id: row.id,
+    account_id: row.account_id ?? null,
     site_admin_id: row.site_admin_id,
     slug: row.slug,
     name: row.name,
     domain: row.domain,
     callback_code: row.callback_code ?? null,
+    icon_path: row.icon_path ?? null,
     client_mcp_url: clientMcpUrlForSite(row, clientMcpBaseUrl),
+    theme_mode: normalizeSiteThemeMode(row.theme_mode),
     google_email: row.google_email ?? null,
     google_sub: row.google_sub ?? null,
     permissions,
@@ -8533,23 +8766,57 @@ function normalizeEmailRecipientScope(value) {
 }
 
 function normalizeIntegerList(value, name) {
-  if (value === undefined || value === null) {
+  if (value === undefined || value === null || value === '') {
     return [];
   }
-  if (!Array.isArray(value)) {
-    throw codedError('VALIDATION_FAILED', `${name} must be an array.`);
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
+      try {
+        return normalizeIntegerList(JSON.parse(trimmed), name);
+      } catch {
+        // Fall through to scalar parsing below.
+      }
+    }
   }
 
-  return [...new Set(value.map((item) => requireInteger(item, name)))];
+  if (!Array.isArray(value)) {
+    return [requireIntegerFromModelValue(value, name)];
+  }
+
+  return [...new Set(value.flatMap((item) => normalizeIntegerListItem(item, name)))];
 }
 
 function normalizeIntegerListWithAlias(value, aliasValue, name, aliasName) {
-  const values = normalizeIntegerList(value, name);
+  const hasValue = value !== undefined && value !== null && value !== '';
+  const values = hasValue ? normalizeIntegerList(value, name) : [];
+
   if (values.length > 0 || aliasValue === undefined || aliasValue === null || aliasValue === '') {
     return values;
   }
 
-  return [requireInteger(aliasValue, aliasName)];
+  return normalizeIntegerList(aliasValue, aliasName);
+}
+
+function normalizeIntegerListItem(value, name) {
+  if (Array.isArray(value)) {
+    return normalizeIntegerList(value, name);
+  }
+
+  return [requireIntegerFromModelValue(value, name)];
+}
+
+function requireIntegerFromModelValue(value, name) {
+  if (value && typeof value === 'object') {
+    for (const key of ['id', 'member_id', 'product_id', 'value']) {
+      if (value[key] !== undefined && value[key] !== null && value[key] !== '') {
+        return requireInteger(value[key], name);
+      }
+    }
+  }
+
+  return requireInteger(value, name);
 }
 
 function normalizeEmailSubject(value) {
@@ -8591,6 +8858,7 @@ function sanitizeEmailHtml(value) {
 
 function renderEmailLayout(layout, site, publicSiteBaseUrl, contentHtml) {
   const siteUrl = `${publicSiteBaseUrl}/sites/${encodeURIComponent(site.slug ?? `site-${site.id}`)}/default-preview`;
+  const logoUrl = siteLogoUrlFor(site, publicSiteBaseUrl);
   const html = layout && !layout.uses_default_layout && layout.html
     ? layout.html
     : DEFAULT_MAIL_LAYOUT_HTML;
@@ -8598,9 +8866,19 @@ function renderEmailLayout(layout, site, publicSiteBaseUrl, contentHtml) {
     .replaceAll('{content}', contentHtml)
     .replaceAll('{site_name}', escapeHtml(site.name ?? 'SlimWeb'))
     .replaceAll('{site_url}', siteUrl)
-    .replaceAll('{logo_url}', `${publicSiteBaseUrl}/favicon.ico`);
+    .replaceAll('{logo_url}', logoUrl);
 
   return rendered.includes(contentHtml) ? rendered : `${rendered}${contentHtml}`;
+}
+
+function siteLogoUrlFor(site, publicSiteBaseUrl) {
+  const iconPath = String(site?.icon_path ?? '').trim();
+
+  if (looksLikeUrl(iconPath)) {
+    return iconPath;
+  }
+
+  return mediaUrlFor(publicSiteBaseUrl, iconPath || 'images/logo.webp');
 }
 
 function renderEmailProductCards(products) {
@@ -8615,11 +8893,12 @@ function renderEmailProductCards(products) {
         ? `<img src="${escapeHtml(product.primary_image_url)}" alt="${escapeHtml(product.name)}" style="width:100%;max-width:220px;border-radius:8px;object-fit:cover;">`
         : '';
       const price = Number.isFinite(product.price) ? `NT$${Number(product.price).toLocaleString('en-US')}` : '';
+      const summary = htmlToPlainText(product.summary ?? '');
       return `
         <article style="border:1px solid #e5e7eb;border-radius:10px;padding:16px;margin:12px 0;">
           ${image}
           <h3 style="font-size:18px;line-height:1.4;margin:12px 0 6px;">${escapeHtml(product.name)}</h3>
-          <p style="margin:0 0 8px;color:#4b5563;">${escapeHtml(product.summary ?? '')}</p>
+          <p style="margin:0 0 8px;color:#4b5563;">${escapeHtml(summary)}</p>
           <p style="margin:0 0 12px;font-weight:700;">${escapeHtml(price)}</p>
           <p style="margin:0;">
             <a href="${escapeHtml(product.product_url)}" style="display:inline-block;padding:9px 14px;background:#111827;color:#ffffff;text-decoration:none;border-radius:6px;">開啟商品</a>
@@ -8629,6 +8908,21 @@ function renderEmailProductCards(products) {
     }),
     '</section>'
   ].join('');
+}
+
+function htmlToPlainText(value) {
+  return String(value ?? '')
+    .replace(/<\s*br\s*\/?>/gi, '\n')
+    .replace(/<\s*\/p\s*>/gi, '\n')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function escapeHtml(value) {
@@ -8666,6 +8960,14 @@ function normalizeCommittedMediaPath(source, siteId, fieldName) {
   return mediaPath;
 }
 
+function normalizeNullableCommittedMediaPath(source, siteId, fieldName) {
+  if (source === null) {
+    return null;
+  }
+
+  return normalizeCommittedMediaPath(source, siteId, fieldName);
+}
+
 function formatTheme(theme) {
   return {
     id: theme.id,
@@ -8673,7 +8975,9 @@ function formatTheme(theme) {
     name: theme.name,
     is_default: Boolean(theme.is_default),
     is_active: Boolean(theme.is_active),
-    theme_mode: theme.is_default ? 'light' : (theme.theme_mode || 'light')
+    theme_mode: theme.theme_mode || 'light',
+    color_mode_scope: 'site',
+    inherits_site_theme_mode: true
   };
 }
 
@@ -9356,8 +9660,19 @@ function themeDirectory(theme) {
     : `sites/${theme.site_id}/templates/schemes/${theme.id}`;
 }
 
-function homeContentStoragePath(siteId, theme) {
-  return pageContentStoragePath(siteId, theme, 'index');
+function siteLevelHomepageTheme(site) {
+  return {
+    id: 'site_homepage',
+    site_id: site.id,
+    name: 'Site homepage',
+    is_default: true,
+    is_active: false,
+    theme_mode: 'light'
+  };
+}
+
+function homeContentStoragePath(siteId) {
+  return pageContentStoragePath(siteId, { id: 'default', site_id: siteId, is_default: true }, 'index');
 }
 
 function pageContentStoragePath(siteId, theme, pageKey) {
