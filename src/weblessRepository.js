@@ -188,7 +188,8 @@ const FIXED_TEMPLATE_PAGE_KEYS = new Set([
   'register',
   'register_verify',
   'articles',
-  'article_view'
+  'article_view',
+  'ai_support'
 ]);
 const ADMIN_PERMISSION_KEYS = [
   'system_admin',
@@ -225,7 +226,6 @@ const ADMIN_PERMISSION_KEYS = [
   'threshold_gifts',
   'article_management',
   'article_list',
-  'faq_management',
   'ai_management',
   'ai_customer_service',
   'ai_marketing_email',
@@ -465,6 +465,21 @@ export class WeblessAccountRepository {
     };
   }
 
+  async getDesignContext(accountId, args) {
+    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
+    const theme = await this.resolveThemeForSite(site.id);
+    const profile = await this.findThemeStyleProfile(theme.id);
+
+    return {
+      site,
+      theme,
+      design_summary: profile?.summary?.trim() || '尚未設定設計摘要',
+      color_mode: site.theme_mode,
+      color_mode_label: site.theme_mode === 'dark' ? '黑暗' : '明亮',
+      framework: 'Tailwind'
+    };
+  }
+
   async updateSiteThemeMode(accountId, args) {
     const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
     const themeMode = normalizeSiteThemeMode(args.theme_mode);
@@ -657,11 +672,10 @@ export class WeblessAccountRepository {
   async getThemeShellContext(accountId, args) {
     const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
     const theme = await this.resolveThemeForSite(site.id, args.theme_id);
-    const [navItems, categories, siteDetails, faqCount] = await Promise.all([
+    const [navItems, categories, siteDetails] = await Promise.all([
       this.listSiteNavItems(site.id),
       this.listSiteCategories(site.id),
-      this.getSiteDesignDetails(site.id),
-      this.countSiteFaqs(site.id)
+      this.getSiteDesignDetails(site.id)
     ]);
 
     const contactItems = contactItemsFromSiteDetails(siteDetails);
@@ -709,8 +723,7 @@ export class WeblessAccountRepository {
         contact_items: contactItems
       },
       online_support: {
-        enabled: Boolean(siteDetails.use_ai_customer_service && siteDetails.ai_api_key && siteDetails.ai_model_name),
-        faq_count: faqCount
+        enabled: Boolean(siteDetails.use_ai_customer_service && siteDetails.ai_api_key && siteDetails.ai_model_name)
       }
     };
   }
@@ -2247,23 +2260,48 @@ export class WeblessAccountRepository {
     const filename = requireNonEmptyString(args.filename ?? image.filename, 'filename');
     const targetUsage = requireUploadTargetUsage(args.target_usage);
 
-    const downloadResponse = await this.fetch(image.download_url);
+    const imported = await this.importExternalImageUrl(accountId, {
+      site_id: args.site_id,
+      image_url: image.download_url,
+      filename,
+      mime_type: image.mime_type,
+      target_usage: targetUsage,
+      source_label: 'OpenAI file parameter'
+    });
+
+    return {
+      ...imported,
+      upload: {
+        ...imported.upload,
+        source: 'openai_file_params',
+        file_id: image.file_id ?? null
+      }
+    };
+  }
+
+  async importExternalImageUrl(accountId, args) {
+    const imageUrl = requireUrl(args.image_url ?? args.url, 'image_url');
+    const filename = requireNonEmptyString(args.filename ?? filenameFromUrl(imageUrl) ?? 'external-image.webp', 'filename');
+    const targetUsage = requireUploadTargetUsage(args.target_usage ?? 'reference');
+    const sourceLabel = args.source_label ?? 'external image URL';
+
+    const downloadResponse = await this.fetch(imageUrl);
     if (!downloadResponse.ok) {
-      throw codedError('UPSTREAM_ERROR', `Unable to download OpenAI file parameter: HTTP ${downloadResponse.status}`, {
+      throw codedError('UPSTREAM_ERROR', `Unable to download ${sourceLabel}: HTTP ${downloadResponse.status}`, {
         status: downloadResponse.status
       });
     }
 
     const bytes = Buffer.from(await downloadResponse.arrayBuffer());
     if (bytes.length === 0) {
-      throw codedError('VALIDATION_FAILED', 'OpenAI file parameter was empty.');
+      throw codedError('VALIDATION_FAILED', `${sourceLabel} was empty.`);
     }
     if (bytes.length > MAX_ASSET_BYTES) {
-      throw codedError('VALIDATION_FAILED', 'OpenAI file parameter is too large.');
+      throw codedError('VALIDATION_FAILED', `${sourceLabel} is too large.`);
     }
 
     const responseMimeType = String(downloadResponse.headers.get('content-type') ?? '').split(';')[0].trim();
-    const mimeType = requireImageMimeType(image.mime_type || responseMimeType || contentTypeForPath(filename), 'image.mime_type');
+    const mimeType = requireImageMimeType(args.mime_type || responseMimeType || contentTypeForPath(filename), 'image.mime_type');
     const upload = await this.createUpload(accountId, {
       site_id: args.site_id,
       filename,
@@ -2280,7 +2318,7 @@ export class WeblessAccountRepository {
       body: bytes
     });
     if (!putResponse.ok) {
-      throw codedError('UPSTREAM_ERROR', `Unable to upload OpenAI file parameter to Webless: HTTP ${putResponse.status}`, {
+      throw codedError('UPSTREAM_ERROR', `Unable to upload ${sourceLabel} to Webless: HTTP ${putResponse.status}`, {
         status: putResponse.status
       });
     }
@@ -2294,8 +2332,8 @@ export class WeblessAccountRepository {
     return {
       ...committed,
       upload: {
-        source: 'openai_file_params',
-        file_id: image.file_id ?? null,
+        source: 'external_image_url',
+        source_url: imageUrl,
         filename,
         mime_type: mimeType,
         size_bytes: bytes.length,
@@ -2325,14 +2363,36 @@ export class WeblessAccountRepository {
 
   async upsertCategory(accountId, args) {
     const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const categoryId = args.category_id === undefined || args.category_id === null ? null : requireInteger(args.category_id, 'category_id');
+    let categoryId = args.category_id === undefined || args.category_id === null ? null : requireInteger(args.category_id, 'category_id');
     const name = requireCategoryName(args.name);
-    const existing = categoryId ? await this.findCategoryForSite(site.id, categoryId) : null;
-    const parentId = categoryId && args.parent_id === undefined ? existing.parent_id ?? null : normalizeNullableInteger(args.parent_id, 'parent_id');
+    const currentName = args.current_name === undefined || args.current_name === null
+      ? null
+      : requireCategoryName(args.current_name);
+    let existing = categoryId ? await this.findCategoryForSite(site.id, categoryId) : null;
+    let matchedExistingByName = false;
+    let matchedExistingByCurrentName = false;
+    if (!categoryId && currentName) {
+      existing = await this.findCategoryByNameForSite(site.id, currentName);
+      if (!existing) {
+        throw codedError('NOT_FOUND', `Category not found or not accessible by current_name: ${currentName}`);
+      }
+      categoryId = Number.parseInt(existing.id, 10);
+      matchedExistingByCurrentName = true;
+    }
+    if (!categoryId) {
+      existing = await this.findCategoryByNameForSite(site.id, name);
+      categoryId = existing ? Number.parseInt(existing.id, 10) : null;
+      matchedExistingByName = Boolean(existing);
+    }
+    const shouldPreserveExistingParent = categoryId && (
+      args.parent_id === undefined
+      || (matchedExistingByName && args.parent_id === null)
+    );
+    const parentId = shouldPreserveExistingParent ? existing.parent_id ?? null : normalizeNullableInteger(args.parent_id, 'parent_id');
     const iconSvg = normalizeGeneratedSvgIcon(args.icon_svg_base64 ?? args.generated_icon_svg, existing?.icon_svg ?? null, categoryId ? false : true);
     const imagePath = args.image === undefined
       ? existing?.image_path ?? null
-      : normalizeNullableCommittedMediaPath(args.image, site.id, 'image');
+      : await this.resolveCommittedImageSource(accountId, site, args.image, 'image', 'page_asset');
 
     if (categoryId && parentId === categoryId) {
       throw codedError('VALIDATION_FAILED', 'A category cannot be its own parent.');
@@ -2346,7 +2406,10 @@ export class WeblessAccountRepository {
       await this.assertCategoryParentIsNotDescendant(site.id, categoryId, parentId);
     }
 
-    await this.assertCategoryNameAvailable(site.id, parentId, name, categoryId);
+    const keepsExistingName = categoryId && existing && String(existing.name ?? '').toLowerCase() === name.toLowerCase();
+    if (!keepsExistingName) {
+      await this.assertCategoryNameAvailable(site.id, parentId, name, categoryId);
+    }
     if ((args.icon_svg_base64 !== undefined || args.generated_icon_svg !== undefined) && existing?.icon_path) {
       await this.storage.delete(existing.icon_path);
     }
@@ -2363,6 +2426,7 @@ export class WeblessAccountRepository {
       sortOrder = requireNonNegativeAmount(args.sort_order, 'sort_order');
     }
 
+    const previousCategory = existing ? { ...existing } : null;
     const result = categoryId
       ? await this.pool.query(
         `
@@ -2387,11 +2451,18 @@ export class WeblessAccountRepository {
         `,
         [site.id, parentId, name, iconSvg, imagePath, sortOrder]
       );
+    const savedCategory = result.rows[0];
+    if (!savedCategory) {
+      throw codedError('UPSTREAM_ERROR', 'Category upsert did not return a saved row.');
+    }
 
     return {
       ok: true,
       site,
-      category: formatCategory(result.rows[0])
+      action: categoryId ? 'updated' : 'created',
+      matched_by: matchedExistingByCurrentName ? 'current_name' : (matchedExistingByName ? 'name' : (args.category_id ? 'category_id' : null)),
+      changed_fields: categoryChangedFields(previousCategory, savedCategory),
+      category: formatCategory(savedCategory)
     };
   }
 
@@ -3152,6 +3223,69 @@ export class WeblessAccountRepository {
 	    };
 	  }
 
+  async createNewsletter(accountId, args) {
+    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
+    const recipientScope = normalizeNewsletterRecipientScope(args.recipient_scope);
+    const memberIds = normalizeIntegerListWithAlias(args.member_ids, args.member_id, 'member_ids', 'member_id');
+    const title = normalizeNewsletterTitle(args.title);
+    const htmlContent = sanitizeEmailHtml(args.html_content);
+    const scheduledAt = normalizeNewsletterScheduledAt(args.scheduled_at);
+
+    if (recipientScope === 'members' && memberIds.length === 0) {
+      throw codedError('VALIDATION_FAILED', 'member_ids is required when recipient_scope is members.');
+    }
+    if (recipientScope === 'all' && memberIds.length > 0) {
+      throw codedError('VALIDATION_FAILED', 'member_ids must be omitted when recipient_scope is all_members.');
+    }
+
+    const members = recipientScope === 'members'
+      ? await this.findMembersForEmail(site.id, memberIds)
+      : [];
+    if (recipientScope === 'members' && members.length !== memberIds.length) {
+      throw codedError('VALIDATION_FAILED', 'One or more selected members are invalid.');
+    }
+
+    const now = new Date();
+    const result = await this.pool.query(
+      `
+        insert into site_newsletters (site_id, title, recipient_scope, html_content, status, scheduled_at, created_at, updated_at)
+        values ($1, $2, $3, $4, $5, $6, $7, $8)
+        returning id, site_id, title, recipient_scope, html_content, status, scheduled_at, sent_at, created_at, updated_at
+      `,
+      [site.id, title, recipientScope, htmlContent, 'pending', scheduledAt, now, now]
+    );
+    const newsletter = result.rows[0];
+
+    if (recipientScope === 'members') {
+      await this.pool.query(
+        `
+          insert into site_newsletter_recipients (site_newsletter_id, member_id, created_at, updated_at)
+          select $1, unnest($2::int[]), now(), now()
+          on conflict (site_newsletter_id, member_id) do nothing
+        `,
+        [newsletter.id, memberIds]
+      );
+    }
+
+    return {
+      ok: true,
+      site,
+      newsletter: formatNewsletter(newsletter),
+      recipient_summary: {
+        scope: recipientScope,
+        count: recipientScope === 'members' ? members.length : null,
+        member_ids: memberIds,
+        members: members.map((member) => formatMemberSummary(member)),
+        all_members: recipientScope === 'all'
+      },
+      delivery: {
+        action: 'created_newsletter',
+        sends_immediately: false,
+        scheduled_at: dateString(newsletter.scheduled_at)
+      }
+    };
+  }
+
   async previewMemberEmail(accountId, args) {
     const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
     const recipientScope = normalizeEmailRecipientScope(args.recipient_scope);
@@ -3557,61 +3691,6 @@ export class WeblessAccountRepository {
 	    return { ok: true, site, product_add_on: formatProductAddOn(result.rows[0]) };
 	  }
 
-	  async listFaqs(accountId, args) {
-	    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-	    const filters = ['site_id = $1'];
-	    const params = [site.id];
-	    const keyword = nullableString(args.keyword);
-	    if (keyword) {
-	      filters.push(`(question ilike $${params.length + 1} or answer ilike $${params.length + 1})`);
-	      params.push(`%${keyword}%`);
-	    }
-	    const result = await this.pool.query(
-	      `
-	        select id, site_id, question, answer, created_at, updated_at
-	        from site_faqs
-	        where ${filters.join(' and ')}
-	        order by updated_at desc, id desc
-	      `,
-	      params
-	    );
-
-	    return {
-	      site,
-	      faqs: result.rows.map((faq) => formatFaq(faq))
-	    };
-	  }
-
-	  async upsertFaq(accountId, args) {
-	    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-	    const faqId = args.faq_id === undefined || args.faq_id === null ? null : requireInteger(args.faq_id, 'faq_id');
-	    const question = requireNonEmptyString(args.question, 'question');
-	    const answer = requireNonEmptyString(args.answer, 'answer');
-	    const result = faqId
-	      ? await this.pool.query(
-	        `
-	          update site_faqs
-	          set question = $1, answer = $2, updated_at = now()
-	          where site_id = $3 and id = $4
-	          returning id, site_id, question, answer, created_at, updated_at
-	        `,
-	        [question, answer, site.id, faqId]
-	      )
-	      : await this.pool.query(
-	        `
-	          insert into site_faqs (site_id, question, answer, created_at, updated_at)
-	          values ($1, $2, $3, now(), now())
-	          returning id, site_id, question, answer, created_at, updated_at
-	        `,
-	        [site.id, question, answer]
-	      );
-	    if (!result.rows[0]) {
-	      throw codedError('NOT_FOUND', `FAQ not found or not accessible: ${faqId}`);
-	    }
-
-	    return { ok: true, site, faq: formatFaq(result.rows[0]) };
-	  }
-
 	  async listCustomerServiceLogs(accountId, args) {
 	    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
 	    const page = clampPositiveInteger(args.page, 1, 1, 1000);
@@ -3855,6 +3934,32 @@ export class WeblessAccountRepository {
     };
   }
 
+  async listPages(accountId, args) {
+    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
+    const query = nullableString(args.query).toLowerCase();
+    const includeHtml = Boolean(args.include_html);
+    const customPages = await this.listCustomPagesForSite(site, { includeHtml });
+    const fixedPages = fixedTemplatePages().map((page) => ({
+      ...page,
+      type: 'fixed',
+      is_fixed: true,
+      can_edit: false,
+      can_delete: false,
+      public_url: this.previewUrlFor(site, page.page_key, 'default'),
+      preview_url: this.previewUrlFor(site, page.page_key, 'default')
+    }));
+    const pages = [...fixedPages, ...customPages];
+    const filteredPages = query
+      ? pages.filter((page) => [page.page_key, page.title, page.html ?? ''].some((value) => String(value).toLowerCase().includes(query)))
+      : pages;
+
+    return {
+      site,
+      query: args.query ?? '',
+      pages: filteredPages
+    };
+  }
+
   async updateHomeContent(accountId, args) {
     const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
     const theme = siteLevelHomepageTheme(site);
@@ -3882,11 +3987,18 @@ export class WeblessAccountRepository {
     }
 
     const title = requireNonEmptyString(args.title, 'title');
-    const theme = await this.resolveThemeForSite(site.id, args.theme_id ?? 'default');
+    const theme = siteLevelHomepageTheme(site);
     const html = extractHtmlContent(args.content);
     const storagePath = pageContentStoragePath(site.id, theme, pageKey);
+    const metadataPath = customPageMetadataStoragePath(site.id, pageKey);
+    const metadata = {
+      key: pageKey,
+      name: title,
+      updated_at: new Date().toISOString()
+    };
 
     await this.storage.write(storagePath, Buffer.from(html.trim() + '\n', 'utf8'), 'text/x-php; charset=utf-8');
+    await this.storage.write(metadataPath, Buffer.from(JSON.stringify(metadata, null, 2) + '\n', 'utf8'), 'application/json; charset=utf-8');
 
     return {
       ok: true,
@@ -3895,15 +4007,53 @@ export class WeblessAccountRepository {
       title,
       theme,
       storage_path: storagePath,
+      metadata_path: metadataPath,
+      public_url: this.customPagePublicUrlFor(site, pageKey),
       preview_url: this.previewUrlFor(site, pageKey, theme.id),
       bytes_written: Buffer.byteLength(html.trim() + '\n')
     };
   }
 
+  async listCustomPagesForSite(site, { includeHtml = false } = {}) {
+    const directory = `sites/${site.id}/templates/default/pages`;
+    const files = await this.storage.listFiles(directory);
+    const keys = [...new Set(files
+      .map((file) => file.slice(directory.length + 1).split('/')[0])
+      .filter((key) => key && !FIXED_TEMPLATE_PAGE_KEYS.has(key) && /^[a-z0-9][a-z0-9_-]{1,99}$/.test(key)))];
+
+    const pages = [];
+    for (const key of keys) {
+      const metadataPath = customPageMetadataStoragePath(site.id, key);
+      const contentPath = pageContentStoragePath(site.id, siteLevelHomepageTheme(site), key);
+      const bodyPath = `${directory}/${key}/body.blade.php`;
+      const metadata = parseJsonObject(await this.storage.readText(metadataPath));
+      const html = await this.storage.readText(contentPath) ?? await this.storage.readText(bodyPath) ?? '';
+      const title = nullableString(metadata.name) || headlineFromPageKey(key);
+
+      pages.push({
+        page_key: key,
+        title,
+        type: 'custom',
+        is_fixed: false,
+        can_edit: true,
+        can_delete: true,
+        public_url: this.customPagePublicUrlFor(site, key),
+        preview_url: this.previewUrlFor(site, key, 'default'),
+        storage_path: html !== '' ? contentPath : null,
+        metadata_path: metadataPath,
+        ...(includeHtml ? { html } : {})
+      });
+    }
+
+    pages.sort((left, right) => left.title.localeCompare(right.title, 'zh-Hant'));
+
+    return pages;
+  }
+
   async uploadAsset(accountId, args) {
     const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
     const theme = await this.resolveThemeForSite(site.id, args.theme_id);
-    const storagePath = normalizeCommittedMediaPath(args.source, site.id, 'source');
+    const storagePath = await this.resolveCommittedImageSource(accountId, site, args.source, 'source', args.target_usage ?? 'reference');
 
     return {
       ok: true,
@@ -3915,8 +4065,42 @@ export class WeblessAccountRepository {
       alt_text: args.alt_text ?? '',
       mime_type: contentTypeForPath(storagePath),
       storage_path: storagePath,
-      public_url: mediaUrlFor(this.publicSiteBaseUrl, storagePath)
+      public_url: mediaUrlFor(this.publicSiteBaseUrl, storagePath),
+      asset: {
+        media_path: storagePath,
+        public_url: mediaUrlFor(this.publicSiteBaseUrl, storagePath)
+      }
     };
+  }
+
+  async resolveCommittedImageSource(accountId, site, source, fieldName, targetUsage = 'reference') {
+    if (source === null) {
+      return null;
+    }
+
+    const raw = typeof source === 'string'
+      ? source
+      : String(source?.media_path ?? source?.public_url ?? source?.url ?? source?.image_url ?? source?.file_url ?? '').trim();
+
+    if (looksLikeUrl(raw)) {
+      const path = tryCommittedMediaPathFromUrl(raw, site.id);
+      if (path) {
+        return normalizeCommittedMediaPath({ media_path: path }, site.id, fieldName);
+      }
+
+      const imported = await this.importExternalImageUrl(accountId, {
+        site_id: site.id,
+        image_url: raw,
+        filename: typeof source === 'object' ? source.filename ?? source.original_name : undefined,
+        mime_type: typeof source === 'object' ? source.mime_type : undefined,
+        target_usage: targetUsage,
+        source_label: fieldName
+      });
+
+      return normalizeCommittedMediaPath({ media_path: imported.asset.media_path }, site.id, fieldName);
+    }
+
+    return normalizeNullableCommittedMediaPath(source, site.id, fieldName);
   }
 
   requireWeblessMcpSecret() {
@@ -4203,6 +4387,21 @@ export class WeblessAccountRepository {
     return result.rows[0];
   }
 
+  async findCategoryByNameForSite(siteId, name) {
+    const result = await this.pool.query(
+      `
+        select id, site_id, parent_id, name, icon_svg, icon_path, image_path, sort_order, created_at, updated_at
+        from site_categories
+        where site_id = $1 and lower(name) = lower($2)
+        order by id asc
+        limit 1
+      `,
+      [siteId, name]
+    );
+
+    return result.rows[0] ?? null;
+  }
+
   async assertCategoryIsLeaf(siteId, categoryId) {
     const result = await this.pool.query(
       `
@@ -4225,16 +4424,15 @@ export class WeblessAccountRepository {
         select id
         from site_categories
         where site_id = $1
-          and name = $2
-          and (($3::bigint is null and parent_id is null) or parent_id = $3::bigint)
-          and ($4::bigint is null or id != $4::bigint)
+          and lower(name) = lower($2)
+          and ($3::bigint is null or id != $3::bigint)
         limit 1
       `,
-      [siteId, name, parentId, ignoreCategoryId]
+      [siteId, name, ignoreCategoryId]
     );
 
     if (result.rows.length > 0) {
-      throw codedError('VALIDATION_FAILED', 'A category with this name already exists under the same parent.');
+      throw codedError('VALIDATION_FAILED', `Category name already exists: ${name}. Choose the existing category instead of creating a duplicate.`);
     }
   }
 
@@ -4731,19 +4929,6 @@ export class WeblessAccountRepository {
     return result.rows[0] ?? {};
   }
 
-  async countSiteFaqs(siteId) {
-    const result = await this.pool.query(
-      `
-        select count(*)::int as count
-        from site_faqs
-        where site_id = $1
-      `,
-      [siteId]
-    );
-
-    return Number.parseInt(result.rows[0]?.count ?? '0', 10);
-  }
-
   async findSeoSettingsForSite(siteId) {
     const result = await this.pool.query(
       `
@@ -4857,7 +5042,6 @@ export class WeblessAccountRepository {
           (select count(*) from products where site_id = $1 and site_category_id is null) as uncategorized_product_count,
           (select count(*) from site_nav_items where site_id = $1) as nav_item_count,
           (select count(*) from articles where site_id = $1) as article_count,
-          (select count(*) from site_faqs where site_id = $1) as faq_count,
           (select count(*) from site_admins where site_id = $1) as admin_count,
           (select count(*) from site_admins where site_id = $1 and permissions::text like '%backend_ai_assistant%') as backend_ai_admin_count,
           (select count(*) from coupon_templates where site_id = $1) as coupon_template_count,
@@ -5383,6 +5567,10 @@ export class WeblessAccountRepository {
     return url.toString();
   }
 
+  customPagePublicUrlFor(site, pageKey) {
+    return `${this.publicSiteBaseUrl}/sites/${encodeURIComponent(site.slug)}/default-preview/pages/${encodeURIComponent(pageKey)}`;
+  }
+
 }
 
 export function createStorageAdapter(options = {}) {
@@ -5857,19 +6045,23 @@ function requireUploadTargetUsage(value) {
 }
 
 function normalizeOpenAiFileParam(value) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw codedError('VALIDATION_FAILED', 'image must be an OpenAI fileParams object with a download_url.');
+  if (value && typeof value === 'object' && !Array.isArray(value) && Array.isArray(value.openaiFileIdRefs)) {
+    value = value.openaiFileIdRefs[0];
   }
 
-  const downloadUrl = value.download_url ?? value.downloadUrl ?? value.url;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw codedError('VALIDATION_FAILED', 'image must be an OpenAI fileParams object with a download_url or download_link.');
+  }
+
+  const downloadUrl = value.download_url ?? value.downloadUrl ?? value.download_link ?? value.downloadLink ?? value.url;
   if (typeof downloadUrl !== 'string' || downloadUrl.trim() === '' || downloadUrl.startsWith('chat_upload')) {
-    throw codedError('VALIDATION_FAILED', 'image.download_url is required. ChatGPT did not provide a downloadable OpenAI file parameter.');
+    throw codedError('VALIDATION_FAILED', 'image.download_url or image.download_link is required. ChatGPT did not provide a downloadable OpenAI file parameter.');
   }
 
   const filename = String(value.name ?? value.file_name ?? value.filename ?? value.fileName ?? 'chatgpt-upload.png').trim();
   return {
     download_url: requireUrl(downloadUrl, 'image.download_url'),
-    file_id: typeof value.file_id === 'string' ? value.file_id : (typeof value.fileId === 'string' ? value.fileId : null),
+    file_id: typeof value.file_id === 'string' ? value.file_id : (typeof value.fileId === 'string' ? value.fileId : (typeof value.id === 'string' ? value.id : null)),
     filename: filename || 'chatgpt-upload.png',
     mime_type: String(value.mime_type ?? value.mimeType ?? '').split(';')[0].trim().toLowerCase()
   };
@@ -6253,13 +6445,8 @@ function customerSupportReadiness(settings, counts) {
     issues.push(readinessIssue('ai_customer_service_disabled', 'AI 客服未啟用', 'AI 客服目前未啟用，使用者問題無法由站台客服 AI 接手。', ['slimweb_customer_service_settings_get', 'slimweb_customer_service_settings_update']));
   }
 
-  if (counts.faq_count === 0) {
-    issues.push(readinessIssue('faq_missing', 'FAQ 未建立', '缺少常見問題資料，AI 客服與回答引擎的依據不足。', ['slimweb_faqs_upsert']));
-  }
-
-  return readinessCategory('customer_support', '客服與 FAQ', 'recommended', issues, {
-    use_ai_customer_service: Boolean(settings.use_ai_customer_service),
-    faq_count: counts.faq_count
+  return readinessCategory('customer_support', 'AI 客服', 'recommended', issues, {
+    use_ai_customer_service: Boolean(settings.use_ai_customer_service)
   });
 }
 
@@ -7361,6 +7548,21 @@ function sanitizeGeneratedSvg(svg) {
     throw codedError('VALIDATION_FAILED', 'icon SVG must contain an <svg> element.');
   }
 
+  clean = clean.replace(/<svg\b([^>]*)>/i, (_match, attrs) => {
+    let normalizedAttrs = String(attrs ?? '')
+      .replace(/\s(width|height)\s*=\s*(".*?"|'.*?'|[^\s>]+)/gi, '')
+      .trim();
+
+    if (!/\bxmlns\s*=/i.test(normalizedAttrs)) {
+      normalizedAttrs = `xmlns="http://www.w3.org/2000/svg"${normalizedAttrs ? ` ${normalizedAttrs}` : ''}`;
+    }
+    if (!/\bviewBox\s*=/i.test(normalizedAttrs)) {
+      normalizedAttrs += `${normalizedAttrs ? ' ' : ''}viewBox="0 0 24 24"`;
+    }
+
+    return `<svg width="24" height="24" ${normalizedAttrs}>`;
+  });
+
   return clean.trim();
 }
 
@@ -7403,6 +7605,19 @@ function formatCategory(category) {
     created_at: category.created_at ?? null,
     updated_at: category.updated_at ?? null
   };
+}
+
+function categoryChangedFields(before, after) {
+  const fields = ['parent_id', 'name', 'icon_svg', 'image_path', 'sort_order'];
+  if (!before) {
+    return fields.filter((field) => after[field] !== undefined && after[field] !== null);
+  }
+
+  return fields.filter((field) => {
+    const beforeValue = before[field] === undefined || before[field] === null ? null : String(before[field]);
+    const afterValue = after[field] === undefined || after[field] === null ? null : String(after[field]);
+    return beforeValue !== afterValue;
+  });
 }
 
 function formatNavItem(item) {
@@ -8662,17 +8877,6 @@ function formatProductAddOn(productAddOn) {
   };
 }
 
-function formatFaq(faq) {
-  return {
-    id: faq.id,
-    site_id: faq.site_id,
-    question: faq.question,
-    answer: faq.answer,
-    created_at: dateString(faq.created_at),
-    updated_at: dateString(faq.updated_at)
-  };
-}
-
 function formatCustomerServiceLog(log) {
   return {
     id: log.id,
@@ -8763,6 +8967,56 @@ function normalizeEmailRecipientScope(value) {
     throw codedError('VALIDATION_FAILED', 'recipient_scope must be members or all_members.');
   }
   return scope;
+}
+
+function normalizeNewsletterRecipientScope(value) {
+  const scope = String(value ?? '').trim();
+  if (scope === 'all_members' || scope === 'all') {
+    return 'all';
+  }
+  if (scope === 'members') {
+    return 'members';
+  }
+  throw codedError('VALIDATION_FAILED', 'recipient_scope must be members or all_members.');
+}
+
+function normalizeNewsletterTitle(value) {
+  const title = requireNonEmptyString(value, 'title');
+  if (title.length > 255) {
+    throw codedError('VALIDATION_FAILED', 'title must be at most 255 characters.');
+  }
+  return title;
+}
+
+function normalizeNewsletterScheduledAt(value) {
+  if (value === undefined || value === null || String(value).trim() === '') {
+    return new Date(Date.now() + 5 * 60 * 1000).toISOString();
+  }
+
+  const scheduledAt = String(value).trim();
+  const parsed = new Date(scheduledAt);
+  if (Number.isNaN(parsed.getTime())) {
+    throw codedError('VALIDATION_FAILED', 'scheduled_at must be a valid date or datetime.');
+  }
+  if (parsed.getTime() < Date.now()) {
+    throw codedError('VALIDATION_FAILED', 'scheduled_at must be now or in the future.');
+  }
+  return scheduledAt;
+}
+
+function formatNewsletter(row) {
+  return {
+    id: row.id,
+    site_id: row.site_id,
+    title: row.title,
+    recipient_scope: row.recipient_scope,
+    html_content: row.html_content,
+    status: row.status,
+    scheduled_at: dateString(row.scheduled_at),
+    sent_at: dateString(row.sent_at),
+    created_at: dateString(row.created_at),
+    updated_at: dateString(row.updated_at)
+  };
 }
 
 function normalizeIntegerList(value, name) {
@@ -8935,16 +9189,24 @@ function escapeHtml(value) {
 }
 
 function normalizeCommittedMediaPath(source, siteId, fieldName) {
-  if (!source || typeof source !== 'object') {
-    throw codedError('VALIDATION_FAILED', `${fieldName} must be an object with media_path from slimweb_uploads_commit.`);
+  if (typeof source === 'string') {
+    source = { media_path: source };
   }
 
-  const mediaPath = String(source.media_path ?? '').trim();
+  if (!source || typeof source !== 'object') {
+    throw codedError('VALIDATION_FAILED', `${fieldName} must be an object with media_path from slimweb_uploads_commit or an existing SlimWeb committed media URL.`);
+  }
+
+  let mediaPath = String(source.media_path ?? source.public_url ?? source.url ?? '').trim();
   if (mediaPath === '') {
     throw codedError('VALIDATION_FAILED', `${fieldName}.media_path is required. Use slimweb_uploads_create, upload bytes with the AI client Python sandbox, then call slimweb_uploads_commit.`);
   }
 
-  if (looksLikeUrl(mediaPath) || mediaPath.startsWith('/mnt/') || mediaPath.startsWith('file:') || mediaPath.includes('..')) {
+  if (looksLikeUrl(mediaPath)) {
+    mediaPath = committedMediaPathFromUrl(mediaPath, siteId, fieldName);
+  }
+
+  if (mediaPath.startsWith('/mnt/') || mediaPath.startsWith('file:') || mediaPath.includes('..')) {
     throw codedError('VALIDATION_FAILED', `${fieldName}.media_path must be the committed SlimWeb media_path returned by slimweb_uploads_commit, not a URL, local path, or attachment reference.`);
   }
 
@@ -8958,6 +9220,32 @@ function normalizeCommittedMediaPath(source, siteId, fieldName) {
   }
 
   return mediaPath;
+}
+
+function committedMediaPathFromUrl(url, siteId, fieldName) {
+  const mediaPath = tryCommittedMediaPathFromUrl(url, siteId);
+  if (mediaPath) {
+    return mediaPath;
+  }
+
+  throw codedError('VALIDATION_FAILED', `${fieldName}.media_path URL must point to an existing SlimWeb committed media file for the selected site.`);
+}
+
+function tryCommittedMediaPathFromUrl(url, siteId) {
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+
+  const path = decodeURIComponent(parsed.pathname).replace(/^\/+/, '');
+  const expectedPrefix = `media/sites/${siteId}/mcp-uploads/committed/`;
+  if (!path.startsWith(expectedPrefix)) {
+    return null;
+  }
+
+  return path.slice('media/'.length);
 }
 
 function normalizeNullableCommittedMediaPath(source, siteId, fieldName) {
@@ -9675,10 +9963,39 @@ function homeContentStoragePath(siteId) {
   return pageContentStoragePath(siteId, { id: 'default', site_id: siteId, is_default: true }, 'index');
 }
 
+function customPageMetadataStoragePath(siteId, pageKey) {
+  return `sites/${siteId}/templates/default/pages/${normalizePageKey(pageKey)}/.page.json`;
+}
+
 function pageContentStoragePath(siteId, theme, pageKey) {
   const filename = theme.is_default ? 'content.blade.php' : 'body.blade.php';
 
   return `${themeDirectory({ ...theme, site_id: siteId })}/pages/${normalizePageKey(pageKey)}/${filename}`;
+}
+
+function fixedTemplatePages() {
+  return [
+    ['index', '首頁'],
+    ['profile', '個人資訊'],
+    ['order_history', '訂購紀錄'],
+    ['cart', '購物車頁面'],
+    ['checkout', '結帳頁面'],
+    ['checkout_complete', '結帳完成頁面'],
+    ['products', '商品列表頁面'],
+    ['product_detail', '商品內頁'],
+    ['login', '登入頁面'],
+    ['register', '註冊頁面'],
+    ['register_verify', '註冊驗證頁面'],
+    ['articles', '文章列表頁面'],
+    ['article_view', '文章頁面'],
+    ['ai_support', 'AI 客服頁面']
+  ].map(([pageKey, title]) => ({ page_key: pageKey, title }));
+}
+
+function headlineFromPageKey(pageKey) {
+  return String(pageKey)
+    .replace(/[-_]+/g, ' ')
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function templateAssetStoragePath(theme, relativePath) {

@@ -184,6 +184,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 | `slimweb_site_select` | Available | account read | 驗證並回傳 AI 後續 tool 呼叫要操作的 site。 |
 | `slimweb_themes_list` | Available | content read | 列出站台的 Default 與自訂版型。 |
 | `slimweb_site_theme_mode_get` | Available | content read | 讀取站台層級色系；Default 與所有自訂版型都沿用這個 light/dark 設定。 |
+| `slimweb_design_context_get` | Available | content read | 回傳目前啟用版型的設計摘要、站台明暗色系與固定框架 `Tailwind`，供 AI 在視覺設計或畫圖前先讀取。 |
 | `slimweb_site_theme_mode_update` | Available | content write | 將站台層級色系切換為 light 或 dark。 |
 | `slimweb_themes_create_from_default` | Available | content write | 建立新版型，並只複製 Default shell/root-element template；首頁不屬於版型，非首頁內容頁預設沿用 Default。 |
 | `slimweb_themes_activate` | Available | content write | 將指定版型設為前台啟用版型；會影響實際前台呈現。 |
@@ -240,8 +241,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 | `slimweb_members_list` | Available | member read | 列出會員與篩選會員資料。 |
 | `slimweb_members_get` | Available | member read | 讀取單一會員摘要、訂單摘要、優惠券與等級。 |
 | `slimweb_members_coupons_issue` | Available | member write + promotion write | 手動發券給指定會員，只接受 active manual coupon template。 |
-| `slimweb_member_email_preview` | Available | member read | 預覽 AI 撰寫的會員 Email，套用郵件版型、商品卡與 HTML sanitizer，回傳 draft/confirmation token。 |
-| `slimweb_member_email_send` | Available | member write | 送出已預覽且使用者確認的會員 Email；只接受 preview 產生的 `email_draft_token` 與 `confirmation_token`。 |
+| `slimweb_newsletters_create` | Available | member write | 建立電子報資料，支援全部會員或指定會員；不直接寄送，未指定發送時間時預設為當下時間 + 5 分鐘。 |
 | `slimweb_coupon_templates_list` | Available | promotion read | 列出優惠券模板，含 manual、all_members、order_threshold、birthday、product_bundle。 |
 | `slimweb_coupon_templates_upsert` | Available | promotion write | 新增或更新優惠券模板，套用與後台優惠券表單一致的發放規則。 |
 | `slimweb_discount_codes_list` | Available | promotion read | 列出折扣碼。 |
@@ -254,14 +254,14 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 | `slimweb_product_add_ons_upsert` | Available | promotion write | 新增或更新單品加購規則。 |
 | `slimweb_articles_list` | Available | content read | 列出文章，讓 AI 避免重複建立或挑選要更新的文章。 |
 | `slimweb_articles_upsert` | Available | content write + asset write | 新增或更新文章內容、HTML 排版、主圖與內容圖。 |
-| `slimweb_faqs_list` | Available | content read | 列出 FAQ。 |
-| `slimweb_faqs_upsert` | Available | content write | 新增或更新 FAQ。 |
 | `slimweb_customer_service_logs_list` | Available | customer service read | 查詢 AI 客服紀錄。 |
 | `slimweb_customer_service_settings_get` | Available | customer service read | 讀取 AI 客服設定摘要。 |
 | `slimweb_customer_service_settings_update` | Available | customer service write | 更新 AI 客服設定。 |
 | `slimweb_exports_create` | Available | export read | 建立會員、訂單或退貨匯出檔。 |
 | `slimweb_images_import_chatgpt_attachment` | Available | asset write | 匯入 ChatGPT web/desktop 對話附件圖片，回傳可用於商品、文章或頁面的 `media_path`。 |
+| `slimweb_debug_attachment_refs` | Available | diagnostic read | 診斷 ChatGPT Remote MCP 實際傳入的附件參數形狀；只回傳去敏摘要，不下載、不上傳、不寫入素材庫。 |
 | `slimweb_assets_upload` | Available | asset write | 只有當 AI flow 明確需要保存可重用素材時才寫入 asset。 |
+| `slimweb_pages_list` | Available | content read | 列出與搜尋固定頁/自訂頁；自訂頁回傳實際公開網址供導覽列與後續修改使用。 |
 | `slimweb_pages_get_home_content` | Available | content read | 讀取首頁目前儲存在 Webless template storage 的 body/content。 |
 | `slimweb_pages_update_home_content` | Available | content write | 替換首頁 body/content；禁止直接寫入 script/link/iframe 與 inline event handler。 |
 | `slimweb_pages_upsert` | Available | content write | 新增或更新自訂頁面內容；固定系統頁不可覆寫。 |
@@ -380,6 +380,18 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - Side effects: none
 - 是否需要 confirmation: no
 
+### `slimweb_design_context_get`
+
+- 狀態: Available
+- 權限: content read
+- Scope: active site
+- 用途: 在 AI 開始任何頁面視覺設計、版型設計、插圖或畫圖前，先回傳目前啟用版型的設計摘要、站台明暗色系與固定框架資訊，避免風格走偏。
+- Input: `site_id`
+- Output: site summary、active theme summary、`design_summary`、`color_mode` (`light` 或 `dark`)、`color_mode_label`（明亮或黑暗）、`framework` (`Tailwind`)
+- Side effects: none
+- 是否需要 confirmation: no
+- 重要規則: 若是視覺設計相關任務，AI 應先讀這個 tool，再視需要補讀 `slimweb_theme_shell_get_context`。
+
 ### `slimweb_site_theme_mode_update`
 
 - 狀態: Available
@@ -497,7 +509,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
   - 商品資料: 商品類別、商品數、上架商品、未分類商品
   - 第三方登入: Google Client ID、LINE Channel ID / Secret
   - 對外資訊: SEO、AEO、GEO、llms.txt
-  - 導覽與內容: navbar、文章、FAQ
+  - 導覽與內容: navbar、文章
   - 客服與權限: AI 客服、後台管理員、backend_ai_assistant 權限
   - Optional: 優惠券模板、折扣碼
 - Side effects: none
@@ -728,9 +740,10 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 權限: product write
 - Scope: active site
 - 用途: 新增或更新商品分類。
-- Input: optional category ID、name、optional parent category ID、optional icon SVG base64、optional sort order
-- Output: category summary
+- Input: optional category ID、optional current name、new name、optional parent category ID、optional icon SVG base64、optional 16:9 image、optional sort order
+- Output: action (`created` / `updated`)、matched_by、changed fields、category summary
 - Side effects: creates or modifies category
+- Rename rule: 使用者說「把 A 改名為 B」時，AI 必須先用 `slimweb_categories_list` 找到 category ID；若沒有 ID，傳 `current_name: "A"` 與 `name: "B"`，不可只傳新名稱後宣稱已更新舊分類。
 - Parent rule: 建立時使用者沒有明確指定父項目，AI 應省略 `parent_id` 或傳 `null`，表示 root category；例如「建立男裝類別」不應自行推斷到「服飾」底下。更新時省略 `parent_id` 會保留原父層，明確傳 `null` 才移到 root。
 - Icon rule: 建立分類時 AI 必須依照使用者文字生成 SVG icon，base64 encode 後放入 `icon_svg_base64`；使用者未指定顏色時使用 `#9ca3af`。更新時若要重畫 icon，再傳新的 `icon_svg_base64`。
 - 錯誤情境: validation failed、duplicate name、parent not found、cycle detected、missing icon on create、permission denied
@@ -976,36 +989,22 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 錯誤情境: member not found、coupon template not found、non-manual template、inactive template、duplicate active coupon、validation failed、permission denied
 - Audit fields: request ID、user ID、account ID、site ID、member ID、coupon template ID
 
-### `slimweb_member_email_preview`
-
-- 狀態: Available
-- 權限: member read
-- Scope: active site
-- 用途: 預覽 AI 撰寫的會員 Email。AI 必須先確認目標資料：
-  - 指定會員時，先用 `slimweb_members_list` / `slimweb_members_get` 確認會員存在並取得 `member_id`。
-  - 指定商品時，先用商品工具確認商品存在並取得 `product_id`。
-  - 發給所有會員時，不需查會員，但必須明確告知收件範圍是所有會員。
-- Input: `site_id`、`recipient_scope=members|all_members`、`member_ids`、`product_ids`、`subject`、`html_content`
-- Output: sanitized HTML、套用共用郵件版型後的 `preview_html`、商品卡摘要、收件範圍摘要、`email_draft_token`、`confirmation_token`
-- Side effects: none；此工具只產生短效簽章 draft，不寄信。
-- 是否需要 confirmation: no；但 AI 必須把 preview 給使用者看，取得確認後才可呼叫 send tool。
-- 安全規則: 移除 `<script>`、`<iframe>` 與 inline event handler。商品卡由後端根據 `product_ids` 組出，包含商品頁與 AI 客服連結。
-- 錯誤情境: member not found、product not found、unsafe/empty content、invalid recipient scope、permission denied
-- Audit fields: request ID、user ID、account ID、site ID、member IDs、product IDs、recipient scope
-
-### `slimweb_member_email_send`
+### `slimweb_newsletters_create`
 
 - 狀態: Available
 - 權限: member write
 - Scope: active site
-- 用途: 送出已預覽且使用者確認的會員 Email。
-- Input: `site_id`、`email_draft_token`、`confirmation_token`
-- Output: delivery mode、recipient count、queue status、BCC contact email
-- Side effects: sends or queues email in Webless. 每次寄送都會 BCC 到站台聯絡 Email（若有設定）。
-- 是否需要 confirmation: yes。只能使用 `slimweb_member_email_preview` 回傳的 token；send tool 不接受 raw HTML，避免 preview A、送出 B。
-- 大量寄送: Webless 端依收件人數與 `recipient_scope` 自動判斷 direct 或 queue；`all_members` 走 queue。
-- 錯誤情境: expired draft token、confirmation mismatch、missing SMTP settings、upstream error、permission denied
-- Audit fields: request ID、user ID、account ID、site ID、recipient scope、product IDs、delivery mode
+- 用途: 建立 Webless 後台電子報資料；此工具只儲存電子報與排程，不直接寄送 email。
+- 收件範圍:
+  - `recipient_scope=all_members`: 建立給全部會員的電子報，不傳 `member_ids`。
+  - `recipient_scope=members`: 建立給指定會員的電子報，必須先用 `slimweb_members_list` / `slimweb_members_get` 確認會員並傳 `member_ids`。
+- Input: `site_id`、`recipient_scope=members|all_members`、`member_ids`、`title`、`html_content`、optional `scheduled_at`
+- Output: site summary、newsletter summary、recipient summary、delivery guidance
+- Side effects: creates `site_newsletters` and, for selected members, `site_newsletter_recipients`; does not send or queue email directly.
+- 發送時間: 如果使用者沒有指定 `scheduled_at`，AI 應省略欄位，由 MCP 端自動填入「當下時間 + 5 分鐘」。
+- 安全規則: 移除 `<script>`、`<iframe>` 與 inline event handler；內容為電子報 HTML，之後由 Webless 後台寄送流程處理。
+- 錯誤情境: member not found、empty title/content、invalid recipient scope、past scheduled time、permission denied
+- Audit fields: request ID、user ID、account ID、site ID、member IDs、recipient scope、newsletter ID
 
 ### `slimweb_coupon_templates_list`
 
@@ -1168,32 +1167,6 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 是否需要 confirmation: yes when replacing an existing article body or cover image
 - 錯誤情境: validation failed、article not found、permission denied、conflict
 - Audit fields: request ID、user ID、account ID、site ID、article ID、changed fields
-
-### `slimweb_faqs_list`
-
-- 狀態: Available
-- 權限: content read
-- Scope: active site
-- 用途: 列出 FAQ，讓 AI 可查詢既有問答。
-- Input: status、keyword、category、pagination、sort
-- Output: FAQ summaries、status、sort order、editable field hints
-- Side effects: none
-- 是否需要 confirmation: no
-- 錯誤情境: missing active site、permission denied
-- Audit fields: request ID、user ID、account ID、site ID
-
-### `slimweb_faqs_upsert`
-
-- 狀態: Available
-- 權限: content write
-- Scope: active site
-- 用途: 新增或更新 FAQ。
-- Input: optional FAQ ID、question、answer、category、status、sort order
-- Output: FAQ summary、changed fields、audit ID
-- Side effects: creates or modifies FAQ content
-- 是否需要 confirmation: yes for publishing or destructive answer replacement
-- 錯誤情境: validation failed、FAQ not found、permission denied、conflict
-- Audit fields: request ID、user ID、account ID、site ID、FAQ ID、changed fields
 
 ### `slimweb_customer_service_logs_list`
 
@@ -1392,7 +1365,7 @@ AI Client 收到或引用的圖片預設是 reference-only。只有當 tool call
 
 ## 外部 CSS / JS 政策
 
-外部 CSS / JS 屬於可影響全站視覺、互動行為與安全性的資源，不應混在頁面 HTML、文章 body、FAQ answer 或版型內容內。AI Client 若需要引入外部檔案，必須使用 `slimweb_external_assets_*` tools 以結構化資料管理。
+外部 CSS / JS 屬於可影響全站視覺、互動行為與安全性的資源，不應混在頁面 HTML、文章 body 或版型內容內。AI Client 若需要引入外部檔案，必須使用 `slimweb_external_assets_*` tools 以結構化資料管理。
 
 原則：
 
@@ -1417,7 +1390,7 @@ Default 與版型限制：
 - 當使用者要求 AI 建立或修改非 Default 版型時，theme scope 可用，但必須明確指定目標 theme。
 - 版型與內容分離：`index` 首頁是站台層級唯一首頁，不屬於任何版型；非 Default 版型只管理 navbar、body/background styling、online support、footer，以及非首頁頁面。除非使用者明確要求「某版型的某個非首頁頁面」，否則非首頁內容頁沿用 Default。
 - 色系與版型分離：`sites.theme_mode` 是唯一 light/dark 來源，Default 與所有自訂版型都沿用。AI 不應在一般版型或頁面任務中硬寫文字顏色、按鈕底色等全域 theme CSS；除非使用者明確指定。若使用者要求 neon、螢光、暗色高對比等風格，先確認或切換為 `dark`。
-- 建立或修改版型前，AI 必須先讀 `slimweb_theme_shell_get_context` 與 `slimweb_theme_style_profile_get`；前者描述實際資料形狀，後者描述風格意圖與變更歷史。
+- 建立或修改版型、頁面視覺、插圖或其他畫圖任務前，AI 必須先讀 `slimweb_design_context_get`；若需要真實 nav/footer/分類資料形狀，再補讀 `slimweb_theme_shell_get_context` 與 `slimweb_theme_style_profile_get`。
 - `slimweb_theme_shell_get_context` 回傳的是 reference-only JSON。AI 可以用它決定 spacing、icon、容器容量與 responsive 行為，但不可把 nav/footer/contact 等真實資料寫死到版型片段。
 
 ## 安全要求

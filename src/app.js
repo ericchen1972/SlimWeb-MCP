@@ -133,15 +133,39 @@ function orderProfitStatisticsInputSchema() {
 const SIGNED_UPLOAD_RUNTIME_GUIDANCE = 'Before using signed image upload, the AI must identify its own runtime. Continue only when the runtime can both read the source image bytes and make outbound HTTPS PUT requests, such as Codex or Hermes with local/code execution access. In ChatGPT Remote MCP, conversation attachments, /mnt/data paths, and hidden attachment rewrite are not reliable for remote MCP tools; if no downloadable URL or accessible local file bytes are available, explain that this client cannot upload the image and ask the user to use Codex/Hermes or provide a directly downloadable image URL.';
 const IMAGE_SOURCE_SCHEMA = {
   type: 'object',
-  description: `Committed SlimWeb media source. First call slimweb_uploads_create, use a capable AI runtime to PUT the uploaded or generated image bytes to upload_url, then call slimweb_uploads_commit and pass the returned media_path here. ${SIGNED_UPLOAD_RUNTIME_GUIDANCE} Do not pass base64, URLs, /mnt/data paths, local sandbox paths, attachment handles, or invented placeholder URLs.`,
+  description: `Committed SlimWeb media source. First call slimweb_uploads_create, use a capable AI runtime to PUT the uploaded or generated image bytes to upload_url, then call slimweb_uploads_commit and pass the returned media_path here. If the user already provides a SlimWeb media URL like /media/sites/<site_id>/mcp-uploads/committed/<file>, use the matching media_path directly instead of uploading again. ${SIGNED_UPLOAD_RUNTIME_GUIDANCE} Do not pass base64, external URLs, /mnt/data paths, local sandbox paths, attachment handles, or invented placeholder URLs.`,
   properties: {
     media_path: {
       type: 'string',
-      description: 'Committed media path returned by slimweb_uploads_commit, such as sites/1/mcp-uploads/committed/<upload_id>.webp.'
+      description: 'Committed media path returned by slimweb_uploads_commit, such as sites/1/mcp-uploads/committed/<upload_id>.webp. Existing SlimWeb /media/sites/<site_id>/mcp-uploads/committed/<file> URLs can be converted to this path form.'
     }
   },
   anyOf: [
     { required: ['media_path'] }
+  ],
+  additionalProperties: false
+};
+const IMPORTABLE_IMAGE_SOURCE_SCHEMA = {
+  type: 'object',
+  description: 'Committed SlimWeb media source, SlimWeb media URL, or directly downloadable external image URL. Prefer media_path when available. If the user provides an external http/https image URL, pass image_url so SlimWeb can import it into committed media before use. Do not pass base64, /mnt/data paths, local sandbox paths, attachment handles, or invented placeholder URLs.',
+  properties: {
+    media_path: IMAGE_SOURCE_SCHEMA.properties.media_path,
+    image_url: {
+      type: 'string',
+      description: 'Directly downloadable http/https image URL to import into this SlimWeb site before use.'
+    },
+    filename: {
+      type: 'string',
+      description: 'Optional filename to use when importing image_url.'
+    },
+    mime_type: {
+      type: 'string',
+      description: 'Optional image MIME type for image_url, such as image/png, image/jpeg, or image/webp.'
+    }
+  },
+  anyOf: [
+    { required: ['media_path'] },
+    { required: ['image_url'] }
   ],
   additionalProperties: false
 };
@@ -209,6 +233,20 @@ const MCP_TOOLS = [
   {
     name: 'slimweb_site_theme_mode_get',
     description: 'Read the site-level storefront color mode. This is the single light/dark source for Default and every custom style scheme.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        site_id: {
+          type: 'integer',
+          description: 'Target SlimWeb site ID.'
+        }
+      },
+      required: ['site_id']
+    }
+  },
+  {
+    name: 'slimweb_design_context_get',
+    description: 'Return the active storefront visual design context before any page design, theme design, illustration, or drawing work. Reads the current theme design summary, the site light/dark mode, and always reports Tailwind as the framework.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -916,11 +954,46 @@ const MCP_TOOLS = [
         },
         image: {
           type: 'object',
-          description: 'OpenAI fileParams object supplied by ChatGPT. Expected fields include download_url, file_id, name or file_name, mime_type, and size.',
+          description: 'OpenAI fileParams object supplied by ChatGPT. Expected fields include download_url or download_link, file_id/id, name or file_name, mime_type, and size. GPT Actions-style { openaiFileIdRefs: [{ id, name, mime_type, download_link }] } is also accepted.',
           additionalProperties: true
         }
       },
       required: ['site_id', 'target_usage', 'image']
+    },
+    _meta: {
+      'openai/fileParams': ['image']
+    }
+  },
+  {
+    name: 'slimweb_debug_attachment_refs',
+    description: 'Debug what ChatGPT Remote MCP actually passes for conversation image attachments. This tool does not download, upload, or write assets; it returns a redacted shape summary of attachment-related arguments so SlimWeb can diagnose fileParams changes.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        site_id: {
+          type: 'integer',
+          description: 'Optional site ID for context only. No site data is modified.'
+        },
+        image: {
+          description: 'Attachment parameter that ChatGPT should populate through OpenAI fileParams. May be an object, string file ID, or null depending on ChatGPT runtime behavior.'
+        },
+        images: {
+          type: 'array',
+          items: {},
+          description: 'Optional array of attachment-like values if ChatGPT exposes multiple files.'
+        },
+        openaiFileIdRefs: {
+          type: 'array',
+          items: { type: 'object', additionalProperties: true },
+          description: 'Optional GPT Actions-style file refs if the runtime provides them directly.'
+        },
+        attachments: {
+          type: 'array',
+          items: {},
+          description: 'Optional attachment list if the runtime exposes one.'
+        }
+      },
+      additionalProperties: true
     },
     _meta: {
       'openai/fileParams': ['image']
@@ -1028,7 +1101,7 @@ const MCP_TOOLS = [
   },
   {
     name: 'slimweb_categories_upsert',
-    description: 'Create or update a product category using site_categories fields. When creating, the AI must generate a semantic SVG icon from the user wording and pass it as icon_svg_base64. Optional image uses the same committed media_path upload flow as product/article images; use a 16:9 category image and never pass base64 or URLs. If no parent category is specified, create or move it as a root category.',
+    description: 'Create or update a product category using site_categories fields. Category names must be unique across the whole site regardless of parent hierarchy; list categories first and reuse the existing category instead of creating a duplicate. When creating, the AI must generate a semantic SVG icon from the user wording and pass it as icon_svg_base64. Optional image uses the same committed media_path upload flow as product/article images; use a 16:9 category image and never pass base64 or URLs. If no parent category is specified, create or move it as a root category.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1036,6 +1109,10 @@ const MCP_TOOLS = [
         category_id: {
           type: 'integer',
           description: 'Existing category ID when updating. Omit to create.'
+        },
+        current_name: {
+          type: 'string',
+          description: 'Existing category name to update when category_id is not available. Use this for rename requests like "change 網頁設計 to 網站設計"; name is the new category name.'
         },
         parent_id: {
           type: ['integer', 'null'],
@@ -1047,8 +1124,8 @@ const MCP_TOOLS = [
           description: 'Base64-encoded SVG markup generated by the AI for this category icon. Required when creating a category. If the user did not specify a color, use #9ca3af.'
         },
         image: {
-          ...IMAGE_SOURCE_SCHEMA,
-          description: `Optional 16:9 category image. Use source.media_path returned by slimweb_uploads_commit. ${SIGNED_UPLOAD_RUNTIME_GUIDANCE} Never pass base64, URLs, /mnt/data paths, local paths, attachment handles, or invented placeholders.`
+          ...IMPORTABLE_IMAGE_SOURCE_SCHEMA,
+          description: 'Optional 16:9 category image. Use media_path for committed SlimWeb images, or image_url for a directly downloadable external image that should be imported before setting the category image. Never pass base64, /mnt/data paths, local paths, attachment handles, or invented placeholders.'
         },
         sort_order: { type: 'integer' }
       },
@@ -1411,8 +1488,8 @@ const MCP_TOOLS = [
 	    }
 	  },
     {
-      name: 'slimweb_member_email_preview',
-      description: 'Preview an AI-composed member email before sending. The AI must first verify target members when recipient_scope=members and verify referenced products before calling this tool. Returns sanitized rendered HTML, product cards, recipient summary, email_draft_token, and confirmation_token. In ChatGPT, use this as the preview step before asking the user to confirm; in SlimAI, show the returned preview_html/summary.',
+      name: 'slimweb_newsletters_create',
+      description: 'Create a SlimWeb newsletter record for all members or selected members. This tool stores the newsletter for Webless admin scheduling and does not send email directly. If scheduled_at is omitted, SlimWeb-MCP sets it to the current time plus 5 minutes.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -1420,7 +1497,7 @@ const MCP_TOOLS = [
           recipient_scope: {
             type: 'string',
             enum: ['members', 'all_members'],
-            description: 'Use members for explicit member_ids. Use all_members only when the user clearly asked to email every member.'
+            description: 'Use members for explicit member_ids. Use all_members only when the user clearly asked to create a newsletter for every member.'
           },
           member_ids: {
             type: 'array',
@@ -1431,38 +1508,17 @@ const MCP_TOOLS = [
             type: 'integer',
             description: 'Optional shorthand for a single target member. Prefer member_ids when possible; member_id is normalized to member_ids=[member_id].'
           },
-          product_ids: {
-            type: 'array',
-            items: { type: 'integer' },
-            description: 'Optional verified product IDs to render as email product cards. Omit when the email does not reference products.'
-          },
-          product_id: {
-            type: 'integer',
-            description: 'Optional shorthand for one product card. Prefer product_ids when possible; product_id is normalized to product_ids=[product_id].'
-          },
-          subject: { type: 'string' },
+          title: { type: 'string' },
           html_content: {
             type: 'string',
-            description: 'AI-composed HTML body. script, iframe, and inline event handlers are rejected/removed before rendering.'
+            description: 'AI-composed HTML body. script, iframe, and inline event handlers are rejected/removed before storing.'
+          },
+          scheduled_at: {
+            type: 'string',
+            description: 'Optional future date or datetime. Omit when the user did not specify a send time; SlimWeb-MCP will use now + 5 minutes.'
           }
         },
-        required: ['site_id', 'recipient_scope', 'subject', 'html_content']
-      },
-      _meta: {
-        'openai/outputTemplate': 'ui://slimweb/member-email-preview.html'
-      }
-    },
-    {
-      name: 'slimweb_member_email_send',
-      description: 'Send a previously previewed member email. Call only after the user confirms the preview. This tool accepts email_draft_token and confirmation_token from slimweb_member_email_preview, not raw HTML, so the sent content matches the preview.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          site_id: { type: 'integer' },
-          email_draft_token: { type: 'string' },
-          confirmation_token: { type: 'string' }
-        },
-        required: ['site_id', 'email_draft_token', 'confirmation_token']
+        required: ['site_id', 'recipient_scope', 'title', 'html_content']
       }
     },
 	  {
@@ -1588,32 +1644,6 @@ const MCP_TOOLS = [
 	    }
 	  },
 	  {
-	    name: 'slimweb_faqs_list',
-	    description: 'List storefront FAQ entries.',
-	    inputSchema: {
-	      type: 'object',
-	      properties: {
-	        site_id: { type: 'integer' },
-	        keyword: { type: 'string' }
-	      },
-	      required: ['site_id']
-	    }
-	  },
-	  {
-	    name: 'slimweb_faqs_upsert',
-	    description: 'Create or update one storefront FAQ entry.',
-	    inputSchema: {
-	      type: 'object',
-	      properties: {
-	        site_id: { type: 'integer' },
-	        faq_id: { type: 'integer' },
-	        question: { type: 'string' },
-	        answer: { type: 'string' }
-	      },
-	      required: ['site_id', 'question', 'answer']
-	    }
-	  },
-	  {
 	    name: 'slimweb_customer_service_logs_list',
 	    description: 'List recent AI customer-service logs with member context when available.',
 	    inputSchema: {
@@ -1693,7 +1723,7 @@ const MCP_TOOLS = [
           description: 'Target SlimWeb site ID.'
         },
         source: {
-          ...IMAGE_SOURCE_SCHEMA
+          ...IMPORTABLE_IMAGE_SOURCE_SCHEMA
         },
         theme_id: {
           type: ['integer', 'string'],
@@ -1719,6 +1749,25 @@ const MCP_TOOLS = [
         }
       },
       required: ['site_id', 'source', 'target_usage', 'asset_scope']
+    }
+  },
+  {
+    name: 'slimweb_pages_list',
+    description: 'List and search fixed and custom site pages. Custom pages include the real public URL that can be copied, added to navigation, or used for follow-up edits.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        site_id: { type: 'integer' },
+        query: {
+          type: 'string',
+          description: 'Optional search text matched against page key, title, and included HTML.'
+        },
+        include_html: {
+          type: 'boolean',
+          description: 'Set true when the AI needs current custom page HTML for a follow-up edit.'
+        }
+      },
+      required: ['site_id']
     }
   },
   {
@@ -1760,7 +1809,7 @@ const MCP_TOOLS = [
   },
   {
     name: 'slimweb_pages_upsert',
-    description: 'Create or update a non-fixed custom page body in Default or a selected theme. Use uploaded media_path URLs for reusable images; do not embed base64 images.',
+    description: 'Create or update a non-fixed custom page body in Default. Returns the real public URL for adding to navigation or follow-up edits. Use uploaded media_path URLs for reusable images; do not embed base64 images.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1772,10 +1821,6 @@ const MCP_TOOLS = [
         title: {
           type: 'string',
           description: 'Human-readable page title.'
-        },
-        theme_id: {
-          type: ['integer', 'string'],
-          description: 'Optional target theme. Omit or use default to write Default page content.'
         },
         content: {
           type: 'object',
@@ -1968,6 +2013,111 @@ function toolArgs(message) {
     : {};
 }
 
+function debugAttachmentRefs(args) {
+  const attachmentKeys = [
+    'image',
+    'images',
+    'openaiFileIdRefs',
+    'attachments',
+    'file',
+    'files',
+    'file_id',
+    'fileId',
+    'id',
+    'download_url',
+    'downloadUrl',
+    'download_link',
+    'downloadLink',
+    'url',
+    'mime_type',
+    'mimeType',
+    'name',
+    'filename',
+    'file_name'
+  ];
+  const presentKeys = Object.keys(args ?? {});
+
+  return {
+    ok: true,
+    diagnostic: 'redacted_attachment_shape',
+    note: 'Values are redacted. URL query strings, tokens, and full file IDs are not returned.',
+    top_level_keys: presentKeys,
+    attachment_related_keys: presentKeys.filter((key) => attachmentKeys.includes(key)),
+    arguments: redactAttachmentValue(args, 0)
+  };
+}
+
+function redactAttachmentValue(value, depth = 0) {
+  if (value === null) {
+    return { type: 'null' };
+  }
+
+  if (value === undefined) {
+    return { type: 'undefined' };
+  }
+
+  if (typeof value === 'string') {
+    return redactAttachmentString(value);
+  }
+
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return { type: typeof value, value };
+  }
+
+  if (Array.isArray(value)) {
+    return {
+      type: 'array',
+      length: value.length,
+      items: value.slice(0, 5).map((item) => redactAttachmentValue(item, depth + 1)),
+      truncated: value.length > 5
+    };
+  }
+
+  if (typeof value === 'object') {
+    const keys = Object.keys(value);
+    const redacted = {
+      type: 'object',
+      keys
+    };
+
+    if (depth >= 3) {
+      redacted.truncated = true;
+      return redacted;
+    }
+
+    redacted.fields = {};
+    for (const key of keys.slice(0, 20)) {
+      redacted.fields[key] = redactAttachmentValue(value[key], depth + 1);
+    }
+    redacted.truncated = keys.length > 20;
+    return redacted;
+  }
+
+  return { type: typeof value };
+}
+
+function redactAttachmentString(value) {
+  const text = String(value);
+  try {
+    const parsed = new URL(text);
+    return {
+      type: 'url',
+      protocol: parsed.protocol,
+      host: parsed.host,
+      pathname: parsed.pathname,
+      has_query: parsed.search.length > 0,
+      has_hash: parsed.hash.length > 0
+    };
+  } catch {
+    return {
+      type: 'string',
+      length: text.length,
+      prefix: text.slice(0, 24),
+      looks_like_openai_file_id: /^(file|file_)[A-Za-z0-9_-]+/.test(text)
+    };
+  }
+}
+
 function toolExceptionToMcpError(id, error) {
   const codeByReason = {
     VALIDATION_FAILED: -32602,
@@ -1996,6 +2146,7 @@ const BASE_TOOL_NAMES = new Set([
 const TOOL_PERMISSION_RULES = {
   slimweb_themes_list: ['page_management', 'page_management_templates'],
   slimweb_site_theme_mode_get: ['page_management', 'page_management_templates'],
+  slimweb_design_context_get: ['page_management', 'page_management_templates'],
   slimweb_site_theme_mode_update: ['page_management', 'page_management_templates'],
   slimweb_themes_create_from_default: ['page_management', 'page_management_templates'],
   slimweb_themes_activate: ['page_management', 'page_management_templates'],
@@ -2038,6 +2189,7 @@ const TOOL_PERMISSION_RULES = {
   slimweb_external_assets_delete: ['page_management', 'page_management_external_assets'],
   slimweb_external_assets_reorder: ['page_management', 'page_management_external_assets'],
   slimweb_images_import_chatgpt_attachment: [],
+  slimweb_debug_attachment_refs: [],
   slimweb_uploads_create: [],
   slimweb_uploads_commit: [],
   slimweb_articles_list: ['article_management', 'article_list'],
@@ -2060,8 +2212,7 @@ const TOOL_PERMISSION_RULES = {
   slimweb_members_coupons_issue: ['discount_management', 'coupon_templates'],
   slimweb_members_list: ['member_management', 'member_list'],
   slimweb_members_get: ['member_management', 'member_list'],
-  slimweb_member_email_preview: ['member_management', 'member_list'],
-  slimweb_member_email_send: ['member_management', 'member_list'],
+  slimweb_newsletters_create: ['member_management', 'member_list'],
   slimweb_discount_codes_list: ['discount_management', 'discount_codes'],
   slimweb_discount_codes_upsert: ['discount_management', 'discount_codes'],
   slimweb_member_tiers_list: ['member_management', 'member_tiers'],
@@ -2070,14 +2221,13 @@ const TOOL_PERMISSION_RULES = {
   slimweb_threshold_gifts_upsert: ['discount_management', 'threshold_gifts'],
   slimweb_product_add_ons_list: ['product_management', 'product_management_add_ons'],
   slimweb_product_add_ons_upsert: ['product_management', 'product_management_add_ons'],
-  slimweb_faqs_list: ['faq_management'],
-  slimweb_faqs_upsert: ['faq_management'],
   slimweb_customer_service_logs_list: ['customer_service_logs'],
   slimweb_customer_service_settings_get: ['ai_management', 'ai_customer_service'],
   slimweb_customer_service_settings_update: ['ai_management', 'ai_customer_service'],
   slimweb_exports_create: ['system_admin'],
   slimweb_audit_list: ['system_admin'],
   slimweb_assets_upload: [],
+  slimweb_pages_list: ['page_management', 'page_management_pages'],
   slimweb_pages_get_home_content: ['page_management', 'page_management_pages'],
   slimweb_pages_update_home_content: ['page_management', 'page_management_pages'],
   slimweb_pages_upsert: ['page_management', 'page_management_pages'],
@@ -2240,6 +2390,19 @@ async function toolResultForCall(message, request, context) {
     case 'slimweb_site_theme_mode_get': {
       try {
         const result = await context.accountRepository.getSiteThemeMode(
+          await actorForTool(session, name, toolArgs(message), context),
+          toolArgs(message)
+        );
+
+        return mcpResult(message.id ?? null, mcpJsonContent(result));
+      } catch (error) {
+        return toolExceptionToMcpError(message?.id ?? null, error);
+      }
+    }
+
+    case 'slimweb_design_context_get': {
+      try {
+        const result = await context.accountRepository.getDesignContext(
           await actorForTool(session, name, toolArgs(message), context),
           toolArgs(message)
         );
@@ -2809,6 +2972,10 @@ async function toolResultForCall(message, request, context) {
       }
     }
 
+    case 'slimweb_debug_attachment_refs': {
+      return mcpResult(message.id ?? null, mcpJsonContent(debugAttachmentRefs(toolArgs(message))));
+    }
+
     case 'slimweb_uploads_commit': {
       try {
         const result = await context.accountRepository.commitUpload(
@@ -3082,22 +3249,9 @@ async function toolResultForCall(message, request, context) {
 	      }
 	    }
 
-      case 'slimweb_member_email_preview': {
+      case 'slimweb_newsletters_create': {
         try {
-          const result = await context.accountRepository.previewMemberEmail(
-            await actorForTool(session, name, toolArgs(message), context),
-            toolArgs(message)
-          );
-
-          return mcpResult(message.id ?? null, mcpJsonContent(result));
-        } catch (error) {
-          return toolExceptionToMcpError(message?.id ?? null, error);
-        }
-      }
-
-      case 'slimweb_member_email_send': {
-        try {
-          const result = await context.accountRepository.sendMemberEmail(
+          const result = await context.accountRepository.createNewsletter(
             await actorForTool(session, name, toolArgs(message), context),
             toolArgs(message)
           );
@@ -3212,32 +3366,6 @@ async function toolResultForCall(message, request, context) {
 	      }
 	    }
 
-	    case 'slimweb_faqs_list': {
-	      try {
-	        const result = await context.accountRepository.listFaqs(
-	          await actorForTool(session, name, toolArgs(message), context),
-	          toolArgs(message)
-	        );
-
-	        return mcpResult(message.id ?? null, mcpJsonContent(result));
-	      } catch (error) {
-	        return toolExceptionToMcpError(message?.id ?? null, error);
-	      }
-	    }
-
-	    case 'slimweb_faqs_upsert': {
-	      try {
-	        const result = await context.accountRepository.upsertFaq(
-	          await actorForTool(session, name, toolArgs(message), context),
-	          toolArgs(message)
-	        );
-
-	        return mcpResult(message.id ?? null, mcpJsonContent(result));
-	      } catch (error) {
-	        return toolExceptionToMcpError(message?.id ?? null, error);
-	      }
-	    }
-
 	    case 'slimweb_customer_service_logs_list': {
 	      try {
 	        const result = await context.accountRepository.listCustomerServiceLogs(
@@ -3319,6 +3447,19 @@ async function toolResultForCall(message, request, context) {
     case 'slimweb_pages_get_home_content': {
       try {
         const result = await context.accountRepository.getHomeContent(
+          await actorForTool(session, name, toolArgs(message), context),
+          toolArgs(message)
+        );
+
+        return mcpResult(message.id ?? null, mcpJsonContent(result));
+      } catch (error) {
+        return toolExceptionToMcpError(message?.id ?? null, error);
+      }
+    }
+
+    case 'slimweb_pages_list': {
+      try {
+        const result = await context.accountRepository.listPages(
           await actorForTool(session, name, toolArgs(message), context),
           toolArgs(message)
         );
@@ -3463,7 +3604,10 @@ async function handleMcp(request, response, context) {
 
   try {
     const message = await readJsonRequest(request);
-    if (message?.method === 'tools/call' && !verifySessionToken(readSessionToken(request), context.sessionSecret)) {
+    const session = verifySessionToken(readSessionToken(request), context.sessionSecret);
+    logMcpRequest(request, message, Boolean(session));
+
+    if (message?.method === 'tools/call' && !session) {
       mcpAuthRequiredResponse(request, response, context);
       return;
     }
@@ -3475,6 +3619,26 @@ async function handleMcp(request, response, context) {
 
     jsonResponse(response, 200, mcpError(null, code, message));
   }
+}
+
+function logMcpRequest(request, message, authenticated) {
+  const method = typeof message?.method === 'string' ? message.method : null;
+  if (!method) {
+    return;
+  }
+
+  const log = {
+    event: 'mcp_request',
+    method,
+    authenticated,
+    user_agent: request.headers['user-agent'] ?? null
+  };
+
+  if (method === 'tools/call') {
+    log.tool = typeof message?.params?.name === 'string' ? message.params.name : null;
+  }
+
+  console.log(JSON.stringify(log));
 }
 
 function requestBaseUrl(request, context) {

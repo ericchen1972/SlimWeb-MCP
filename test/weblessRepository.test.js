@@ -315,6 +315,43 @@ function designContextPool() {
         };
       }
 
+      if (sql.includes('from site_pages') && sql.includes('where site_id = $1 and is_active = true')) {
+        return {
+          rows: [{
+            id: 22,
+            site_id: params[0],
+            name: '可愛版型',
+            is_default: false,
+            is_active: true,
+            theme_mode: 'light'
+          }]
+        };
+      }
+
+      if (sql.includes('from site_theme_style_profiles')) {
+        return {
+          rows: [{
+            id: 5,
+            site_id: 101,
+            site_page_id: 22,
+            summary: '童趣、柔和、手繪插圖',
+            target_audience: '喜歡溫柔感商品的女生',
+            visual_keywords: JSON.stringify(['童趣', '手繪']),
+            color_notes: '奶油白搭配珊瑚粉',
+            typography_notes: '圓潤標題',
+            layout_notes: '大量留白與卡片堆疊',
+            illustration_notes: '局部手繪星星',
+            avoid_notes: '不要科技感',
+            user_requests: JSON.stringify([{ request: '做可愛一點' }]),
+            ai_design_notes: '保留既有品牌親和感',
+            version: 2,
+            is_active: true,
+            created_at: '2026-06-10T09:00:00.000Z',
+            updated_at: '2026-06-10T10:00:00.000Z'
+          }]
+        };
+      }
+
       if (sql.includes('from site_nav_items')) {
         return {
           rows: [
@@ -352,10 +389,6 @@ function designContextPool() {
             ai_model_name: 'gpt-test'
           }]
         };
-      }
-
-      if (sql.includes('from site_faqs')) {
-        return { rows: [{ count: '3' }] };
       }
 
       throw new Error(`Unexpected query: ${sql}`);
@@ -1231,8 +1264,16 @@ function productCatalogPool() {
         return { rows: state.categories.filter((category) => category.site_id === params[0] && category.id === params[1]) };
       }
 
+      if (sql.includes('from site_categories') && sql.includes('lower(name) = lower($2)') && sql.includes('order by id asc')) {
+        return { rows: state.categories.filter((category) => category.site_id === params[0] && category.name.toLowerCase() === String(params[1]).toLowerCase()).sort((a, b) => a.id - b.id).slice(0, 1) };
+      }
+
       if (sql.includes('where site_id = $1 and parent_id = $2')) {
         return { rows: state.categories.filter((category) => category.site_id === params[0] && category.parent_id === params[1]).slice(0, 1) };
+      }
+
+      if (sql.includes('from site_categories') && sql.includes('lower(name) = lower($2)') && sql.includes('limit 1')) {
+        return { rows: state.categories.filter((category) => category.site_id === params[0] && category.name.toLowerCase() === String(params[1]).toLowerCase() && (params[2] === null || category.id !== params[2])).slice(0, 1) };
       }
 
       if (sql.includes('from site_categories') && sql.includes('name = $2') && sql.includes('limit 1')) {
@@ -1261,6 +1302,10 @@ function productCatalogPool() {
 
       if (sql.includes('from site_nav_items') && sql.includes('name = $2') && sql.includes('limit 1')) {
         return { rows: [] };
+      }
+
+      if (sql.includes('from site_pages') && sql.includes('is_active = true')) {
+        return { rows: [{ id: 1, site_id: params[0], name: 'Default', is_default: true, is_active: true, theme_mode: 'light' }] };
       }
 
       if (sql.includes('insert into site_nav_items')) {
@@ -1690,6 +1735,84 @@ test('repository imports ChatGPT attachment file params through Webless upload f
 
   assert.equal(imported.asset.media_path, 'sites/101/mcp-uploads/committed/upload-chatgpt.webp');
   assert.equal(imported.upload.source, 'openai_file_params');
+  assert.equal(requests.length, 4);
+});
+
+test('repository imports ChatGPT attachment from GPT Actions-style file refs', async () => {
+  const requests = [];
+  const imageBytes = Buffer.from('fake-webp-bytes');
+  const fetchImpl = async (url, options = {}) => {
+    requests.push({ url, options });
+
+    if (String(url) === 'https://files.oaiusercontent.com/file-action') {
+      assert.equal(options.method, undefined);
+      return new Response(imageBytes, { status: 200, headers: { 'content-type': 'image/webp' } });
+    }
+
+    if (String(url).endsWith('/sites/site-1/mcp-uploads')) {
+      assert.equal(options.method, 'POST');
+      const body = JSON.parse(options.body);
+      assert.equal(body.filename, 'action-image.webp');
+      assert.equal(body.mime_type, 'image/webp');
+      assert.equal(body.size_bytes, imageBytes.length);
+
+      return new Response(JSON.stringify({
+        upload_id: 'upload-action',
+        upload_token: 'token-action',
+        upload_url: 'https://slimweb.tw/sites/site-1/mcp-uploads/upload-action?token=token-action',
+        method: 'PUT',
+        headers: { 'Content-Type': 'image/webp' },
+        expires_at: '2026-05-27T12:00:00+00:00'
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+
+    if (String(url) === 'https://slimweb.tw/sites/site-1/mcp-uploads/upload-action?token=token-action') {
+      assert.equal(options.method, 'PUT');
+      assert.equal(options.headers['Content-Type'], 'image/webp');
+      assert.deepEqual(Buffer.from(options.body), imageBytes);
+
+      return new Response('', { status: 200 });
+    }
+
+    if (String(url).endsWith('/sites/site-1/mcp-uploads/upload-action/commit')) {
+      assert.equal(options.method, 'POST');
+      assert.deepEqual(JSON.parse(options.body), { upload_token: 'token-action' });
+
+      return new Response(JSON.stringify({
+        asset: {
+          upload_id: 'upload-action',
+          media_path: 'sites/101/mcp-uploads/committed/upload-action.webp',
+          public_url: 'https://slimweb.tw/media/sites/101/mcp-uploads/committed/upload-action.webp',
+          mime_type: 'image/webp',
+          filename: 'action-image.webp',
+          target_usage: 'reference'
+        }
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+
+    throw new Error(`Unexpected fetch: ${url}`);
+  };
+  const repository = new WeblessAccountRepository(fakePool(), {
+    fetchImpl,
+    weblessAppBaseUrl: 'https://slimweb.tw',
+    weblessMcpSecret: 'shared-secret'
+  });
+
+  const imported = await repository.importChatGptAttachment(11, {
+    site_id: 101,
+    target_usage: 'reference',
+    image: {
+      openaiFileIdRefs: [{
+        id: 'file-action',
+        name: 'action-image.webp',
+        mime_type: 'image/webp',
+        download_link: 'https://files.oaiusercontent.com/file-action'
+      }]
+    }
+  });
+
+  assert.equal(imported.asset.media_path, 'sites/101/mcp-uploads/committed/upload-action.webp');
+  assert.equal(imported.upload.file_id, 'file-action');
   assert.equal(requests.length, 4);
 });
 
@@ -2147,6 +2270,81 @@ test('repository requires generated base64 svg icons when creating product categ
   );
 });
 
+test('repository updates an existing category by name instead of creating a duplicate', async () => {
+  const pool = productCatalogPool();
+  const repository = new WeblessAccountRepository(pool);
+  const iconSvgBase64 = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path stroke="#9ca3af" d="M12 4v16"/></svg>').toString('base64');
+
+  const category = await repository.upsertCategory(11, {
+    site_id: 101,
+    name: '男童',
+    icon_svg_base64: iconSvgBase64,
+    image: { media_path: 'sites/101/mcp-uploads/committed/kids-category.webp' }
+  });
+
+  assert.equal(category.category.id, 6);
+  assert.equal(category.category.parent_id, 5);
+  assert.equal(category.category.image_path, 'sites/101/mcp-uploads/committed/kids-category.webp');
+  assert.equal(pool.state.categories.filter((item) => item.name === '男童').length, 1);
+});
+
+test('repository renames a category matched by current_name', async () => {
+  const pool = productCatalogPool();
+  const repository = new WeblessAccountRepository(pool);
+  const iconSvgBase64 = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path stroke="#9ca3af" d="M12 4v16"/></svg>').toString('base64');
+
+  const category = await repository.upsertCategory(11, {
+    site_id: 101,
+    current_name: '男童',
+    name: '網站設計',
+    icon_svg_base64: iconSvgBase64,
+    image: { media_path: 'sites/101/mcp-uploads/committed/site-design.webp' }
+  });
+
+  assert.equal(category.action, 'updated');
+  assert.equal(category.category.id, 6);
+  assert.equal(category.category.name, '網站設計');
+  assert.equal(category.category.image_path, 'sites/101/mcp-uploads/committed/site-design.webp');
+  assert.deepEqual(category.changed_fields.sort(), ['icon_svg', 'image_path', 'name'].sort());
+  assert.equal(pool.state.categories.filter((item) => item.name === '網站設計').length, 1);
+  assert.equal(pool.state.categories.filter((item) => item.name === '男童').length, 0);
+});
+
+test('repository rejects renamed category duplicates anywhere in the same site', async () => {
+  const pool = productCatalogPool();
+  const repository = new WeblessAccountRepository(pool);
+  const iconSvgBase64 = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path stroke="#9ca3af" d="M12 4v16"/></svg>').toString('base64');
+
+  await assert.rejects(
+    () => repository.upsertCategory(11, {
+      site_id: 101,
+      category_id: 5,
+      parent_id: null,
+      name: '男童',
+      icon_svg_base64: iconSvgBase64
+    }),
+    /Category name already exists/
+  );
+});
+
+test('repository normalizes oversized SVG category icons to 24px dimensions', async () => {
+  const pool = productCatalogPool();
+  const repository = new WeblessAccountRepository(pool);
+  const iconSvgBase64 = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024"><path stroke="#9ca3af" d="M128 512h768"/></svg>').toString('base64');
+
+  const category = await repository.upsertCategory(11, {
+    site_id: 101,
+    parent_id: null,
+    name: 'AI工具',
+    icon_svg_base64: iconSvgBase64
+  });
+
+  assert.match(category.category.icon_svg, /width="24"/);
+  assert.match(category.category.icon_svg, /height="24"/);
+  assert.match(category.category.icon_svg, /viewBox="0 0 1024 1024"/);
+  assert.doesNotMatch(category.category.icon_svg, /width="1024"/);
+});
+
 test('repository manages coupon templates with admin coupon rules', async () => {
   const pool = couponPool();
   const repository = new WeblessAccountRepository(pool);
@@ -2274,6 +2472,45 @@ test('repository homepage content ignores theme_id and remains site-level', asyn
 
   assert.equal(read.storage_path, 'sites/101/templates/default/pages/index/content.blade.php');
   assert.equal(read.content.html, '<section class="hero">One homepage</section>\n');
+});
+
+test('repository upserts and searches custom pages with real public urls', async () => {
+  const storageRoot = await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-'));
+  const repository = new WeblessAccountRepository(fakePool(), {
+    storageRoot,
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+
+  const upserted = await repository.upsertPage(11, {
+    site_id: 101,
+    page_key: 'japan-travel-codex-test',
+    title: '日本旅遊三城小旅行',
+    theme_id: 22,
+    content: {
+      html: '<section><h1>日本旅遊三城小旅行</h1><p>京都、北海道、大阪</p></section>'
+    }
+  });
+
+  assert.equal(upserted.storage_path, 'sites/101/templates/default/pages/japan-travel-codex-test/content.blade.php');
+  assert.equal(upserted.metadata_path, 'sites/101/templates/default/pages/japan-travel-codex-test/.page.json');
+  assert.equal(upserted.public_url, 'https://slimweb.tw/sites/site-1/default-preview/pages/japan-travel-codex-test');
+  await assert.rejects(
+    readFile(path.join(storageRoot, 'sites/101/templates/schemes/22/pages/japan-travel-codex-test/body.blade.php'), 'utf8'),
+    /ENOENT/
+  );
+
+  const pages = await repository.listPages(11, {
+    site_id: 101,
+    query: '京都',
+    include_html: true
+  });
+
+  assert.equal(pages.pages.length, 1);
+  assert.equal(pages.pages[0].page_key, 'japan-travel-codex-test');
+  assert.equal(pages.pages[0].title, '日本旅遊三城小旅行');
+  assert.equal(pages.pages[0].is_fixed, false);
+  assert.equal(pages.pages[0].public_url, 'https://slimweb.tw/sites/site-1/default-preview/pages/japan-travel-codex-test');
+  assert.match(pages.pages[0].html, /北海道/);
 });
 
 test('repository updates and reads Webless homepage content files in GCS', async () => {
@@ -2412,6 +2649,108 @@ test('repository uses committed media paths for product images and rejects base6
     }),
     /source.media_path/
   );
+});
+
+test('repository accepts existing SlimWeb committed media URLs as media paths', async () => {
+  const pool = productCatalogPool();
+  const repository = new WeblessAccountRepository(pool, {
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+  const iconSvgBase64 = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path stroke="#9ca3af" d="M12 4v16"/></svg>').toString('base64');
+
+  const category = await repository.upsertCategory(11, {
+    site_id: 101,
+    category_id: 6,
+    name: '男童',
+    icon_svg_base64: iconSvgBase64,
+    image: {
+      media_path: 'https://slimweb.tw/media/sites/101/mcp-uploads/committed/existing-category.webp'
+    }
+  });
+  const asset = await repository.uploadAsset(11, {
+    site_id: 101,
+    source: 'http://127.0.0.1:8000/media/sites/101/mcp-uploads/committed/existing-asset.webp',
+    target_usage: 'reference',
+    asset_scope: 'site'
+  });
+
+  assert.equal(category.category.image_path, 'sites/101/mcp-uploads/committed/existing-category.webp');
+  assert.equal(asset.storage_path, 'sites/101/mcp-uploads/committed/existing-asset.webp');
+  assert.equal(asset.asset.media_path, 'sites/101/mcp-uploads/committed/existing-asset.webp');
+});
+
+test('repository imports external image URLs before assigning category images', async () => {
+  const pool = productCatalogPool();
+  const imageBytes = Buffer.from('external-image-bytes');
+  const requests = [];
+  const fetchImpl = async (url, options = {}) => {
+    requests.push({ url, options });
+
+    if (String(url) === 'https://cdn.example.com/ecommerce-system.png') {
+      return new Response(imageBytes, { status: 200, headers: { 'content-type': 'image/png' } });
+    }
+
+    if (String(url).endsWith('/sites/site-1/mcp-uploads')) {
+      assert.equal(options.method, 'POST');
+      assert.equal(options.headers['x-slimweb-mcp-secret'], 'shared-secret');
+      const body = JSON.parse(options.body);
+      assert.equal(body.filename, 'ecommerce-system.png');
+      assert.equal(body.mime_type, 'image/png');
+      assert.equal(body.size_bytes, imageBytes.length);
+      assert.equal(body.target_usage, 'page_asset');
+
+      return new Response(JSON.stringify({
+        upload_id: 'external-upload',
+        upload_token: 'external-token',
+        upload_url: 'https://slimweb.tw/sites/site-1/mcp-uploads/external-upload?token=external-token',
+        method: 'PUT',
+        headers: { 'Content-Type': 'image/png' }
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+
+    if (String(url) === 'https://slimweb.tw/sites/site-1/mcp-uploads/external-upload?token=external-token') {
+      assert.equal(options.method, 'PUT');
+      assert.deepEqual(Buffer.from(options.body), imageBytes);
+      return new Response('', { status: 200 });
+    }
+
+    if (String(url).endsWith('/sites/site-1/mcp-uploads/external-upload/commit')) {
+      assert.equal(options.method, 'POST');
+      assert.deepEqual(JSON.parse(options.body), { upload_token: 'external-token' });
+
+      return new Response(JSON.stringify({
+        asset: {
+          upload_id: 'external-upload',
+          media_path: 'sites/101/mcp-uploads/committed/external-upload.webp',
+          public_url: 'https://slimweb.tw/media/sites/101/mcp-uploads/committed/external-upload.webp',
+          mime_type: 'image/webp',
+          filename: 'ecommerce-system.png',
+          target_usage: 'page_asset'
+        }
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+
+    throw new Error(`Unexpected fetch: ${url}`);
+  };
+  const repository = new WeblessAccountRepository(pool, {
+    fetchImpl,
+    weblessAppBaseUrl: 'https://slimweb.tw',
+    weblessMcpSecret: 'shared-secret'
+  });
+  const iconSvgBase64 = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path stroke="#9ca3af" d="M12 4v16"/></svg>').toString('base64');
+
+  const category = await repository.upsertCategory(11, {
+    site_id: 101,
+    category_id: 6,
+    name: '男童',
+    icon_svg_base64: iconSvgBase64,
+    image: {
+      image_url: 'https://cdn.example.com/ecommerce-system.png'
+    }
+  });
+
+  assert.equal(category.category.image_path, 'sites/101/mcp-uploads/committed/external-upload.webp');
+  assert.equal(requests.length, 4);
 });
 
 test('repository appends product images by default when updating existing products', async () => {
@@ -2681,6 +3020,22 @@ test('repository accepts string theme id values for theme shell context', async 
 
   assert.equal(context.theme.id, 22);
   assert.equal(context.reference_only, true);
+});
+
+test('repository returns visual design context for the active theme', async () => {
+  const repository = new WeblessAccountRepository(designContextPool(), {
+    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+
+  const context = await repository.getDesignContext(11, {
+    site_id: 101
+  });
+
+  assert.equal(context.theme.id, 22);
+  assert.equal(context.design_summary, '童趣、柔和、手繪插圖');
+  assert.equal(context.color_mode, 'light');
+  assert.equal(context.framework, 'Tailwind');
 });
 
 test('repository stores and appends theme style profile', async () => {
@@ -3163,6 +3518,128 @@ function memberEmailPool() {
     }
   };
 }
+
+function newsletterPool() {
+  const site = {
+    id: 101,
+    slug: 'site-1',
+    name: '測試網站',
+    domain: '',
+    site_status: 'active'
+  };
+  const state = {
+    newsletters: [],
+    recipients: []
+  };
+
+  return {
+    state,
+    async query(sql, params) {
+      if (sql.includes('from sites') && sql.includes('account_id = $1 and id = $2')) {
+        return { rows: [site] };
+      }
+
+      if (sql.includes('from members') && sql.includes('where site_id = $1 and id = any')) {
+        return {
+          rows: (params[1] ?? []).map((id) => ({
+            id,
+            site_id: 101,
+            email: `member-${id}@example.com`,
+            name: `會員 ${id}`,
+            status: 'active'
+          }))
+        };
+      }
+
+      if (sql.includes('insert into site_newsletters')) {
+        const row = {
+          id: state.newsletters.length + 1,
+          site_id: params[0],
+          title: params[1],
+          recipient_scope: params[2],
+          html_content: params[3],
+          status: params[4],
+          scheduled_at: params[5],
+          created_at: params[6],
+          updated_at: params[7]
+        };
+        state.newsletters.push(row);
+        return { rows: [row] };
+      }
+
+      if (sql.includes('insert into site_newsletter_recipients')) {
+        for (const memberId of params[1] ?? []) {
+          state.recipients.push({
+            site_newsletter_id: params[0],
+            member_id: memberId
+          });
+        }
+        return { rows: [] };
+      }
+
+      throw new Error(`Unexpected query: ${sql}`);
+    }
+  };
+}
+
+test('repository creates newsletter and defaults scheduled time to five minutes later', async () => {
+  const pool = newsletterPool();
+  const repository = new WeblessAccountRepository(pool, {
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+  const before = Date.now();
+
+  const result = await repository.createNewsletter(11, {
+    site_id: 101,
+    recipient_scope: 'all_members',
+    title: '六月新品電子報',
+    html_content: '<p onclick="alert(1)">新品上市</p><script>alert(1)</script>'
+  });
+
+  const after = Date.now();
+  assert.equal(result.ok, true);
+  assert.equal(result.newsletter.title, '六月新品電子報');
+  assert.equal(result.newsletter.recipient_scope, 'all');
+  assert.equal(result.newsletter.status, 'pending');
+  assert.equal(pool.state.recipients.length, 0);
+  assert.doesNotMatch(result.newsletter.html_content, /onclick|script/i);
+
+  const scheduledAt = new Date(result.newsletter.scheduled_at).getTime();
+  assert.ok(scheduledAt >= before + 5 * 60 * 1000 - 1000);
+  assert.ok(scheduledAt <= after + 5 * 60 * 1000 + 1000);
+});
+
+test('repository creates newsletter for selected members only when member ids are provided', async () => {
+  const pool = newsletterPool();
+  const repository = new WeblessAccountRepository(pool, {
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+  const scheduledAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+
+  const result = await repository.createNewsletter(11, {
+    site_id: 101,
+    recipient_scope: 'members',
+    member_ids: [7, 8],
+    title: '指定會員通知',
+    html_content: '<p>VIP 活動</p>',
+    scheduled_at: scheduledAt
+  });
+
+  assert.equal(result.newsletter.recipient_scope, 'members');
+  assert.deepEqual(result.recipient_summary.member_ids, [7, 8]);
+  assert.deepEqual(pool.state.recipients.map((row) => row.member_id), [7, 8]);
+  assert.equal(result.newsletter.scheduled_at, scheduledAt);
+
+  await assert.rejects(
+    () => repository.createNewsletter(11, {
+      site_id: 101,
+      recipient_scope: 'members',
+      title: '缺少會員',
+      html_content: '<p>內容</p>'
+    }),
+    /member_ids is required/
+  );
+});
 
 test('repository previews member email with sanitized html and signed draft token', async () => {
   const repository = new WeblessAccountRepository(memberEmailPool(), {
