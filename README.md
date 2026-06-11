@@ -263,6 +263,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 | `slimweb_exports_create` | Available | export read | 建立會員、訂單或退貨匯出檔。 |
 | `slimweb_images_import_chatgpt_attachment` | Available | asset write | 匯入 ChatGPT web/desktop 對話附件圖片，回傳可用於商品、文章或頁面的 `media_path`。 |
 | `slimweb_debug_attachment_refs` | Available | diagnostic read | 診斷 ChatGPT Remote MCP 實際傳入的附件參數形狀；只回傳去敏摘要，不下載、不上傳、不寫入素材庫。 |
+| `slimweb_sampling_image_debug` | Available | diagnostic write | 透過 sampling 要求 MCP client 生成點陣圖，並把原始 sampling request/response 存下來供除錯。 |
 | `slimweb_assets_upload` | Available | asset write | 只有當 AI flow 明確需要保存可重用素材時才寫入 asset。 |
 | `slimweb_pages_check_title` | Available | content read | 檢查指定頁面標題是否已存在，固定頁會同時比對英文別名，採用 trim + 大小寫不敏感規則。 |
 | `slimweb_pages_list` | Available | content read | 列出站台所有固定頁與自訂頁，不做搜尋條件。 |

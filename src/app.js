@@ -1,4 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
+import { mkdir, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 
 import { GoogleIdentityVerifier } from './googleVerifier.js';
 import {
@@ -951,6 +953,20 @@ const MCP_TOOLS = [
     },
     _meta: {
       'openai/fileParams': ['image']
+    }
+  },
+  {
+    name: 'slimweb_sampling_image_debug',
+    description: 'Ask the MCP client to generate a raster image through sampling, then persist the raw sampling request and response for debugging. Use this to inspect what image payload a client like ChatGPT actually returns.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        prompt: {
+          type: 'string',
+          description: 'Image generation prompt to send through MCP sampling.'
+        }
+      },
+      required: ['prompt']
     }
   },
   {
@@ -2142,11 +2158,72 @@ function redactAttachmentString(value) {
   }
 }
 
+function defaultSamplingDebugRoot() {
+  return path.join(process.cwd(), 'tmp', 'sampling-image-debug');
+}
+
+async function persistSamplingDebugCapture(context, payload) {
+  const root = context.samplingDebugRoot || defaultSamplingDebugRoot();
+  const targetPath = path.join(root, 'latest.json');
+  await mkdir(root, { recursive: true });
+  await writeFile(targetPath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+  return targetPath;
+}
+
+async function runSamplingImageDebug(args, context) {
+  if (typeof context.samplingHandler !== 'function') {
+    const error = new Error('Sampling is not configured for this MCP server runtime.');
+    error.code = 'SAMPLING_UNAVAILABLE';
+    throw error;
+  }
+
+  const prompt = String(args.prompt ?? '').trim();
+  if (!prompt) {
+    const error = new Error('prompt is required.');
+    error.code = 'VALIDATION_FAILED';
+    throw error;
+  }
+
+  const samplingRequest = {
+    messages: [{
+      role: 'user',
+      content: {
+        type: 'text',
+        text: prompt
+      }
+    }],
+    systemPrompt: 'Generate exactly one raster image that satisfies the user prompt. Prefer returning image content instead of SVG or plain text.',
+    maxTokens: 1200,
+    modelPreferences: {
+      hints: [{ name: 'image-generation' }],
+      intelligencePriority: 0.7,
+      speedPriority: 0.3
+    },
+    metadata: {
+      debug_tool: 'slimweb_sampling_image_debug'
+    }
+  };
+  const samplingResponse = await context.samplingHandler(samplingRequest);
+  const savedPath = await persistSamplingDebugCapture(context, {
+    captured_at: new Date().toISOString(),
+    sampling_request: samplingRequest,
+    sampling_response: samplingResponse
+  });
+
+  return {
+    ok: true,
+    saved_path: savedPath,
+    sampling_request: samplingRequest,
+    sampling_response: samplingResponse
+  };
+}
+
 function toolExceptionToMcpError(id, error) {
   const codeByReason = {
     VALIDATION_FAILED: -32602,
     NOT_FOUND: -32002,
     FORBIDDEN: -32003,
+    SAMPLING_UNAVAILABLE: -32008,
     UPSTREAM_NOT_CONFIGURED: -32005,
     UPSTREAM_ERROR: -32007,
     UNSAFE_CONTENT: -32006,
@@ -2164,7 +2241,8 @@ function toolExceptionToMcpError(id, error) {
 const BASE_TOOL_NAMES = new Set([
   'slimweb_auth_status',
   'slimweb_sites_list',
-  'slimweb_site_select'
+  'slimweb_site_select',
+  'slimweb_sampling_image_debug'
 ]);
 
 const TOOL_PERMISSION_RULES = {
@@ -2391,6 +2469,16 @@ async function toolResultForCall(message, request, context) {
     case 'slimweb_site_select': {
       try {
         const result = await context.accountRepository.selectSiteForAdminIdentity(sessionIdentity(session), toolArgs(message));
+
+        return mcpResult(message.id ?? null, mcpJsonContent(result));
+      } catch (error) {
+        return toolExceptionToMcpError(message?.id ?? null, error);
+      }
+    }
+
+    case 'slimweb_sampling_image_debug': {
+      try {
+        const result = await runSamplingImageDebug(toolArgs(message), context);
 
         return mcpResult(message.id ?? null, mcpJsonContent(result));
       } catch (error) {
@@ -4062,6 +4150,8 @@ function createDefaultContext(options = {}) {
     googleClientId: options.googleClientId ?? process.env.GOOGLE_CLIENT_ID ?? '27587628711-upin8ch154kqrl88k41978q660oc0pbg.apps.googleusercontent.com',
     googleVerifier: options.googleVerifier ?? new GoogleIdentityVerifier(options),
     accountRepository: options.accountRepository ?? new WeblessAccountRepository(),
+    samplingHandler: options.samplingHandler ?? null,
+    samplingDebugRoot: options.samplingDebugRoot ?? defaultSamplingDebugRoot(),
     sessionSecret: options.sessionSecret ?? process.env.MCP_SESSION_SECRET,
     publicBaseUrl: options.publicBaseUrl ?? process.env.PUBLIC_BASE_URL ?? '',
     secureCookies: options.secureCookies ?? process.env.NODE_ENV === 'production'

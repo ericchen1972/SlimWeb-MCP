@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { mkdtemp, readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
+import os from 'node:os';
+import path from 'node:path';
 import { test } from 'node:test';
 
 import { createRequestHandler } from '../src/app.js';
@@ -438,6 +441,79 @@ test('MCP tools list includes homepage editing contract tools', async () => {
     assert.match(toolsByName.get('slimweb_categories_upsert').inputSchema.properties.parent_id.description, /omit or pass null/);
     assert.equal(toolsByName.get('slimweb_nav_items_upsert').inputSchema.properties.icon_svg_base64.type, 'string');
     assert.match(toolsByName.get('slimweb_nav_items_upsert').inputSchema.properties.parent_id.description, /omit or pass null/);
+  });
+});
+
+test('sampling image debug tool persists the raw sampling request and response', async () => {
+  const debugRoot = await mkdtemp(path.join(os.tmpdir(), 'slimweb-sampling-debug-'));
+  const samplingCalls = [];
+
+  await withServerOptions({
+    googleVerifier: {
+      verify: async () => ({
+        sub: 'google-sub-sampling',
+        email: 'owner@example.com',
+        name: 'Owner'
+      })
+    },
+    accountRepository: {
+      listAdminSitesForGoogleProfile: async (profile) => testAdminSitesFor(profile)
+    },
+    sessionSecret: 'test-secret',
+    samplingDebugRoot: debugRoot,
+    samplingHandler: async (request) => {
+      samplingCalls.push(request);
+      return {
+        role: 'assistant',
+        content: [
+          {
+            type: 'image',
+            mimeType: 'image/png',
+            data: 'ZmFrZS1wbmctYnl0ZXM='
+          }
+        ],
+        model: 'gpt-test-image'
+      };
+    }
+  }, async (baseUrl) => {
+    const loginResponse = await fetch(`${baseUrl}/auth/google`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ credential: 'google-id-token' })
+    });
+    const token = (await loginResponse.json()).session.access_token;
+
+    const response = await fetch(`${baseUrl}/mcp`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 600,
+        method: 'tools/call',
+        params: {
+          name: 'slimweb_sampling_image_debug',
+          arguments: {
+            prompt: 'Draw a tiny raster postcard of Osaka castle at sunset.'
+          }
+        }
+      })
+    });
+
+    const body = await response.json();
+    const savedPath = path.join(debugRoot, 'latest.json');
+    const saved = JSON.parse(await readFile(savedPath, 'utf8'));
+
+    assert.equal(response.status, 200);
+    assert.equal(body.result.structuredContent.ok, true);
+    assert.equal(body.result.structuredContent.sampling_response.role, 'assistant');
+    assert.equal(body.result.structuredContent.sampling_response.content[0].type, 'image');
+    assert.equal(saved.sampling_request.messages[0].content.text, 'Draw a tiny raster postcard of Osaka castle at sunset.');
+    assert.equal(saved.sampling_response.content[0].mimeType, 'image/png');
+    assert.equal(saved.sampling_response.content[0].data, 'ZmFrZS1wbmctYnl0ZXM=');
+    assert.equal(samplingCalls[0].messages[0].content.text, 'Draw a tiny raster postcard of Osaka castle at sunset.');
   });
 });
 
