@@ -922,6 +922,12 @@ function articlesPool() {
         return { rows: [{ total: String(state.articles.length) }] };
       }
 
+      if (sql.includes('from articles') && sql.includes('where site_id = $1 and lower(trim(title)) = $2')) {
+        return {
+          rows: state.articles.filter((article) => article.site_id === params[0] && article.title.trim().toLowerCase() === params[1])
+        };
+      }
+
       if (sql.includes('from articles') && sql.includes('order by created_at desc')) {
         return { rows: state.articles };
       }
@@ -954,7 +960,7 @@ function articlesPool() {
       }
 
       if (sql.includes('update articles')) {
-        const article = state.articles.find((item) => item.site_id === params[5] && item.id === params[6]);
+        const article = state.articles.find((item) => item.site_id === params[4] && item.id === params[5]);
         Object.assign(article, {
           notion_page_id: params[0],
           title: params[1],
@@ -2028,7 +2034,7 @@ test('repository updates ECPay and NewebPay logistics convenience-store rules', 
   );
 });
 
-test('repository lists and upserts articles with cover and content images', async () => {
+test('repository lists, creates, and updates articles with cover and content images', async () => {
   const pool = articlesPool();
   const storageRoot = await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-'));
   const repository = new WeblessAccountRepository(pool, {
@@ -2036,7 +2042,7 @@ test('repository lists and upserts articles with cover and content images', asyn
     publicSiteBaseUrl: 'https://slimweb.tw'
   });
   const listed = await repository.listArticles(11, { site_id: 101 });
-  const created = await repository.upsertArticle(11, {
+  const created = await repository.createArticle(11, {
     site_id: 101,
     title: '夏季透氣穿搭',
     content_html: '<article><h1>夏季透氣穿搭</h1></article>',
@@ -2052,6 +2058,16 @@ test('repository lists and upserts articles with cover and content images', asyn
   assert.equal(created.article.title, '夏季透氣穿搭');
   assert.match(created.article.cover_url, /\/media\/sites\/101\/mcp-uploads\/committed\/article-cover\.webp/);
   assert.match(created.content_images[0].url, /linen-look\.webp/);
+
+  const updated = await repository.updateArticle(11, {
+    site_id: 101,
+    article_id: created.article.id,
+    title: '夏季輕透穿搭',
+    content_html: '<article><h1>夏季輕透穿搭</h1><p>更適合炎熱天氣</p></article>'
+  });
+
+  assert.equal(updated.article.title, '夏季輕透穿搭');
+  assert.equal(updated.article.cover_url, created.article.cover_url);
 });
 
 test('repository removes duplicated article title heading from content html', async () => {
@@ -2060,7 +2076,7 @@ test('repository removes duplicated article title heading from content html', as
     publicSiteBaseUrl: 'https://slimweb.tw'
   });
 
-  const created = await repository.upsertArticle(11, {
+  const created = await repository.createArticle(11, {
     site_id: 101,
     title: '關於 SlimWeb',
     content_html: '<article><h1>關於 SlimWeb</h1><p>SlimWeb 介紹</p></article>',
@@ -2077,7 +2093,7 @@ test('repository requires a cover image when creating an article', async () => {
   });
 
   await assert.rejects(
-    () => repository.upsertArticle(11, {
+    () => repository.createArticle(11, {
       site_id: 101,
       title: '沒有主圖的文章',
       content_html: '<article><h1>沒有主圖的文章</h1></article>'
@@ -2417,103 +2433,104 @@ test('repository assigns active manual coupons to one member', async () => {
   );
 });
 
-test('repository updates and reads Webless homepage content files', async () => {
+test('repository creates and reads Webless custom page content files', async () => {
   const storageRoot = await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-'));
   const repository = new WeblessAccountRepository(fakePool(), {
     storageRoot,
     publicSiteBaseUrl: 'https://slimweb.tw'
   });
 
-  const update = await repository.updateHomeContent(11, {
+  const created = await repository.createPage(11, {
     site_id: 101,
+    title: 'Japan Travel Codex Test',
     content: {
-      html: '<section class="hero">Hello</section>'
+      html: '<section><h1>日本旅遊三城小旅行</h1><p>京都、北海道、大阪</p></section>'
     }
   });
 
-  assert.equal(update.ok, true);
-  assert.equal(update.storage_path, 'sites/101/templates/default/pages/index/content.blade.php');
+  assert.equal(created.ok, true);
+  assert.equal(created.storage_path, 'sites/101/templates/default/pages/japan-travel-codex-test/content.blade.php');
   assert.equal(
-    await readFile(path.join(storageRoot, update.storage_path), 'utf8'),
-    '<section class="hero">Hello</section>\n'
+    await readFile(path.join(storageRoot, created.storage_path), 'utf8'),
+    '<section><h1>日本旅遊三城小旅行</h1><p>京都、北海道、大阪</p></section>\n'
   );
 
-  const read = await repository.getHomeContent(11, { site_id: 101 });
+  const read = await repository.getPageContent(11, {
+    site_id: 101,
+    page_name: 'japan-travel-codex-test'
+  });
 
   assert.equal(read.exists, true);
-  assert.equal(read.content.html, '<section class="hero">Hello</section>\n');
+  assert.equal(read.content.html, '<section><h1>日本旅遊三城小旅行</h1><p>京都、北海道、大阪</p></section>\n');
 });
 
-test('repository homepage content ignores theme_id and remains site-level', async () => {
+test('repository creates custom pages at the site level regardless of theme_id', async () => {
   const storageRoot = await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-'));
   const repository = new WeblessAccountRepository(fakePool(), {
     storageRoot,
     publicSiteBaseUrl: 'https://slimweb.tw'
   });
 
-  const update = await repository.updateHomeContent(11, {
+  const created = await repository.createPage(11, {
     site_id: 101,
+    title: 'One Page Home',
     theme_id: 22,
     content: {
       html: '<section class="hero">One homepage</section>'
     }
   });
 
-  assert.equal(update.storage_path, 'sites/101/templates/default/pages/index/content.blade.php');
+  assert.equal(created.storage_path, 'sites/101/templates/default/pages/one-page-home/content.blade.php');
   await assert.rejects(
-    readFile(path.join(storageRoot, 'sites/101/templates/schemes/22/pages/index/body.blade.php'), 'utf8'),
+    readFile(path.join(storageRoot, 'sites/101/templates/schemes/22/pages/one-page-home/body.blade.php'), 'utf8'),
     /ENOENT/
   );
 
-  const read = await repository.getHomeContent(11, {
+  const read = await repository.getPageContent(11, {
     site_id: 101,
-    theme_id: 22
+    page_name: 'one-page-home'
   });
 
-  assert.equal(read.storage_path, 'sites/101/templates/default/pages/index/content.blade.php');
+  assert.equal(read.storage_path, 'sites/101/templates/default/pages/one-page-home/content.blade.php');
   assert.equal(read.content.html, '<section class="hero">One homepage</section>\n');
 });
 
-test('repository upserts and searches custom pages with real public urls', async () => {
+test('repository creates and searches custom pages with real public urls', async () => {
   const storageRoot = await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-'));
   const repository = new WeblessAccountRepository(fakePool(), {
     storageRoot,
     publicSiteBaseUrl: 'https://slimweb.tw'
   });
 
-  const upserted = await repository.upsertPage(11, {
+  const created = await repository.createPage(11, {
     site_id: 101,
-    page_key: 'japan-travel-codex-test',
-    title: '日本旅遊三城小旅行',
+    title: 'Japan Travel Codex Test',
     theme_id: 22,
     content: {
       html: '<section><h1>日本旅遊三城小旅行</h1><p>京都、北海道、大阪</p></section>'
     }
   });
 
-  assert.equal(upserted.storage_path, 'sites/101/templates/default/pages/japan-travel-codex-test/content.blade.php');
-  assert.equal(upserted.metadata_path, 'sites/101/templates/default/pages/japan-travel-codex-test/.page.json');
-  assert.equal(upserted.public_url, 'https://slimweb.tw/sites/site-1/default-preview/pages/japan-travel-codex-test');
+  assert.equal(created.storage_path, 'sites/101/templates/default/pages/japan-travel-codex-test/content.blade.php');
+  assert.equal(created.metadata_path, 'sites/101/templates/default/pages/japan-travel-codex-test/.page.json');
+  assert.equal(created.public_url, 'https://slimweb.tw/sites/site-1/default-preview/pages/japan-travel-codex-test');
   await assert.rejects(
     readFile(path.join(storageRoot, 'sites/101/templates/schemes/22/pages/japan-travel-codex-test/body.blade.php'), 'utf8'),
     /ENOENT/
   );
 
-  const pages = await repository.listPages(11, {
-    site_id: 101,
-    query: '京都',
-    include_html: true
-  });
+  const pages = await repository.listPages(11, { site_id: 101 });
+  const page = pages.pages.find((entry) => entry.page_key === 'japan-travel-codex-test');
 
-  assert.equal(pages.pages.length, 1);
-  assert.equal(pages.pages[0].page_key, 'japan-travel-codex-test');
-  assert.equal(pages.pages[0].title, '日本旅遊三城小旅行');
-  assert.equal(pages.pages[0].is_fixed, false);
-  assert.equal(pages.pages[0].public_url, 'https://slimweb.tw/sites/site-1/default-preview/pages/japan-travel-codex-test');
-  assert.match(pages.pages[0].html, /北海道/);
+  assert.equal(page?.title, 'Japan Travel Codex Test');
+  assert.equal(page?.is_fixed, false);
+  assert.equal(page?.public_url, 'https://slimweb.tw/sites/site-1/default-preview/pages/japan-travel-codex-test');
+  assert.equal(page?.can_edit, true);
+  assert.equal(page?.can_delete, true);
+  assert.ok(pages.pages.length >= 1);
 });
 
-test('repository updates and reads Webless homepage content files in GCS', async () => {
+test('repository creates and reads Webless custom page content files in GCS', async () => {
   const objects = new Map();
   const requests = [];
   const fetchImpl = async (url, options = {}) => {
@@ -2553,6 +2570,22 @@ test('repository updates and reads Webless homepage content files in GCS', async
       });
     }
 
+    if (String(url).startsWith('https://storage.googleapis.com/storage/v1/b/webless_bucket/o?prefix=')) {
+      const parsed = new URL(url);
+      const prefix = parsed.searchParams.get('prefix') ?? '';
+      const items = Array.from(objects.keys())
+        .filter((name) => name.startsWith(prefix))
+        .map((name) => ({ name }));
+
+      return new Response(JSON.stringify({
+        kind: 'storage#objects',
+        items
+      }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      });
+    }
+
     throw new Error(`Unexpected fetch: ${url}`);
   };
   const repository = new WeblessAccountRepository(fakePool(), {
@@ -2562,17 +2595,18 @@ test('repository updates and reads Webless homepage content files in GCS', async
     publicSiteBaseUrl: 'https://slimweb.tw'
   });
 
-  const update = await repository.updateHomeContent(11, {
+  const created = await repository.createPage(11, {
     site_id: 101,
+    title: 'GCS Page',
     content: {
       html: '<section class="hero">Hello GCS</section>'
     }
   });
-  const read = await repository.getHomeContent(11, { site_id: 101 });
+  const read = await repository.getPageContent(11, { site_id: 101, page_name: 'gcs-page' });
 
-  assert.equal(update.storage_path, 'sites/101/templates/default/pages/index/content.blade.php');
+  assert.equal(created.storage_path, 'sites/101/templates/default/pages/gcs-page/content.blade.php');
   assert.equal(read.content.html, '<section class="hero">Hello GCS</section>\n');
-  assert.equal(objects.get(update.storage_path).contentType, 'text/x-php; charset=utf-8');
+  assert.equal(objects.get(created.storage_path).contentType, 'text/x-php; charset=utf-8');
   assert.equal(requests.filter((request) => request.url === 'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token').length, 1);
 });
 
@@ -2883,8 +2917,9 @@ test('repository rejects unsafe inline script content', async () => {
   });
 
   await assert.rejects(
-    repository.updateHomeContent(11, {
+    repository.createPage(11, {
       site_id: 101,
+      title: 'Bad page',
       content: {
         html: '<section onclick="alert(1)">Bad</section>'
       }

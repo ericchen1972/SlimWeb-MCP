@@ -186,11 +186,11 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 | `slimweb_site_theme_mode_get` | Available | content read | 讀取站台層級色系；Default 與所有自訂版型都沿用這個 light/dark 設定。 |
 | `slimweb_design_context_get` | Available | content read | 回傳目前啟用版型的設計摘要、站台明暗色系與固定框架 `Tailwind`，供 AI 在視覺設計或畫圖前先讀取。 |
 | `slimweb_site_theme_mode_update` | Available | content write | 將站台層級色系切換為 light 或 dark。 |
-| `slimweb_themes_create_from_default` | Available | content write | 建立新版型，並只複製 Default shell/root-element template；首頁不屬於版型，非首頁內容頁預設沿用 Default。 |
+| `slimweb_themes_create_from_default` | Available | content write | 建立新版型，並只複製 Default shell/root-element template；新版型作為每一頁的基底樣式，包含首頁。 |
 | `slimweb_themes_activate` | Available | content write | 將指定版型設為前台啟用版型；會影響實際前台呈現。 |
 | `slimweb_themes_delete` | Available | content write | 刪除非 Default 版型與其 template 內容；Default 不能刪除。 |
-| `slimweb_theme_shell_get_context` | Available | content read | 回傳設計用 reference-only JSON，包含 nav、分類、購物車/登入按鈕、footer 聯絡資訊與線上客服狀態。 |
-| `slimweb_themes_update_root_elements` | Available | content write | 更新非 Default 版型的 navbar、footer、online support 與 root CSS。 |
+| `slimweb_theme_shell_get_context` | Available | content read | 回傳設計用 reference-only JSON，包含 nav、分類、購物車/登入按鈕與 footer 聯絡資訊。 |
+| `slimweb_themes_update_root_elements` | Available | content write | 更新非 Default 版型的 navbar、footer 與 root CSS。 |
 | `slimweb_theme_style_profile_get` | Available | content read | 讀取版型風格摘要與需求歷史。 |
 | `slimweb_theme_style_profile_upsert` | Available | content write | 建立或更新版型風格摘要、色彩、字體、版面、插圖與避免事項。 |
 | `slimweb_theme_style_profile_append_request` | Available | content write | 追加一筆使用者風格需求或變更紀錄。 |
@@ -253,7 +253,10 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 | `slimweb_product_add_ons_list` | Available | promotion read | 列出單品加購規則。 |
 | `slimweb_product_add_ons_upsert` | Available | promotion write | 新增或更新單品加購規則。 |
 | `slimweb_articles_list` | Available | content read | 列出文章，讓 AI 避免重複建立或挑選要更新的文章。 |
-| `slimweb_articles_upsert` | Available | content write + asset write | 新增或更新文章內容、HTML 排版、主圖與內容圖。 |
+| `slimweb_articles_check_title` | Available | content read | 檢查文章標題是否撞名。 |
+| `slimweb_articles_get_content` | Available | content read | 讀取單一文章內容與中繼資訊。 |
+| `slimweb_articles_create` | Available | content write + asset write | 新增文章，建立時必須有 16:9 主圖，也可附加內容圖。 |
+| `slimweb_articles_update` | Available | content write + asset write | 修改既有文章，固定流程與頁面修改相同。 |
 | `slimweb_customer_service_logs_list` | Available | customer service read | 查詢 AI 客服紀錄。 |
 | `slimweb_customer_service_settings_get` | Available | customer service read | 讀取 AI 客服設定摘要。 |
 | `slimweb_customer_service_settings_update` | Available | customer service write | 更新 AI 客服設定。 |
@@ -261,15 +264,12 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 | `slimweb_images_import_chatgpt_attachment` | Available | asset write | 匯入 ChatGPT web/desktop 對話附件圖片，回傳可用於商品、文章或頁面的 `media_path`。 |
 | `slimweb_debug_attachment_refs` | Available | diagnostic read | 診斷 ChatGPT Remote MCP 實際傳入的附件參數形狀；只回傳去敏摘要，不下載、不上傳、不寫入素材庫。 |
 | `slimweb_assets_upload` | Available | asset write | 只有當 AI flow 明確需要保存可重用素材時才寫入 asset。 |
-| `slimweb_pages_list` | Available | content read | 列出與搜尋固定頁/自訂頁；自訂頁回傳實際公開網址供導覽列與後續修改使用。 |
-| `slimweb_pages_get_home_content` | Available | content read | 讀取首頁目前儲存在 Webless template storage 的 body/content。 |
-| `slimweb_pages_update_home_content` | Available | content write | 替換首頁 body/content；禁止直接寫入 script/link/iframe 與 inline event handler。 |
-| `slimweb_pages_upsert` | Available | content write | 新增或更新自訂頁面內容；固定系統頁不可覆寫。 |
+| `slimweb_pages_check_title` | Available | content read | 檢查指定頁面標題是否已存在，固定頁會同時比對英文別名，採用 trim + 大小寫不敏感規則。 |
+| `slimweb_pages_list` | Available | content read | 列出站台所有固定頁與自訂頁，不做搜尋條件。 |
+| `slimweb_pages_get_content` | Available | content read | 依頁面名稱讀取單一頁面的內容與中繼資訊。 |
+| `slimweb_pages_create` | Available | content write | 建立新的自訂頁面；頁面標題需先過 `slimweb_pages_check_title`。 |
+| `slimweb_pages_update` | Available | content write | 修改既有自訂頁面；固定頁保持不可修改。 |
 | `slimweb_preview_get_page_url` | Available | content read | 回傳指定 site、page、theme 的預覽 URL，供 AI 自行截圖與檢查。 |
-| `slimweb_external_assets_list` | Available | asset read | 列出站台、版型或頁面層級引用的外部 CSS / JS。 |
-| `slimweb_external_assets_upsert` | Available | asset write + content write | 新增或更新外部 CSS / JS 引用；AI 必須提供 URL 與用途。 |
-| `slimweb_external_assets_delete` | Available | asset write + content write | 刪除外部 CSS / JS 引用。 |
-| `slimweb_external_assets_reorder` | Available | asset write + content write | 調整外部 CSS / JS 載入順序。 |
 | `slimweb_audit_list` | Available | audit read | 列出近期 MCP tool execution 紀錄。 |
 
 ## Tool 文件維護規範
@@ -311,9 +311,8 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - Write tools 不接受模糊目標，例如「第一個商品」；AI 必須先用 read tool 取得候選，再讓使用者或語意唯一指定。
 - 需要圖片的 tools 不接受 inline base64、image URL、file URL、`/mnt/data`、attachment handle、data ref、placeholder URL 或任何本地路徑。
 - 圖片流程固定為：AI 必須先判斷自己所在 runtime 是否能讀取圖片 bytes 並對外做 HTTPS `PUT`。Codex / Hermes 這類有本地或 code execution access 的 client 可以先呼叫 `slimweb_uploads_create`，讀取使用者上傳圖片或 AI 生成圖片的 binary，對 returned `upload_url` 做 raw bytes `PUT`，再呼叫 `slimweb_uploads_commit`，最後把回傳 `asset.media_path` 傳給商品、文章或 asset tools。
-- ChatGPT Remote MCP 目前不可假設能把對話附件、`/mnt/data` 或 hidden attachment rewrite 轉成 remote MCP 可讀 bytes。若 AI 所在 client 不能讀取圖片 bytes 或不能對 `upload_url` 做 `PUT`，必須直接向使用者說明此 client 無法透過 MCP 上傳圖片，請改用 Codex / Hermes 或提供可直接下載的圖片 URL。
+- ChatGPT Remote MCP 不可假設能把 AI 生成中的暫存圖片、`/mnt/data` 或 hidden attachment rewrite 轉成 remote MCP 可讀 bytes。若使用者已經把圖片作為 ChatGPT 對話附件貼上或重新上傳，AI 應改用 `slimweb_images_import_chatgpt_attachment` 匯入；若圖片仍只是 AI 生成結果而未成為對話附件，必須請使用者把核准的圖片貼回來後再匯入。
 - Webless 端負責與後台手動上傳一致的驗證、decode/re-encode、等比例縮圖與公開媒體 URL 產生；MCP 不再承接大段圖片 payload。
-- 外部 CSS / JS 不可直接寫入頁面內容、文章內容或版型內容；AI 必須使用 `slimweb_external_assets_*` tools 以結構化 URL 管理。
 - Write tools 應拒絕未經 allowlist 的 `<script>`、`<link rel="stylesheet">`、inline event handler 與可執行片段，除非該 tool 明確標示支援且通過安全驗證。
 - AI 不需要知道 SlimWeb 檔案目錄或後端 route，只需依 tool contract 使用 tools。
 
@@ -435,9 +434,9 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 狀態: Available
 - 權限: content read
 - Scope: active site and selected theme
-- 用途: 在建立或修改版型前，讓 AI 取得實際會接上的資料摘要 JSON，例如 nav item 數量/名稱/樹狀結構、商品分類數量/名稱、購物車/登入/註冊按鈕、footer 聯絡資訊數量與線上客服狀態。
+- 用途: 在建立或修改版型前，讓 AI 取得實際會接上的資料摘要 JSON，例如 nav item 數量/名稱/樹狀結構、商品分類數量/名稱、購物車/登入/註冊按鈕與 footer 聯絡資訊數量。
 - Input: `site_id`、`theme_id`
-- Output: `reference_only: true`、site summary、theme summary、`theme_scope`、`navbar`、`product_categories`、`storefront_actions`、`footer`、`online_support`
+- Output: `reference_only: true`、site summary、theme summary、`theme_scope`、`navbar`、`product_categories`、`storefront_actions`、`footer`
 - Side effects: none
 - 重要規則: 此 JSON 僅供設計參考，不可直接把 nav/footer/contact 寫死進 root element 或 page body。AI 應依此資料量預留版面、選擇 icon/spacing，實際資料仍由 Webless runtime 接上。
 - 是否需要 confirmation: no
@@ -449,8 +448,8 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 狀態: Available
 - 權限: content write
 - Scope: active site and non-Default theme
-- 用途: 更新新版型的 root elements，例如 navbar、footer、online support，以及 root-level CSS。Default 版型不可用此 tool 修改 root elements。
-- Input: `site_id`、`theme_id`、optional `fragments.navbar`、`fragments.footer`、`fragments.online_support`、optional `css`
+- 用途: 更新新版型的 root elements，例如 navbar、footer，以及 root-level CSS。Default 版型不可用此 tool 修改 root elements。
+- Input: `site_id`、`theme_id`、optional `fragments.navbar`、`fragments.footer`、optional `css`
 - Output: write summary、theme summary、updated fragments、CSS updated flag、preview URL
 - Side effects: writes root element Blade fragments and `assets/root-elements/css/00-mcp-theme.css`
 - 是否需要 confirmation: yes for customer-facing active theme
@@ -1155,15 +1154,54 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 錯誤情境: site not found、permission denied
 - Audit fields: request ID、user ID、account ID、site ID
 
-### `slimweb_articles_upsert`
+### `slimweb_articles_check_title`
+
+- 狀態: Available
+- 權限: content read
+- Scope: active site
+- 用途: 檢查文章標題是否撞名。
+- Input: `site_id`、`title`
+- Output: article title check result、matches
+- Side effects: none
+- 是否需要 confirmation: no
+- 錯誤情境: site not found、permission denied
+- Audit fields: request ID、user ID、account ID、site ID
+
+### `slimweb_articles_get_content`
+
+- 狀態: Available
+- 權限: content read
+- Scope: active site
+- 用途: 讀取單一文章內容與中繼資訊。
+- Input: `site_id`、`article_id`
+- Output: article、cover URL、article URL、content body
+- Side effects: none
+- 是否需要 confirmation: no
+- 錯誤情境: article not found、site not found、permission denied
+- Audit fields: request ID、user ID、account ID、site ID、article ID
+
+### `slimweb_articles_create`
 
 - 狀態: Available
 - 權限: content write + asset write
 - Scope: active site
-- 用途: 新增或更新文章內容、HTML 排版、文章主圖與內容圖。AI 可先產生圖片，透過 `cover_image` 或 `content_images` 保存，再把 returned URL 放入 `content_html`。
-- Input: `site_id`、optional `article_id`、optional `notion_page_id`、`title`、`content_html`、optional `cover_image`、optional `content_images`
+- 用途: 新增文章。建立時必須有 16:9 主圖，也可附加內容圖。若使用者沒有給圖且沒有描述主圖，AI 會依文章標題或內容先畫主圖，若圖是 AI 產出且還沒轉成可上傳附件，需先讓使用者貼回再建立文章。
+- Input: `site_id`、`title`、`content_html`、`cover_image`、optional `notion_page_id`、optional `content_images`
 - Output: article summary、article URL、cover URL、content image URLs
-- Side effects: creates or modifies `articles`; writes article cover and content images under site article storage paths
+- Side effects: creates `articles`; writes article cover and content images under site article storage paths
+- 是否需要 confirmation: yes when the cover image was AI-generated and still needs user re-upload in ChatGPT clients
+- 錯誤情境: validation failed、article title exists、permission denied、conflict
+- Audit fields: request ID、user ID、account ID、site ID、article ID、changed fields
+
+### `slimweb_articles_update`
+
+- 狀態: Available
+- 權限: content write + asset write
+- Scope: active site
+- 用途: 修改既有文章。流程與頁面修改相同，讀取現有內容後再決定要不要更新標題、主圖或內容圖。
+- Input: `site_id`、`article_id`、optional `title`、optional `content_html`、optional `cover_image`、optional `notion_page_id`、optional `content_images`
+- Output: article summary、article URL、cover URL、content image URLs
+- Side effects: modifies `articles`; can replace article cover and content images under site article storage paths
 - 是否需要 confirmation: yes when replacing an existing article body or cover image
 - 錯誤情境: validation failed、article not found、permission denied、conflict
 - Audit fields: request ID、user ID、account ID、site ID、article ID、changed fields
@@ -1234,106 +1272,70 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 錯誤情境: unsupported source、file too large、missing usage、unauthorized、storage adapter not configured
 - Audit fields: request ID、user ID、account ID、site ID、asset ID、usage
 
-### `slimweb_pages_get_home_content`
+### `slimweb_pages_check_title`
 
 - 狀態: Available
 - 權限: content read
 - Scope: active site
-- 用途: 讀取站台唯一首頁 body/content。首頁不屬於 Default 或自訂版型；切換版型不會切換首頁內容或設計。
-- Input: `site_id`
-- Output: site summary、page key、theme summary、storage path、content HTML、exists flag
+- 用途: 檢查頁面標題是否已存在，固定頁除了中文標題，也會比對英文別名與 `home` 相關別名，採用 trim + 大小寫不敏感規則。
+- Input: `site_id`、`title`
+- Output: site summary、original title、normalized title、exists flag、matched pages
 - Side effects: none
 - 是否需要 confirmation: no
-- 錯誤情境: site not found、storage adapter not configured
-- Audit fields: request ID、user ID、account ID、site ID、page key
+- 錯誤情境: missing title、site not found、permission denied
+- Audit fields: request ID、user ID、account ID、site ID、title
 
-### `slimweb_pages_update_home_content`
+### `slimweb_pages_get_content`
+
+- 狀態: Available
+- 權限: content read
+- Scope: active site
+- 用途: 依 `page_name` 讀取單一頁面的內容與中繼資訊，首頁與自訂頁都走同一個讀取工具。
+- Input: `site_id`、`page_name`
+- Output: site summary、page summary、content HTML、storage path、metadata path、public URL、preview URL
+- Side effects: none
+- 是否需要 confirmation: no
+- 錯誤情境: page not found、site not found、storage adapter not configured
+- Audit fields: request ID、user ID、account ID、site ID、page name、page key
+
+### `slimweb_pages_create`
 
 - 狀態: Available
 - 權限: content write
 - Scope: active site
-- 用途: 替換站台唯一首頁 body/content。AI 應先使用 `slimweb_assets_upload` 保存圖片，並在 HTML 使用回傳 URL；不要建立 theme-specific homepage。
-- Input: `site_id`、`content.html` or `content.body_html`、optional `replacement_mode`
-- Output: write summary、site summary、theme summary、storage path、bytes written
-- Side effects: overwrites homepage template file in configured Webless template storage
+- 用途: 建立新的自訂頁面。AI 應先確認標題不撞名，再依設計摘要與圖片素材建立 HTML/CSS，固定頁不可透過這個工具建立或覆寫。
+- Input: `site_id`、`title`、`content.html` or `content.body_html`、optional `page_key`、optional `confirmation_token`
+- Output: write summary、site summary、theme summary、page key、title、public URL、preview URL、bytes written
+- Side effects: writes custom page body and metadata to Webless template storage
+- 是否需要 confirmation: yes when creating customer-facing content
+- 錯誤情境: title already exists、unsafe content、site not found、storage adapter not configured
+- Audit fields: request ID、user ID、account ID、site ID、page key、title
+
+### `slimweb_pages_update`
+
+- 狀態: Available
+- 權限: content write
+- Scope: active site
+- 用途: 修改既有自訂頁面。流程會先用 `slimweb_pages_get_content` 讀取目前內容，固定頁不可透過這個工具修改。
+- Input: `site_id`、`page_name`、`content.html` or `content.body_html`、optional `title`、optional `confirmation_token`
+- Output: write summary、site summary、theme summary、page key、title、public URL、preview URL、bytes written
+- Side effects: overwrites custom page body and metadata in configured Webless template storage
 - 是否需要 confirmation: yes when replacing customer-facing content
-- 錯誤情境: unsafe content、missing HTML、site not found、storage adapter not configured
-- Audit fields: request ID、user ID、account ID、site ID、page key、bytes written
+- 錯誤情境: page not found、fixed page、unsafe content、site not found、storage adapter not configured
+- Audit fields: request ID、user ID、account ID、site ID、page key、title
 
 ### `slimweb_preview_get_page_url`
 
 - 狀態: Available
 - 權限: content read
 - Scope: active site
-- 用途: 回傳 AI 可開啟並自行截圖的頁面預覽 URL。`page_key=index` 會回傳站台唯一首頁預覽並忽略 theme；其他頁面才支援 `theme_id`。
+- 用途: 回傳 AI 可開啟並自行截圖的頁面預覽 URL。`page_key=index` 會回傳站台唯一首頁預覽；可依 theme 檢視該頁的基底樣式。
 - Input: `site_id`、`page_key`、optional `theme_id` for non-home pages、optional `mode`
 - Output: site summary、page key、theme summary、preview URL、mode、theme parameter support hint
 - Side effects: none
 - 是否需要 confirmation: no
 - 錯誤情境: site not found、theme not found、invalid page key
 - Audit fields: request ID、user ID、account ID、site ID、theme ID、page key
-
-### `slimweb_external_assets_list`
-
-- 狀態: Available
-- 權限: asset read
-- Scope: active site；可選 site、theme、page scope
-- 用途: 列出目前站台、版型或頁面層級引用的外部 CSS / JS，讓 AI 在修改頁面前知道既有外部依賴與載入順序。
-- Input: optional `scope` (`site`, `theme`, `page`)、optional `theme_id`、optional `page_id`、optional `type` (`css`, `js`)、optional enabled filter
-- Output: external asset IDs、type、URL、scope、theme/page reference、placement、load mode、enabled status、purpose、created/updated time、editable hints
-- Side effects: none
-- 是否需要 confirmation: no
-- 錯誤情境: missing active site、permission denied、theme not found、page not found、invalid scope
-- Audit fields: request ID、user ID、account ID、site ID、scope、theme ID、page ID
-
-### `slimweb_external_assets_upsert`
-
-- 狀態: Available
-- 權限: asset write + content write
-- Scope: active site；可選 site、theme、page scope
-- 用途: 新增或更新外部 CSS / JS 引用。AI 若需要引入 CDN、字型、追蹤碼、互動套件、動畫套件或外部樣式，必須透過本 tool 填寫 URL 與用途，不可直接把 `<script>` 或 `<link>` 寫進內容。
-- Input:
-  - optional `asset_id`
-  - `scope`: `site`, `theme`, `page`
-  - optional `site_page_id`
-  - optional `page_key`
-  - `asset_type`: `css` or `js`
-  - `url`: HTTPS URL
-  - `placement`: `head` or `body_end`
-  - optional `load_mode`: `normal`, `async`, `defer`
-  - optional `is_enabled`: boolean
-  - `purpose`: human-readable reason，例如 `font`, `carousel`, `animation`, `analytics`, `custom interaction`
-- Output: external asset summary、changed fields、warnings、audit ID、preview impact hints
-- Side effects: creates or modifies external asset reference used by SlimWeb render pipeline
-- 是否需要 confirmation: yes for JavaScript, third-party tracking, site-scope resources, changing enabled status, or changing URL domain
-- 錯誤情境: non-HTTPS URL、blocked domain、unsupported type、invalid placement、missing purpose、theme/page mismatch、permission denied、conflict
-- Audit fields: request ID、user ID、account ID、site ID、external asset ID、scope、type、URL domain、changed fields
-
-### `slimweb_external_assets_delete`
-
-- 狀態: Available
-- 權限: asset write + content write
-- Scope: active site；可選 site、theme、page scope
-- 用途: 刪除外部 CSS / JS 引用。
-- Input: `asset_id`
-- Output: removed/disabled asset summary、affected scope、warnings、audit ID
-- Side effects: deletes external asset reference and may change storefront rendering or behavior
-- 是否需要 confirmation: yes
-- 錯誤情境: external asset not found、permission denied、dependency warning、conflict
-- Audit fields: request ID、user ID、account ID、site ID、external asset ID、mode、URL domain
-
-### `slimweb_external_assets_reorder`
-
-- 狀態: Available
-- 權限: asset write + content write
-- Scope: active site；可選 site、theme、page scope
-- 用途: 調整同一 scope 下外部 CSS / JS 的載入順序，支援處理相依套件或覆蓋樣式順序。
-- Input: `asset_ids`
-- Output: ordered external asset summaries、warnings、audit ID
-- Side effects: modifies load order and may affect storefront rendering or JavaScript behavior
-- 是否需要 confirmation: yes if JavaScript order changes or site-scope order changes
-- 錯誤情境: missing IDs、asset scope mismatch、dependency conflict、permission denied
-- Audit fields: request ID、user ID、account ID、site ID、scope、ordered external asset IDs
 
 ### `slimweb_audit_list`
 
@@ -1363,35 +1365,41 @@ AI Client 收到或引用的圖片預設是 reference-only。只有當 tool call
 
 頁面與版型相關素材會在 page/template tools 定義時再補充。
 
-## 外部 CSS / JS 政策
-
-外部 CSS / JS 屬於可影響全站視覺、互動行為與安全性的資源，不應混在頁面 HTML、文章 body 或版型內容內。AI Client 若需要引入外部檔案，必須使用 `slimweb_external_assets_*` tools 以結構化資料管理。
-
-原則：
-
-- 外部資源只接受 `https://` URL。
-- AI 必須填寫 `purpose`，說明引入原因，例如字型、輪播、動畫、追蹤碼或特定互動功能。
-- CSS 建議放在 `head`；JS 預設放在 `body_end`，除非資源文件明確要求放在 `head`。
-- JavaScript、第三方追蹤碼、site-scope 資源、URL domain 變更與啟用/停用都需要 confirmation。
-- 頁面內容與版型內容不得直接包含 `<script>`、`<link rel="stylesheet">`、inline event handler，例如 `onclick`、`onload`。
-- MCP Server 應記錄 URL domain、scope、placement、load mode、enabled status 與用途，供 audit 與客服追蹤。
-- 若未來提供 domain allowlist / blocklist，`slimweb_external_assets_upsert` 必須在寫入前檢查。
-
-Scope 規則：
-
-- `site`: 全站資源，影響目前網站所有頁面。高影響，預設需要 confirmation。
-- `theme`: 只影響指定版型。當使用者要求 AI 建立或修改新版型時，可用於版型專屬互動或樣式。
-- `page`: 只影響指定頁面。當需求只針對首頁、關於我們、活動頁等單頁時，優先使用 page scope。
-
-Default 與版型限制：
-
-- 在 Default 狀態下，AI 只能修改首頁內容與自訂頁面內容；不得新增或修改 Default 的版型級 external assets。
 - 若 Default 頁面內容需要外部資源，AI 應優先使用 page scope，並說明為何該頁需要該資源。
 - 當使用者要求 AI 建立或修改非 Default 版型時，theme scope 可用，但必須明確指定目標 theme。
-- 版型與內容分離：`index` 首頁是站台層級唯一首頁，不屬於任何版型；非 Default 版型只管理 navbar、body/background styling、online support、footer，以及非首頁頁面。除非使用者明確要求「某版型的某個非首頁頁面」，否則非首頁內容頁沿用 Default。
-- 色系與版型分離：`sites.theme_mode` 是唯一 light/dark 來源，Default 與所有自訂版型都沿用。AI 不應在一般版型或頁面任務中硬寫文字顏色、按鈕底色等全域 theme CSS；除非使用者明確指定。若使用者要求 neon、螢光、暗色高對比等風格，先確認或切換為 `dark`。
+- 版型與內容分離：版型是每一頁的基底；Default 與自訂版型都會影響頁面的基礎外觀，包含首頁與其他頁面。
+- 色系與版型分離：`sites.theme_mode` 是唯一 light/dark 來源。AI 不應在一般版型或頁面任務中硬寫文字顏色、按鈕底色等全域 theme CSS；除非使用者明確指定。若使用者要求 neon、螢光、暗色高對比等風格，先確認或切換為 `dark`。
 - 建立或修改版型、頁面視覺、插圖或其他畫圖任務前，AI 必須先讀 `slimweb_design_context_get`；若需要真實 nav/footer/分類資料形狀，再補讀 `slimweb_theme_shell_get_context` 與 `slimweb_theme_style_profile_get`。
 - `slimweb_theme_shell_get_context` 回傳的是 reference-only JSON。AI 可以用它決定 spacing、icon、容器容量與 responsive 行為，但不可把 nav/footer/contact 等真實資料寫死到版型片段。
+
+### 頁面建立 / 修改流程
+
+- 先判斷任務是建立頁面還是修改頁面。
+- 如果是建立頁面，先用 `slimweb_pages_check_title` 檢查 `title` 是否撞名；如果 `exists` 為 `true`，立刻停止並告知使用者。
+- 如果是修改頁面，先用 `slimweb_pages_get_content` 取得目前頁面資料；如果找不到資料，立刻停止並告知使用者；如果回傳的是固定頁，立刻停止，因為固定頁不可修改。
+- 再用 `slimweb_design_context_get` 取得目前網站版型摘要、色系與框架。
+- 如果任務需要圖片，先由用戶提供、AI 作圖或兩者兼具。
+- AI 作圖時，請依照目前色系來畫，讓結果更容易融入現有版型。
+- 如果是 ChatGPT Remote MCP，而圖片是使用者貼上的對話附件，先用 `slimweb_images_import_chatgpt_attachment` 匯入成 `media_path`。
+- 如果是本地可直接上傳 bytes 的 Client，則用 `slimweb_uploads_create` 取得 signed upload URL，再用 `slimweb_uploads_commit` 取得可重用的 `media_path`。
+- 頁面 HTML 可以自訂 CSS，但不可使用 JavaScript。
+- 如果是建立頁面，使用 `slimweb_pages_create`。
+- 如果是修改頁面，使用 `slimweb_pages_update`。
+- 頁面建立或更新後，可用 `slimweb_preview_get_page_url` 做預覽驗證。
+
+### 文章建立 / 修改流程
+
+- 先依照頁面相同的主流程處理：先讀設計摘要，再處理圖片，再排 HTML。
+- 如果是建立文章，先用 `slimweb_articles_check_title` 檢查 `title` 是否撞名；如果 `exists` 為 `true`，立刻停止並告知使用者。
+- 如果是修改文章，先用 `slimweb_articles_get_content` 取得目前文章資料；如果找不到資料，立刻停止並告知使用者。
+- 新文章一定要有 16:9 主圖；若使用者沒有提供主圖且也沒有描述主圖怎麼畫，AI 就依文章標題或內容先畫主圖。
+- AI 作圖時，請依照目前色系來畫，讓結果更容易融入現有版型。
+- 如果主圖或內容圖是 AI 產出，而目前是 ChatGPT Remote MCP，先停下來等使用者把圖貼回來，再用 `slimweb_images_import_chatgpt_attachment` 匯入成 `media_path`。
+- 如果是本地可直接上傳 bytes 的 Client，則用 `slimweb_uploads_create` 取得 signed upload URL，再用 `slimweb_uploads_commit` 取得可重用的 `media_path`。
+- 文章 HTML 可以自訂 CSS，但不可使用 JavaScript。
+- 如果是建立文章，使用 `slimweb_articles_create`。
+- 如果是修改文章，使用 `slimweb_articles_update`。
+- 文章建立或更新後，可用 `slimweb_preview_get_page_url` 做預覽驗證。
 
 ## 安全要求
 
@@ -1461,8 +1469,10 @@ MCP tools 應回傳可預期的錯誤類型：
 - `slimweb_themes_activate`
 - `slimweb_themes_update_root_elements`
 - `slimweb_assets_upload`
-- `slimweb_pages_get_home_content`
-- `slimweb_pages_update_home_content`
+- `slimweb_pages_check_title`
+- `slimweb_pages_get_content`
+- `slimweb_pages_create`
+- `slimweb_pages_update`
 - `slimweb_preview_get_page_url`
 
 主工具表以目前 `tools/list` discovery 為準；尚未出現在主表的舊 contracts 不應視為已實作。

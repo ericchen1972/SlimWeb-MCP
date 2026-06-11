@@ -2143,6 +2143,82 @@ export class WeblessAccountRepository {
     };
   }
 
+  async checkArticleTitle(accountId, args) {
+    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
+    const title = requireArticleTitle(args.title);
+    const { matches } = await this.findArticleTitleMatchesForSite(site, title);
+
+    return {
+      site,
+      title,
+      normalized_title: normalizeTitleMatch(title),
+      exists: matches.length > 0,
+      matches
+    };
+  }
+
+  async getArticleContent(accountId, args) {
+    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
+    const articleId = requireInteger(args.article_id, 'article_id');
+    const article = await this.findArticleForSite(site.id, articleId);
+
+    return {
+      site,
+      article: formatArticle(article, site, this.publicSiteBaseUrl, true)
+    };
+  }
+
+  async createArticle(accountId, args) {
+    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
+    const title = requireArticleTitle(args.title);
+    const { matches } = await this.findArticleTitleMatchesForSite(site, title);
+
+    if (matches.length > 0) {
+      throw codedError('CONFLICT', 'Article title already exists.', { matches });
+    }
+
+    if (!args.cover_image) {
+      throw codedError('VALIDATION_FAILED', 'cover_image is required when creating a new article. Generate or upload a 16:9 main image first, then pass its committed media_path.');
+    }
+
+    return this.upsertArticle(accountId, {
+      ...args,
+      site_id: site.id,
+      title,
+      article_id: null
+    });
+  }
+
+  async updateArticle(accountId, args) {
+    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
+    const articleId = requireInteger(args.article_id, 'article_id');
+    const existing = await this.findArticleForSite(site.id, articleId);
+    const nextTitle = args.title === undefined || args.title === null ? existing.title : requireArticleTitle(args.title);
+
+    if (normalizeTitleMatch(nextTitle) !== normalizeTitleMatch(existing.title)) {
+      const { matches } = await this.findArticleTitleMatchesForSite(site, nextTitle);
+      const conflictingMatches = matches.filter((match) => match.id !== existing.id);
+
+      if (conflictingMatches.length > 0) {
+        throw codedError('CONFLICT', 'Article title already exists.', { matches: conflictingMatches });
+      }
+    }
+
+    const nextContentHtml = args.content_html === undefined || args.content_html === null
+      ? (existing.content ?? '')
+      : args.content_html;
+    const nextNotionPageId = args.notion_page_id === undefined ? existing.notion_page_id : args.notion_page_id;
+
+    return this.upsertArticle(accountId, {
+      ...args,
+      site_id: site.id,
+      article_id: articleId,
+      title: nextTitle,
+      content_html: nextContentHtml,
+      notion_page_id: nextNotionPageId
+    });
+  }
+
   async upsertArticle(accountId, args) {
     const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
     const title = requireArticleTitle(args.title);
@@ -3919,26 +3995,15 @@ export class WeblessAccountRepository {
   }
 
   async getHomeContent(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const theme = siteLevelHomepageTheme(site);
-    const storagePath = homeContentStoragePath(site.id);
-    const html = await this.storage.readText(storagePath);
-
-    return {
-      site,
-      page_key: 'index',
-      theme,
-      storage_path: storagePath,
-      content: html === null ? null : { html },
-      exists: html !== null
-    };
+    return this.getPageContent(accountId, {
+      site_id: args.site_id,
+      page_name: 'index'
+    });
   }
 
   async listPages(accountId, args) {
     const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const query = nullableString(args.query).toLowerCase();
-    const includeHtml = Boolean(args.include_html);
-    const customPages = await this.listCustomPagesForSite(site, { includeHtml });
+    const customPages = await this.listCustomPagesForSite(site, { includeHtml: false });
     const fixedPages = fixedTemplatePages().map((page) => ({
       ...page,
       type: 'fixed',
@@ -3949,46 +4014,59 @@ export class WeblessAccountRepository {
       preview_url: this.previewUrlFor(site, page.page_key, 'default')
     }));
     const pages = [...fixedPages, ...customPages];
-    const filteredPages = query
-      ? pages.filter((page) => [page.page_key, page.title, page.html ?? ''].some((value) => String(value).toLowerCase().includes(query)))
-      : pages;
+
+    pages.sort((left, right) => left.title.localeCompare(right.title, 'zh-Hant'));
 
     return {
       site,
-      query: args.query ?? '',
-      pages: filteredPages
+      pages
     };
   }
 
-  async updateHomeContent(accountId, args) {
+  async getPageContent(accountId, args) {
     const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const theme = siteLevelHomepageTheme(site);
-    const html = extractHtmlContent(args.content);
-    const storagePath = homeContentStoragePath(site.id);
-
-    await this.storage.write(storagePath, Buffer.from(html.trim() + '\n', 'utf8'), 'text/x-php; charset=utf-8');
-
-    return {
-      ok: true,
-      site,
-      page_key: 'index',
-      theme,
-      replacement_mode: args.replacement_mode ?? 'replace_all',
-      storage_path: storagePath,
-      bytes_written: Buffer.byteLength(html.trim() + '\n')
-    };
-  }
-
-  async upsertPage(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const pageKey = normalizePageKey(args.page_key);
-    if (FIXED_TEMPLATE_PAGE_KEYS.has(pageKey)) {
-      throw codedError('VALIDATION_FAILED', 'Fixed template pages must be edited with their dedicated tools.');
+    const pageName = requireNonEmptyString(args.page_name, 'page_name');
+    const pageRecord = await this.findPageForSite(site, pageName, { includeHtml: true });
+    if (!pageRecord) {
+      throw codedError('NOT_FOUND', `Page not found or not accessible: ${pageName}`);
     }
 
+    return {
+      site,
+      page_name: pageName,
+      ...pageRecord
+    };
+  }
+
+  async checkPageTitle(accountId, args) {
+    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
     const title = requireNonEmptyString(args.title, 'title');
-    const theme = siteLevelHomepageTheme(site);
+    const { matches } = await this.findPageTitleMatchesForSite(site, title);
+
+    return {
+      site,
+      title,
+      normalized_title: normalizeTitleMatch(title),
+      exists: matches.length > 0,
+      matches
+    };
+  }
+
+  async createPage(accountId, args) {
+    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
+    const title = requireNonEmptyString(args.title, 'title');
     const html = extractHtmlContent(args.content);
+    const { matches } = await this.findPageTitleMatchesForSite(site, title);
+    if (matches.length > 0) {
+      throw codedError('CONFLICT', 'Page title already exists.', { matches });
+    }
+
+    const existingKeys = new Set([
+      ...FIXED_TEMPLATE_PAGE_KEYS,
+      ...(await this.listCustomPagesForSite(site, { includeHtml: false })).map((page) => page.page_key)
+    ]);
+    const pageKey = uniqueValue(slugify(title) || `page-${site.id}`, existingKeys, 120);
+    const theme = siteLevelHomepageTheme(site);
     const storagePath = pageContentStoragePath(site.id, theme, pageKey);
     const metadataPath = customPageMetadataStoragePath(site.id, pageKey);
     const metadata = {
@@ -4010,6 +4088,56 @@ export class WeblessAccountRepository {
       metadata_path: metadataPath,
       public_url: this.customPagePublicUrlFor(site, pageKey),
       preview_url: this.previewUrlFor(site, pageKey, theme.id),
+      bytes_written: Buffer.byteLength(html.trim() + '\n')
+    };
+  }
+
+  async updatePage(accountId, args) {
+    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
+    const pageName = requireNonEmptyString(args.page_name, 'page_name');
+    const html = extractHtmlContent(args.content);
+    const pageRecord = await this.findPageForSite(site, pageName, { includeHtml: false });
+
+    if (!pageRecord) {
+      throw codedError('NOT_FOUND', `Page not found or not accessible: ${pageName}`);
+    }
+
+    if (pageRecord.is_fixed) {
+      throw codedError('VALIDATION_FAILED', 'Fixed template pages cannot be modified.');
+    }
+
+    const currentTitle = pageRecord.title;
+    const nextTitle = nullableString(args.title) ?? currentTitle;
+    if (normalizeTitleMatch(nextTitle) !== normalizeTitleMatch(currentTitle)) {
+      const { matches } = await this.findPageTitleMatchesForSite(site, nextTitle);
+      const conflictingMatches = matches.filter((match) => match.page_key !== pageRecord.page_key);
+      if (conflictingMatches.length > 0) {
+        throw codedError('CONFLICT', 'Page title already exists.', { matches: conflictingMatches });
+      }
+    }
+
+    const theme = siteLevelHomepageTheme(site);
+    const storagePath = pageContentStoragePath(site.id, theme, pageRecord.page_key);
+    const metadataPath = customPageMetadataStoragePath(site.id, pageRecord.page_key);
+    const metadata = {
+      key: pageRecord.page_key,
+      name: nextTitle,
+      updated_at: new Date().toISOString()
+    };
+
+    await this.storage.write(storagePath, Buffer.from(html.trim() + '\n', 'utf8'), 'text/x-php; charset=utf-8');
+    await this.storage.write(metadataPath, Buffer.from(JSON.stringify(metadata, null, 2) + '\n', 'utf8'), 'application/json; charset=utf-8');
+
+    return {
+      ok: true,
+      site,
+      page_key: pageRecord.page_key,
+      title: nextTitle,
+      theme,
+      storage_path: storagePath,
+      metadata_path: metadataPath,
+      public_url: this.customPagePublicUrlFor(site, pageRecord.page_key),
+      preview_url: this.previewUrlFor(site, pageRecord.page_key, theme.id),
       bytes_written: Buffer.byteLength(html.trim() + '\n')
     };
   }
@@ -4048,6 +4176,101 @@ export class WeblessAccountRepository {
     pages.sort((left, right) => left.title.localeCompare(right.title, 'zh-Hant'));
 
     return pages;
+  }
+
+  async findPageForSite(site, pageName, { includeHtml = false } = {}) {
+    const lookup = normalizeTitleMatch(pageName);
+    const customPages = await this.listCustomPagesForSite(site, { includeHtml });
+    const fixedPages = fixedTemplatePages().map((page) => ({
+      ...page,
+      type: 'fixed',
+      is_fixed: true,
+      can_edit: false,
+      can_delete: false,
+      public_url: this.previewUrlFor(site, page.page_key, 'default'),
+      preview_url: this.previewUrlFor(site, page.page_key, 'default'),
+      content: null,
+      storage_path: null,
+      metadata_path: null
+    }));
+
+    const fixedMatch = fixedPages.find((page) => pageLookupCandidates(page).some((candidate) => normalizeTitleMatch(candidate) === lookup));
+    if (fixedMatch) {
+      if (fixedMatch.page_key === 'index') {
+        const storagePath = homeContentStoragePath(site.id);
+        const html = await this.storage.readText(storagePath);
+        return {
+          ...fixedMatch,
+          storage_path: storagePath,
+          content: html === null ? null : { html },
+          exists: true
+        };
+      }
+
+      return {
+        ...fixedMatch,
+        exists: true
+      };
+    }
+
+    const customMatch = customPages.find((page) => pageLookupCandidates(page).some((candidate) => normalizeTitleMatch(candidate) === lookup));
+    if (customMatch) {
+      return {
+        ...customMatch,
+        exists: true,
+        content: includeHtml ? { html: customMatch.html ?? '' } : null
+      };
+    }
+
+    return null;
+  }
+
+  async findPageTitleMatchesForSite(site, title) {
+    const lookup = normalizeTitleMatch(title);
+    const customPages = await this.listCustomPagesForSite(site, { includeHtml: false });
+    const matches = [];
+
+    for (const page of fixedTemplatePages()) {
+      const candidates = fixedTemplatePageTitleCandidates(page);
+      const matchedTitle = candidates.find((candidate) => normalizeTitleMatch(candidate) === lookup);
+
+      if (matchedTitle) {
+        matches.push({
+          page_key: page.page_key,
+          title: page.title,
+          matched_title: matchedTitle,
+          type: 'fixed',
+          is_fixed: true,
+          can_edit: false,
+          can_delete: false,
+          public_url: this.previewUrlFor(site, page.page_key, 'default')
+        });
+      }
+    }
+
+    for (const page of customPages) {
+      const candidates = pageLookupCandidates(page);
+      const matchedTitle = candidates.find((candidate) => normalizeTitleMatch(candidate) === lookup);
+
+      if (matchedTitle) {
+        matches.push({
+          page_key: page.page_key,
+          title: page.title,
+          matched_title: matchedTitle,
+          type: 'custom',
+          is_fixed: false,
+          can_edit: true,
+          can_delete: true,
+          public_url: page.public_url,
+          preview_url: page.preview_url
+        });
+      }
+    }
+
+    return {
+      lookup,
+      matches
+    };
   }
 
   async uploadAsset(accountId, args) {
@@ -5299,6 +5522,22 @@ export class WeblessAccountRepository {
     return result.rows[0];
   }
 
+  async findArticleTitleMatchesForSite(site, title) {
+    const result = await this.pool.query(
+      `
+        select id, site_id, notion_page_id, title, content, cover_path, created_at, updated_at
+        from articles
+        where site_id = $1 and lower(trim(title)) = $2
+        order by created_at desc, id desc
+      `,
+      [site.id, normalizeTitleMatch(title)]
+    );
+
+    return {
+      matches: result.rows.map((article) => formatArticle(article, site, this.publicSiteBaseUrl, false))
+    };
+  }
+
   async findCouponTemplateForSite(siteId, couponTemplateId) {
     const result = await this.pool.query(
       `
@@ -6466,7 +6705,7 @@ function adminAccessReadiness(counts) {
 
 function contentReadiness(counts) {
   const issues = counts.article_count === 0
-    ? [readinessIssue('articles_missing', '文章內容未建立', '沒有文章內容，品牌知識、SEO 長尾內容與 AI 引用來源較弱。', ['slimweb_articles_upsert'])]
+    ? [readinessIssue('articles_missing', '文章內容未建立', '沒有文章內容，品牌知識、SEO 長尾內容與 AI 引用來源較弱。', ['slimweb_articles_list', 'slimweb_articles_create'])]
     : [];
 
   return readinessCategory('content', '文章與品牌內容', 'recommended', issues, {
@@ -9998,6 +10237,30 @@ function headlineFromPageKey(pageKey) {
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+function fixedTemplatePageTitleCandidates(page) {
+  const candidates = new Set([page.title, headlineFromPageKey(page.page_key)]);
+
+  if (page.page_key === 'index') {
+    candidates.add('Home');
+    candidates.add('Homepage');
+    candidates.add('Home Page');
+  }
+
+  return [...candidates];
+}
+
+function pageLookupCandidates(page) {
+  const candidates = new Set([page.page_key, page.title, headlineFromPageKey(page.page_key)]);
+
+  if (page.page_key === 'index') {
+    candidates.add('Home');
+    candidates.add('Homepage');
+    candidates.add('Home Page');
+  }
+
+  return [...candidates];
+}
+
 function templateAssetStoragePath(theme, relativePath) {
   return `${themeDirectory(theme)}/${relativePath.replace(/^\/+/, '')}`;
 }
@@ -10030,6 +10293,10 @@ function extractSafeHtml(html, name) {
   }
 
   return html;
+}
+
+function normalizeTitleMatch(value) {
+  return String(value ?? '').trim().toLowerCase();
 }
 
 function removeDuplicateArticleTitleHeading(html, title) {

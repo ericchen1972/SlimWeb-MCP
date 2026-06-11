@@ -13,6 +13,21 @@ import { WeblessAccountRepository } from './weblessRepository.js';
 
 const SERVICE_NAME = 'slimweb-mcp';
 const SERVICE_VERSION = '0.1.0';
+const MCP_SERVER_GUIDELINES = [
+  'Always list available sites before any other SlimWeb MCP action.',
+  'If exactly one site is available, use it directly.',
+  'If more than one site is available, ask the user which site to operate.',
+  'Always confirm the target site with slimweb_site_select before any site-scoped tool.',
+  'Distinguish page and article from user intent only; do not infer from history.',
+  'Treat themes as the base styling layer for every page, including the homepage.',
+  'Before creating a page, require a title and check it with slimweb_pages_check_title; stop if a title already exists, including fixed-page English aliases.',
+  'Before creating an article, require a title and check it with slimweb_articles_check_title; new articles also require a 16:9 cover image, while optional content images follow the same upload or attachment branch as pages.',
+  'Use slimweb_pages_get_content to inspect a page by page_name before modifying it.',
+  'Page creation flow: use slimweb_design_context_get first, then gather images, then use slimweb_uploads_create plus slimweb_uploads_commit or slimweb_images_import_chatgpt_attachment for image bytes, then build HTML/CSS without JavaScript, then create the page with slimweb_pages_create.',
+  'Page update flow: use slimweb_pages_get_content first, then slimweb_design_context_get, then optional image import/upload, then update the page with slimweb_pages_update.',
+  'Article creation flow mirrors page creation flow, but cover_image is mandatory and article content may include optional content images; article updates follow the page update flow.',
+  'For visual verification after page creation or update, use slimweb_preview_get_page_url.'
+].join(' ');
 const MEMBER_EMAIL_PREVIEW_WIDGET_URI = 'ui://slimweb/member-email-preview.html';
 const MEMBER_EMAIL_PREVIEW_WIDGET_HTML = `<!doctype html>
 <html lang="zh-Hant">
@@ -199,12 +214,12 @@ const MCP_TOOLS = [
   },
   {
     name: 'slimweb_sites_list',
-    description: 'List SlimWeb sites available to the authenticated account.',
+    description: 'List SlimWeb sites available to the authenticated account. Always call this first before any other SlimWeb MCP action.',
     inputSchema: EMPTY_INPUT_SCHEMA
   },
   {
     name: 'slimweb_site_select',
-    description: 'Validate and return a SlimWeb site selected from slimweb_sites_list. Use this before write operations when the user owns multiple sites.',
+    description: 'Validate and return a SlimWeb site selected from slimweb_sites_list. Use this to confirm the target site before any site-scoped tool call.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -279,7 +294,7 @@ const MCP_TOOLS = [
   },
   {
     name: 'slimweb_themes_create_from_default',
-    description: 'Create a new non-Default theme/page style scheme by copying only Default shell/root-element template files. Page content remains separated and falls back to Default unless explicitly created for the theme. Do not choose light/dark here; the style scheme inherits site-level color mode.',
+    description: 'Create a new non-Default theme/page style scheme by copying only Default shell/root-element template files. The theme acts as the base styling layer for every page, including the homepage. Do not choose light/dark here; the style scheme inherits site-level color mode.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -327,7 +342,7 @@ const MCP_TOOLS = [
   },
   {
     name: 'slimweb_theme_shell_get_context',
-    description: 'Return reference-only JSON describing real storefront shell data such as nav items, category counts, cart/login buttons, footer contact items, and online support state. Call before creating or modifying visual theme elements.',
+    description: 'Return reference-only JSON describing real storefront shell data such as nav items, category counts, cart/login buttons, and footer contact items. Call before creating or modifying visual theme elements.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -345,7 +360,7 @@ const MCP_TOOLS = [
   },
   {
     name: 'slimweb_themes_update_root_elements',
-    description: 'Update root-level theme fragments such as navbar, footer, online support, and theme-level CSS for a non-Default theme. Do not use this to overwrite page body content.',
+    description: 'Update root-level theme fragments such as navbar, footer, and theme-level CSS for a non-Default theme. Do not use this to overwrite page body content.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -359,7 +374,7 @@ const MCP_TOOLS = [
         },
         fragments: {
           type: 'object',
-          description: 'Optional root element HTML fragments keyed by navbar, footer, or online_support.'
+          description: 'Optional root element HTML fragments keyed by navbar or footer.'
         },
         css: {
           type: 'string',
@@ -877,67 +892,6 @@ const MCP_TOOLS = [
     }
   },
   {
-    name: 'slimweb_external_assets_list',
-    description: 'List external CSS/JS assets by site, theme, or page scope.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        site_id: { type: 'integer' }
-      },
-      required: ['site_id']
-    }
-  },
-  {
-    name: 'slimweb_external_assets_upsert',
-    description: 'Create or update an external CSS/JS asset. Use scope=site for global assets, scope=theme for template assets, and scope=page for one page key.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        site_id: { type: 'integer' },
-        asset_id: { type: 'integer' },
-        scope: { type: 'string', enum: ['site', 'theme', 'page'] },
-        asset_type: { type: 'string', enum: ['css', 'js'] },
-        url: { type: 'string' },
-        placement: { type: 'string', enum: ['head', 'body_end'] },
-        load_mode: { type: 'string', enum: ['normal', 'defer', 'async'] },
-        site_page_id: { type: 'integer' },
-        page_key: { type: 'string' },
-        sort_order: { type: 'integer' },
-        is_enabled: { type: 'boolean' },
-        purpose: { type: 'string' },
-        attributes: { type: 'object' }
-      },
-      required: ['site_id', 'scope', 'asset_type', 'url']
-    }
-  },
-  {
-    name: 'slimweb_external_assets_delete',
-    description: 'Delete one external CSS/JS asset.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        site_id: { type: 'integer' },
-        asset_id: { type: 'integer' }
-      },
-      required: ['site_id', 'asset_id']
-    }
-  },
-  {
-    name: 'slimweb_external_assets_reorder',
-    description: 'Reorder external CSS/JS assets by asset IDs.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        site_id: { type: 'integer' },
-        asset_ids: {
-          type: 'array',
-          items: { type: 'integer' }
-        }
-      },
-      required: ['site_id', 'asset_ids']
-    }
-  },
-  {
     name: 'slimweb_images_import_chatgpt_attachment',
     description: 'Import one image from a ChatGPT web/desktop conversation attachment using OpenAI fileParams. Use this only when you are ChatGPT and the image was uploaded in the conversation. Codex, Hermes, Gemini, Claude, Grok, DeepSeek, and clients that can read image bytes should use slimweb_uploads_create plus slimweb_uploads_commit instead.',
     inputSchema: {
@@ -1041,7 +995,7 @@ const MCP_TOOLS = [
   },
   {
     name: 'slimweb_articles_list',
-    description: 'List articles for a SlimWeb site so the AI can choose an article to edit or avoid duplicates.',
+    description: 'List articles for a SlimWeb site so the AI can choose an article to edit or avoid duplicates. Use this for article content, not page content.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1053,13 +1007,36 @@ const MCP_TOOLS = [
     }
   },
   {
-    name: 'slimweb_articles_upsert',
-    description: 'Create or update an article with HTML layout, required 16:9 cover image when creating a new article, and optional content images. Creative article requests must draft the article and cover-image concept first, generate or propose the 16:9 main image, and ask for user confirmation before calling this write tool. If ChatGPT generated the selected cover image, ask the user to paste or re-upload the selected image so it becomes a user attachment, then call slimweb_images_import_chatgpt_attachment to get media_path before creating the article. The article title is rendered by SlimWeb from the title field, so content_html must start with the article body and must not repeat the same title as an h1. Image sources must be committed media_path values from slimweb_uploads_commit or slimweb_images_import_chatgpt_attachment; use returned media URLs inside content_html for article body layout. Non-creative updates using user-provided final text and images may proceed directly.',
+    name: 'slimweb_articles_check_title',
+    description: 'Check whether an article title already exists within the active SlimWeb site. Use this before creating a new article so the AI can stop on duplicates and avoid title collisions.',
     inputSchema: {
       type: 'object',
       properties: {
         site_id: { type: 'integer' },
-        article_id: { type: 'integer' },
+        title: { type: 'string' }
+      },
+      required: ['site_id', 'title']
+    }
+  },
+  {
+    name: 'slimweb_articles_get_content',
+    description: 'Read a single article by article_id before editing it. Use this to load the current article state, including the rendered body and cover image metadata.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        site_id: { type: 'integer' },
+        article_id: { type: 'integer' }
+      },
+      required: ['site_id', 'article_id']
+    }
+  },
+  {
+    name: 'slimweb_articles_create',
+    description: 'Create a new article. A 16:9 cover image is mandatory, and optional content images may be attached for the article body. Use slimweb_articles_check_title first and generate or import the approved cover image before calling this tool.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        site_id: { type: 'integer' },
         notion_page_id: { type: 'string' },
         title: { type: 'string' },
         content_html: {
@@ -1068,7 +1045,7 @@ const MCP_TOOLS = [
         },
         cover_image: {
           ...IMAGE_SOURCE_SCHEMA,
-          description: 'Required when creating a new article. Use a 16:9 main image media_path returned by slimweb_uploads_commit or slimweb_images_import_chatgpt_attachment. If the image was generated by ChatGPT, ask the user to paste or re-upload the selected image first so fileParams can import it.'
+          description: 'Required when creating a new article. Use a 16:9 main image media_path returned by slimweb_uploads_commit or slimweb_images_import_chatgpt_attachment. If the image was generated or refined in ChatGPT, ask the user to paste or re-upload the approved image first so fileParams can import it.'
         },
         content_images: {
           type: 'array',
@@ -1085,7 +1062,43 @@ const MCP_TOOLS = [
           }
         }
       },
-      required: ['site_id', 'title', 'content_html']
+      required: ['site_id', 'title', 'content_html', 'cover_image']
+    }
+  },
+  {
+    name: 'slimweb_articles_update',
+    description: 'Update an existing article by article_id. Use slimweb_articles_get_content first to read the current article state; a cover image can be replaced or left unchanged, and optional content images may be updated as needed.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        site_id: { type: 'integer' },
+        article_id: { type: 'integer' },
+        notion_page_id: { type: 'string' },
+        title: { type: 'string' },
+        content_html: {
+          type: 'string',
+          description: 'Safe article body HTML. Do not include the article title as an h1 because SlimWeb renders title separately. Do not include script/link/iframe tags or inline event handlers.'
+        },
+        cover_image: {
+          ...IMAGE_SOURCE_SCHEMA,
+          description: 'Optional replacement for the article cover image. If you replace it with a ChatGPT-generated image, ask the user to paste or re-upload the approved image first so fileParams can import it.'
+        },
+        content_images: {
+          type: 'array',
+          description: 'Optional reusable content images for the article body.',
+          items: {
+            type: 'object',
+            properties: {
+              source: IMAGE_SOURCE_SCHEMA,
+              suggested_filename: { type: 'string' },
+              alt_text: { type: 'string' }
+            },
+            required: ['source'],
+            additionalProperties: false
+          }
+        }
+      },
+      required: ['site_id', 'article_id']
     }
   },
   {
@@ -1753,71 +1766,52 @@ const MCP_TOOLS = [
   },
   {
     name: 'slimweb_pages_list',
-    description: 'List and search fixed and custom site pages. Custom pages include the real public URL that can be copied, added to navigation, or used for follow-up edits.',
+    description: 'List all fixed and custom site pages. Use this when you need the site-wide page inventory before a read, create, update, or navigation task.',
     inputSchema: {
       type: 'object',
       properties: {
-        site_id: { type: 'integer' },
-        query: {
-          type: 'string',
-          description: 'Optional search text matched against page key, title, and included HTML.'
-        },
-        include_html: {
-          type: 'boolean',
-          description: 'Set true when the AI needs current custom page HTML for a follow-up edit.'
-        }
+        site_id: { type: 'integer' }
       },
       required: ['site_id']
     }
   },
   {
-    name: 'slimweb_pages_get_home_content',
-    description: 'Read the single site-level homepage content. Homepage content and design are independent from themes.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        site_id: {
-          type: 'integer'
-        }
-      },
-      required: ['site_id']
-    }
-  },
-  {
-    name: 'slimweb_pages_update_home_content',
-    description: 'Replace the single site-level homepage content using structured page content and uploaded assets. This does not create theme-specific homepage variants. Do not include script/link tags; manage external CSS/JS with external asset tools.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        site_id: {
-          type: 'integer'
-        },
-        content: {
-          type: 'object',
-          description: 'Structured homepage content. Do not include script/link tags; use external asset tools for CSS/JS.'
-        },
-        replacement_mode: {
-          type: 'string',
-          enum: ['replace_all', 'patch_sections']
-        },
-        confirmation_token: {
-          type: 'string'
-        }
-      },
-      required: ['site_id', 'content']
-    }
-  },
-  {
-    name: 'slimweb_pages_upsert',
-    description: 'Create or update a non-fixed custom page body in Default. Returns the real public URL for adding to navigation or follow-up edits. Use uploaded media_path URLs for reusable images; do not embed base64 images.',
+    name: 'slimweb_pages_check_title',
+    description: 'Check whether a page title already exists for the selected site. Matching is trim + case-insensitive, and fixed pages also compare their English aliases. Use this before creating a page and stop if any match already exists.',
     inputSchema: {
       type: 'object',
       properties: {
         site_id: { type: 'integer' },
-        page_key: {
+        title: {
           type: 'string',
-          description: 'Custom page slug/key such as about-us. Fixed system page keys are reserved.'
-        },
+          description: 'Human-readable page title to check for collisions.'
+        }
+      },
+      required: ['site_id', 'title']
+    }
+  },
+  {
+    name: 'slimweb_pages_get_content',
+    description: 'Read a page by page_name and return its content plus metadata. Use this before editing a page or when the AI needs the current page state.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        site_id: { type: 'integer' },
+        page_name: {
+          type: 'string',
+          description: 'Page title or page key to look up.'
+        }
+      },
+      required: ['site_id', 'page_name']
+    }
+  },
+  {
+    name: 'slimweb_pages_create',
+    description: 'Create a new custom page. The AI must already have checked title collisions with slimweb_pages_check_title and should use slimweb_design_context_get plus image tools before sending HTML/CSS without JavaScript.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        site_id: { type: 'integer' },
         title: {
           type: 'string',
           description: 'Human-readable page title.'
@@ -1826,9 +1820,39 @@ const MCP_TOOLS = [
           type: 'object',
           description: 'Structured page body. Provide content.html or content.body_html. HTML must not include script/link/iframe tags or inline event handlers.'
         },
+        page_key: {
+          type: 'string',
+          description: 'Optional custom page slug. If omitted, the server generates one from the title.'
+        },
+        confirmation_token: {
+          type: 'string'
+        }
+      },
+      required: ['site_id', 'title', 'content']
+    }
+  },
+  {
+    name: 'slimweb_pages_update',
+    description: 'Update an existing custom page by page_name. Use slimweb_pages_get_content first to fetch the current page state; fixed pages are read-only and must not be modified. Use uploaded media_path URLs for reusable images; do not embed base64 images. Custom CSS is allowed in page HTML, but JavaScript is forbidden.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        site_id: { type: 'integer' },
+        page_name: {
+          type: 'string',
+          description: 'Page title or page key to update.'
+        },
+        title: {
+          type: 'string',
+          description: 'Optional new page title. If omitted, the existing title is preserved.'
+        },
+        content: {
+          type: 'object',
+          description: 'Structured page body. Provide content.html or content.body_html. HTML must not include script/link/iframe tags or inline event handlers.'
+        },
         confirmation_token: { type: 'string' }
       },
-      required: ['site_id', 'page_key', 'title', 'content']
+      required: ['site_id', 'page_name', 'content']
     }
   },
   {
@@ -1845,7 +1869,7 @@ const MCP_TOOLS = [
   },
   {
     name: 'slimweb_preview_get_page_url',
-    description: 'Return a preview URL for a page with explicit site, theme, and page parameters so the AI can inspect the page visually before editing.',
+    description: 'Return a preview URL for a page with explicit site, theme, and page parameters so the AI can inspect the page visually before editing or after page creation.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -2184,16 +2208,15 @@ const TOOL_PERMISSION_RULES = {
   slimweb_admins_list: ['system_admin'],
   slimweb_admins_upsert: ['system_admin'],
   slimweb_admins_delete: ['system_admin'],
-  slimweb_external_assets_list: ['page_management', 'page_management_external_assets'],
-  slimweb_external_assets_upsert: ['page_management', 'page_management_external_assets'],
-  slimweb_external_assets_delete: ['page_management', 'page_management_external_assets'],
-  slimweb_external_assets_reorder: ['page_management', 'page_management_external_assets'],
   slimweb_images_import_chatgpt_attachment: [],
   slimweb_debug_attachment_refs: [],
   slimweb_uploads_create: [],
   slimweb_uploads_commit: [],
   slimweb_articles_list: ['article_management', 'article_list'],
-  slimweb_articles_upsert: ['article_management', 'article_list'],
+  slimweb_articles_check_title: ['article_management', 'article_list'],
+  slimweb_articles_get_content: ['article_management', 'article_list'],
+  slimweb_articles_create: ['article_management', 'article_list'],
+  slimweb_articles_update: ['article_management', 'article_list'],
   slimweb_categories_list: ['product_management', 'product_management_categories'],
   slimweb_categories_upsert: ['product_management', 'product_management_categories'],
   slimweb_categories_delete: ['product_management', 'product_management_categories'],
@@ -2228,9 +2251,10 @@ const TOOL_PERMISSION_RULES = {
   slimweb_audit_list: ['system_admin'],
   slimweb_assets_upload: [],
   slimweb_pages_list: ['page_management', 'page_management_pages'],
-  slimweb_pages_get_home_content: ['page_management', 'page_management_pages'],
-  slimweb_pages_update_home_content: ['page_management', 'page_management_pages'],
-  slimweb_pages_upsert: ['page_management', 'page_management_pages'],
+  slimweb_pages_check_title: ['page_management', 'page_management_pages'],
+  slimweb_pages_get_content: ['page_management', 'page_management_pages'],
+  slimweb_pages_create: ['page_management', 'page_management_pages'],
+  slimweb_pages_update: ['page_management', 'page_management_pages'],
   slimweb_preview_get_page_url: ['page_management', 'page_management_pages'],
   slimweb_pages_delete: ['page_management', 'page_management_pages']
 };
@@ -2894,58 +2918,6 @@ async function toolResultForCall(message, request, context) {
       }
     }
 
-    case 'slimweb_external_assets_list': {
-      try {
-        const result = await context.accountRepository.listExternalAssets(
-          await actorForTool(session, name, toolArgs(message), context),
-          toolArgs(message)
-        );
-
-        return mcpResult(message.id ?? null, mcpJsonContent(result));
-      } catch (error) {
-        return toolExceptionToMcpError(message?.id ?? null, error);
-      }
-    }
-
-    case 'slimweb_external_assets_upsert': {
-      try {
-        const result = await context.accountRepository.upsertExternalAsset(
-          await actorForTool(session, name, toolArgs(message), context),
-          toolArgs(message)
-        );
-
-        return mcpResult(message.id ?? null, mcpJsonContent(result));
-      } catch (error) {
-        return toolExceptionToMcpError(message?.id ?? null, error);
-      }
-    }
-
-    case 'slimweb_external_assets_delete': {
-      try {
-        const result = await context.accountRepository.deleteExternalAsset(
-          await actorForTool(session, name, toolArgs(message), context),
-          toolArgs(message)
-        );
-
-        return mcpResult(message.id ?? null, mcpJsonContent(result));
-      } catch (error) {
-        return toolExceptionToMcpError(message?.id ?? null, error);
-      }
-    }
-
-    case 'slimweb_external_assets_reorder': {
-      try {
-        const result = await context.accountRepository.reorderExternalAssets(
-          await actorForTool(session, name, toolArgs(message), context),
-          toolArgs(message)
-        );
-
-        return mcpResult(message.id ?? null, mcpJsonContent(result));
-      } catch (error) {
-        return toolExceptionToMcpError(message?.id ?? null, error);
-      }
-    }
-
     case 'slimweb_uploads_create': {
       try {
         const result = await context.accountRepository.createUpload(
@@ -3002,9 +2974,48 @@ async function toolResultForCall(message, request, context) {
       }
     }
 
-    case 'slimweb_articles_upsert': {
+    case 'slimweb_articles_check_title': {
       try {
-        const result = await context.accountRepository.upsertArticle(
+        const result = await context.accountRepository.checkArticleTitle(
+          await actorForTool(session, name, toolArgs(message), context),
+          toolArgs(message)
+        );
+
+        return mcpResult(message.id ?? null, mcpJsonContent(result));
+      } catch (error) {
+        return toolExceptionToMcpError(message?.id ?? null, error);
+      }
+    }
+
+    case 'slimweb_articles_get_content': {
+      try {
+        const result = await context.accountRepository.getArticleContent(
+          await actorForTool(session, name, toolArgs(message), context),
+          toolArgs(message)
+        );
+
+        return mcpResult(message.id ?? null, mcpJsonContent(result));
+      } catch (error) {
+        return toolExceptionToMcpError(message?.id ?? null, error);
+      }
+    }
+
+    case 'slimweb_articles_create': {
+      try {
+        const result = await context.accountRepository.createArticle(
+          await actorForTool(session, name, toolArgs(message), context),
+          toolArgs(message)
+        );
+
+        return mcpResult(message.id ?? null, mcpJsonContent(result));
+      } catch (error) {
+        return toolExceptionToMcpError(message?.id ?? null, error);
+      }
+    }
+
+    case 'slimweb_articles_update': {
+      try {
+        const result = await context.accountRepository.updateArticle(
           await actorForTool(session, name, toolArgs(message), context),
           toolArgs(message)
         );
@@ -3444,12 +3455,12 @@ async function toolResultForCall(message, request, context) {
       }
     }
 
-    case 'slimweb_pages_get_home_content': {
+    case 'slimweb_pages_get_content': {
       try {
-        const result = await context.accountRepository.getHomeContent(
+        const result = await context.accountRepository.getPageContent(
           await actorForTool(session, name, toolArgs(message), context),
           toolArgs(message)
-        );
+);
 
         return mcpResult(message.id ?? null, mcpJsonContent(result));
       } catch (error) {
@@ -3470,9 +3481,9 @@ async function toolResultForCall(message, request, context) {
       }
     }
 
-    case 'slimweb_pages_update_home_content': {
+    case 'slimweb_pages_check_title': {
       try {
-        const result = await context.accountRepository.updateHomeContent(
+        const result = await context.accountRepository.checkPageTitle(
           await actorForTool(session, name, toolArgs(message), context),
           toolArgs(message)
         );
@@ -3483,9 +3494,35 @@ async function toolResultForCall(message, request, context) {
       }
     }
 
-    case 'slimweb_pages_upsert': {
+    case 'slimweb_pages_get_content': {
       try {
-        const result = await context.accountRepository.upsertPage(
+        const result = await context.accountRepository.getPageContent(
+          await actorForTool(session, name, toolArgs(message), context),
+          toolArgs(message)
+        );
+
+        return mcpResult(message.id ?? null, mcpJsonContent(result));
+      } catch (error) {
+        return toolExceptionToMcpError(message?.id ?? null, error);
+      }
+    }
+
+    case 'slimweb_pages_create': {
+      try {
+        const result = await context.accountRepository.createPage(
+          await actorForTool(session, name, toolArgs(message), context),
+          toolArgs(message)
+        );
+
+        return mcpResult(message.id ?? null, mcpJsonContent(result));
+      } catch (error) {
+        return toolExceptionToMcpError(message?.id ?? null, error);
+      }
+    }
+
+    case 'slimweb_pages_update': {
+      try {
+        const result = await context.accountRepository.updatePage(
           await actorForTool(session, name, toolArgs(message), context),
           toolArgs(message)
         );
@@ -4015,7 +4052,8 @@ function handleServiceInfo(response) {
     ok: true,
     service: SERVICE_NAME,
     version: SERVICE_VERSION,
-    status: 'ready'
+    status: 'ready',
+    instructions: MCP_SERVER_GUIDELINES
   });
 }
 

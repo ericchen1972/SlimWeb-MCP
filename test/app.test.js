@@ -295,16 +295,15 @@ test('MCP tools list includes homepage editing contract tools', async () => {
       'slimweb_admins_list',
       'slimweb_admins_upsert',
       'slimweb_admins_delete',
-      'slimweb_external_assets_list',
-      'slimweb_external_assets_upsert',
-      'slimweb_external_assets_delete',
-      'slimweb_external_assets_reorder',
       'slimweb_images_import_chatgpt_attachment',
       'slimweb_debug_attachment_refs',
       'slimweb_uploads_create',
       'slimweb_uploads_commit',
       'slimweb_articles_list',
-      'slimweb_articles_upsert',
+      'slimweb_articles_check_title',
+      'slimweb_articles_get_content',
+      'slimweb_articles_create',
+      'slimweb_articles_update',
       'slimweb_categories_list',
       'slimweb_categories_upsert',
       'slimweb_categories_delete',
@@ -339,10 +338,11 @@ test('MCP tools list includes homepage editing contract tools', async () => {
 	      'slimweb_audit_list',
       'slimweb_assets_upload',
       'slimweb_themes_activate',
+      'slimweb_pages_check_title',
       'slimweb_pages_list',
-      'slimweb_pages_get_home_content',
-      'slimweb_pages_update_home_content',
-      'slimweb_pages_upsert',
+      'slimweb_pages_get_content',
+      'slimweb_pages_create',
+      'slimweb_pages_update',
       'slimweb_pages_delete',
       'slimweb_preview_get_page_url'
     ]) {
@@ -391,10 +391,14 @@ test('MCP tools list includes homepage editing contract tools', async () => {
     assert.match(toolsByName.get('slimweb_newsletters_create').description, /Create/);
     assert.match(toolsByName.get('slimweb_newsletters_create').description, /does not send/);
     assert.equal(toolsByName.get('slimweb_orders_profit_statistics').inputSchema.properties.date_from.description.includes('optional'), true);
-    assert.match(toolsByName.get('slimweb_articles_upsert').description, /draft the article and cover-image concept first/);
-    assert.match(toolsByName.get('slimweb_articles_upsert').description, /ask the user to paste or re-upload the selected image/);
-    assert.match(toolsByName.get('slimweb_articles_upsert').inputSchema.properties.cover_image.description, /16:9/);
-    assert.match(toolsByName.get('slimweb_articles_upsert').inputSchema.properties.cover_image.description, /slimweb_images_import_chatgpt_attachment/);
+    assert.match(toolsByName.get('slimweb_articles_check_title').description, /title already exists/i);
+    assert.equal(toolsByName.get('slimweb_articles_get_content').inputSchema.required.includes('article_id'), true);
+    assert.match(toolsByName.get('slimweb_articles_create').description, /16:9 cover image/i);
+    assert.match(toolsByName.get('slimweb_articles_create').description, /slimweb_articles_check_title/i);
+    assert.equal(toolsByName.get('slimweb_articles_create').inputSchema.required.includes('cover_image'), true);
+    assert.match(toolsByName.get('slimweb_articles_create').inputSchema.properties.cover_image.description, /slimweb_images_import_chatgpt_attachment/);
+    assert.equal(toolsByName.get('slimweb_articles_update').inputSchema.required.includes('article_id'), true);
+    assert.match(toolsByName.get('slimweb_articles_update').description, /slimweb_articles_get_content/i);
     assert.deepEqual(toolsByName.get('slimweb_images_import_chatgpt_attachment')._meta['openai/fileParams'], ['image']);
     assert.equal(toolsByName.get('slimweb_images_import_chatgpt_attachment').inputSchema.required.includes('image'), true);
     assert.match(toolsByName.get('slimweb_images_import_chatgpt_attachment').description, /ChatGPT web\/desktop/);
@@ -411,18 +415,20 @@ test('MCP tools list includes homepage editing contract tools', async () => {
     assert.equal(toolsByName.get('slimweb_payment_logistics_update').inputSchema.properties.payments.items.properties.language.enum.includes('th'), true);
     assert.equal(toolsByName.get('slimweb_payment_logistics_update').inputSchema.properties.logistics.items.properties.hash_key, undefined);
     assert.equal(toolsByName.get('slimweb_payment_logistics_update').inputSchema.properties.logistics.items.properties.store_types.items.enum.includes('ok'), true);
-    assert.equal(toolsByName.get('slimweb_external_assets_upsert').inputSchema.required.includes('url'), true);
     assert.equal(toolsByName.has('slimweb_debug_attachment_refs'), true);
     assert.match(toolsByName.get('slimweb_products_upsert').description, /ask the user to choose an existing leaf category/);
     assert.match(toolsByName.get('slimweb_categories_upsert').description, /icon_svg_base64/);
     assert.match(toolsByName.get('slimweb_categories_upsert').description, /16:9 category image/);
     assert.match(toolsByName.get('slimweb_categories_upsert').description, /unique across the whole site/);
-    assert.equal(toolsByName.get('slimweb_pages_update_home_content').inputSchema.required.includes('content'), true);
-    assert.equal(toolsByName.get('slimweb_pages_get_home_content').inputSchema.properties.theme_id, undefined);
-    assert.equal(toolsByName.get('slimweb_pages_get_home_content').inputSchema.properties.include_default, undefined);
-    assert.equal(toolsByName.get('slimweb_pages_update_home_content').inputSchema.properties.theme_id, undefined);
+    assert.equal(toolsByName.get('slimweb_pages_get_content').inputSchema.required.includes('page_name'), true);
+    assert.equal(toolsByName.get('slimweb_pages_list').inputSchema.properties.query, undefined);
+    assert.equal(toolsByName.get('slimweb_pages_list').inputSchema.properties.include_html, undefined);
+    assert.equal(toolsByName.get('slimweb_pages_create').inputSchema.required.includes('title'), true);
+    assert.equal(toolsByName.get('slimweb_pages_create').inputSchema.properties.page_key.type, 'string');
+    assert.equal(toolsByName.get('slimweb_pages_update').inputSchema.required.includes('page_name'), true);
+    assert.equal(toolsByName.get('slimweb_pages_update').inputSchema.properties.title.type, 'string');
+    assert.equal(toolsByName.get('slimweb_pages_check_title').inputSchema.required.includes('title'), true);
     assert.equal(toolsByName.get('slimweb_pages_list').inputSchema.required.includes('site_id'), true);
-    assert.equal(toolsByName.get('slimweb_pages_list').inputSchema.properties.include_html.type, 'boolean');
     assert.equal(toolsByName.get('slimweb_preview_get_page_url').inputSchema.required.includes('page_key'), true);
     assert.equal(toolsByName.get('slimweb_categories_upsert').inputSchema.properties.icon_svg_base64.type, 'string');
     assert.equal(toolsByName.get('slimweb_categories_upsert').inputSchema.properties.image.properties.media_path.type, 'string');
@@ -448,7 +454,6 @@ test('homepage editing tools call repository implementations', async () => {
     'page_management_navbar',
     'page_management_templates',
     'page_management_pages',
-    'page_management_external_assets',
     'product_management',
     'product_management_categories',
     'product_management_products',
@@ -647,22 +652,6 @@ test('homepage editing tools call repository implementations', async () => {
       calls.push(['admin_delete', accountId, args]);
       return { ok: true, deleted_admin_id: args.admin_id };
     },
-    listExternalAssets: async (accountId, args) => {
-      calls.push(['external_assets_list', accountId, args]);
-      return { assets: [{ id: 71, scope: 'site', asset_type: 'css', url: 'https://cdn.example.com/site.css' }] };
-    },
-    upsertExternalAsset: async (accountId, args) => {
-      calls.push(['external_asset_upsert', accountId, args]);
-      return { ok: true, asset: { id: args.asset_id ?? 72, scope: args.scope, asset_type: args.asset_type, url: args.url } };
-    },
-    deleteExternalAsset: async (accountId, args) => {
-      calls.push(['external_asset_delete', accountId, args]);
-      return { ok: true, deleted_asset_id: args.asset_id };
-    },
-    reorderExternalAssets: async (accountId, args) => {
-      calls.push(['external_assets_reorder', accountId, args]);
-      return { ok: true, assets: args.asset_ids.map((id, index) => ({ id, sort_order: index })) };
-    },
     createUpload: async (accountId, args) => {
       calls.push(['upload_create', accountId, args]);
       return { ok: true, upload_id: 'upload-1', upload_token: 'token-1', upload_url: 'https://slimweb.tw/sites/site-1/mcp-uploads/upload-1?token=token-1', headers: { 'Content-Type': args.mime_type } };
@@ -679,9 +668,21 @@ test('homepage editing tools call repository implementations', async () => {
       calls.push(['articles_list', accountId, args]);
       return { articles: [{ id: 9, title: '春季穿搭' }], pagination: { page: 1, last_page: 1, total: 1 } };
     },
-    upsertArticle: async (accountId, args) => {
-      calls.push(['article_upsert', accountId, args]);
-      return { ok: true, article: { id: args.article_id ?? 10, title: args.title, content: args.content_html } };
+    checkArticleTitle: async (accountId, args) => {
+      calls.push(['articles_check_title', accountId, args]);
+      return { site: { id: args.site_id }, title: args.title, normalized_title: args.title.trim().toLowerCase(), exists: false, matches: [] };
+    },
+    getArticleContent: async (accountId, args) => {
+      calls.push(['articles_get_content', accountId, args]);
+      return { site: { id: args.site_id }, article: { id: args.article_id, title: '春季穿搭', content: '<article><h1>春季穿搭</h1></article>' } };
+    },
+    createArticle: async (accountId, args) => {
+      calls.push(['article_create', accountId, args]);
+      return { ok: true, article: { id: 10, title: args.title, content: args.content_html }, content_images: [] };
+    },
+    updateArticle: async (accountId, args) => {
+      calls.push(['article_update', accountId, args]);
+      return { ok: true, article: { id: args.article_id, title: args.title ?? '春季穿搭', content: args.content_html ?? '<article><h1>春季穿搭</h1></article>' }, content_images: [] };
     },
     listCategories: async (accountId, args) => {
       calls.push(['categories_list', accountId, args]);
@@ -811,25 +812,108 @@ test('homepage editing tools call repository implementations', async () => {
 	      calls.push(['audit_list', accountId, args]);
 	      return { audit_logs: [{ id: 9, tool_name: 'slimweb_sites_list' }] };
 	    },
-	    getPagePreviewUrl: async (accountId, args) => {
+    getPagePreviewUrl: async (accountId, args) => {
       calls.push(['preview', accountId, args]);
       return { url: `https://slimweb.tw/sites/site-1/default-preview?mcp_page_key=${args.page_key}` };
     },
-    getHomeContent: async (accountId, args) => {
-      calls.push(['get_home', accountId, args]);
-      return { content: { html: '<section>Home</section>' } };
+    checkPageTitle: async (accountId, args) => {
+      calls.push(['pages_check_title', accountId, args]);
+      const normalizedTitle = String(args.title ?? '').trim().toLowerCase();
+      const matches = [];
+
+      if (normalizedTitle === '首頁') {
+        matches.push({ page_key: 'index', title: '首頁', matched_title: '首頁', type: 'fixed', is_fixed: true });
+      }
+
+      if (normalizedTitle === 'home' || normalizedTitle === 'homepage') {
+        matches.push({ page_key: 'index', title: '首頁', matched_title: 'Home', type: 'fixed', is_fixed: true });
+      }
+
+      if (normalizedTitle === '芙蓉') {
+        matches.push({ page_key: 'furong', title: '芙蓉', matched_title: '芙蓉', type: 'custom', is_fixed: false });
+      }
+
+      return {
+        site: { id: args.site_id },
+        title: args.title,
+        normalized_title: normalizedTitle,
+        exists: matches.length > 0,
+        matches
+      };
+    },
+    getPageContent: async (accountId, args) => {
+      calls.push(['get_content', accountId, args]);
+      if (String(args.page_name).trim().toLowerCase() === '首頁' || String(args.page_name).trim().toLowerCase() === 'home' || String(args.page_name).trim().toLowerCase() === 'index') {
+        return {
+          page_name: args.page_name,
+          page_key: 'index',
+          title: '首頁',
+          type: 'fixed',
+          is_fixed: true,
+          can_edit: false,
+          can_delete: false,
+          public_url: 'https://slimweb.tw/sites/site-1/default-preview?preview_page=index&preview_style_scheme=default',
+          preview_url: 'https://slimweb.tw/sites/site-1/default-preview?preview_page=index&preview_style_scheme=default',
+          storage_path: 'sites/101/templates/default/pages/index/content.blade.php',
+          metadata_path: null,
+          content: { html: '<section>Home</section>' },
+          exists: true
+        };
+      }
+
+      if (String(args.page_name).trim().toLowerCase() === '芙蓉' || String(args.page_name).trim().toLowerCase() === 'furong') {
+        return {
+          page_name: args.page_name,
+          page_key: 'furong',
+          title: '芙蓉',
+          type: 'custom',
+          is_fixed: false,
+          can_edit: true,
+          can_delete: true,
+          public_url: 'https://slimweb.tw/sites/site-1/default-preview/pages/furong',
+          preview_url: 'https://slimweb.tw/sites/site-1/default-preview/pages/furong',
+          storage_path: 'sites/101/templates/default/pages/furong/content.blade.php',
+          metadata_path: 'sites/101/templates/default/pages/furong/.page.json',
+          content: { html: '<section>Furong</section>' },
+          exists: true
+        };
+      }
+
+      if (String(args.page_name).trim().toLowerCase() === 'about-us' || String(args.page_name).trim().toLowerCase() === '關於我們') {
+        return {
+          page_name: args.page_name,
+          page_key: 'about-us',
+          title: '關於我們',
+          type: 'custom',
+          is_fixed: false,
+          can_edit: true,
+          can_delete: true,
+          public_url: 'https://slimweb.tw/sites/site-1/default-preview/pages/about-us',
+          preview_url: 'https://slimweb.tw/sites/site-1/default-preview/pages/about-us',
+          storage_path: 'sites/101/templates/default/pages/about-us/content.blade.php',
+          metadata_path: 'sites/101/templates/default/pages/about-us/.page.json',
+          content: { html: '<section>About</section>' },
+          exists: true
+        };
+      }
+
+      return null;
     },
     listPages: async (accountId, args) => {
       calls.push(['pages_list', accountId, args]);
-      return { pages: [{ page_key: 'about-us', public_url: 'https://slimweb.tw/sites/site-1/default-preview/pages/about-us' }] };
+      return { pages: [
+        { page_key: 'index', title: '首頁', type: 'fixed', is_fixed: true, can_edit: false, can_delete: false, public_url: 'https://slimweb.tw/sites/site-1/default-preview?preview_page=index&preview_style_scheme=default', preview_url: 'https://slimweb.tw/sites/site-1/default-preview?preview_page=index&preview_style_scheme=default' },
+        { page_key: 'about-us', title: '關於我們', type: 'custom', is_fixed: false, can_edit: true, can_delete: true, public_url: 'https://slimweb.tw/sites/site-1/default-preview/pages/about-us', preview_url: 'https://slimweb.tw/sites/site-1/default-preview/pages/about-us' },
+        { page_key: 'furong', title: '芙蓉', type: 'custom', is_fixed: false, can_edit: true, can_delete: true, public_url: 'https://slimweb.tw/sites/site-1/default-preview/pages/furong', preview_url: 'https://slimweb.tw/sites/site-1/default-preview/pages/furong' }
+      ] };
     },
-    updateHomeContent: async (accountId, args) => {
-      calls.push(['update_home', accountId, args]);
-      return { ok: true, storage_path: 'sites/101/templates/default/pages/index/content.blade.php' };
+    createPage: async (accountId, args) => {
+      calls.push(['page_create', accountId, args]);
+      return { ok: true, page_key: 'about-us', title: args.title, storage_path: 'sites/101/templates/default/pages/about-us/content.blade.php', public_url: 'https://slimweb.tw/sites/site-1/default-preview/pages/about-us', preview_url: 'https://slimweb.tw/sites/site-1/default-preview/pages/about-us' };
     },
-    upsertPage: async (accountId, args) => {
-      calls.push(['page_upsert', accountId, args]);
-      return { ok: true, page_key: args.page_key, title: args.title, storage_path: `sites/101/templates/default/pages/${args.page_key}/content.blade.php` };
+    updatePage: async (accountId, args) => {
+      calls.push(['page_update', accountId, args]);
+      return { ok: true, page_key: 'about-us', title: args.title ?? '關於我們', storage_path: 'sites/101/templates/default/pages/about-us/content.blade.php', public_url: 'https://slimweb.tw/sites/site-1/default-preview/pages/about-us', preview_url: 'https://slimweb.tw/sites/site-1/default-preview/pages/about-us' };
     },
     deletePage: async (accountId, args) => {
       calls.push(['page_delete', accountId, args]);
@@ -921,18 +1005,22 @@ test('homepage editing tools call repository implementations', async () => {
     assert.equal((await callTool(39, 'slimweb_admins_list', { site_id: 101 })).result.structuredContent.admins[0].canDelete, false);
     assert.equal((await callTool(40, 'slimweb_admins_upsert', { site_id: 101, google_email: 'staff@example.com', permissions: ['product_management'] })).result.structuredContent.admin.google_email, 'staff@example.com');
     assert.equal((await callTool(41, 'slimweb_admins_delete', { site_id: 101, admin_id: 2 })).result.structuredContent.deleted_admin_id, 2);
-    assert.equal((await callTool(42, 'slimweb_external_assets_list', { site_id: 101 })).result.structuredContent.assets[0].asset_type, 'css');
-    assert.equal((await callTool(43, 'slimweb_external_assets_upsert', { site_id: 101, scope: 'site', asset_type: 'js', url: 'https://cdn.example.com/app.js', load_mode: 'defer' })).result.structuredContent.asset.url, 'https://cdn.example.com/app.js');
-    assert.equal((await callTool(44, 'slimweb_external_assets_delete', { site_id: 101, asset_id: 72 })).result.structuredContent.deleted_asset_id, 72);
-    assert.equal((await callTool(45, 'slimweb_external_assets_reorder', { site_id: 101, asset_ids: [72, 71] })).result.structuredContent.assets[1].sort_order, 1);
-    assert.equal((await callTool(44, 'slimweb_articles_list', { site_id: 101 })).result.structuredContent.articles[0].title, '春季穿搭');
-    assert.equal((await callTool(45, 'slimweb_articles_upsert', {
+    assert.equal((await callTool(42, 'slimweb_articles_list', { site_id: 101 })).result.structuredContent.articles[0].title, '春季穿搭');
+    assert.equal((await callTool(43, 'slimweb_articles_check_title', { site_id: 101, title: '春季穿搭' })).result.structuredContent.exists, false);
+    assert.equal((await callTool(44, 'slimweb_articles_get_content', { site_id: 101, article_id: 9 })).result.structuredContent.article.title, '春季穿搭');
+    assert.equal((await callTool(45, 'slimweb_articles_create', {
       site_id: 101,
       title: '春季穿搭',
       content_html: '<article><h1>春季穿搭</h1></article>',
       cover_image: { media_path: 'sites/101/mcp-uploads/committed/article-cover.webp' }
     })).result.structuredContent.article.id, 10);
-    assert.equal((await callTool(46, 'slimweb_categories_list', { site_id: 101 })).result.structuredContent.categories[0].name, '女裝');
+    assert.equal((await callTool(46, 'slimweb_articles_update', {
+      site_id: 101,
+      article_id: 10,
+      title: '春季穿搭',
+      content_html: '<article><p>更新後內容</p></article>'
+    })).result.structuredContent.article.id, 10);
+    assert.equal((await callTool(47, 'slimweb_categories_list', { site_id: 101 })).result.structuredContent.categories[0].name, '女裝');
     assert.equal((await callTool(47, 'slimweb_categories_upsert', { site_id: 101, parent_id: null, name: '童裝', icon_svg_base64: 'PHN2Zy8+' })).result.structuredContent.category.name, '童裝');
     assert.equal((await callTool(48, 'slimweb_categories_delete', { site_id: 101, category_id: 6 })).result.structuredContent.deleted_category_ids[0], 6);
     assert.equal((await callTool(49, 'slimweb_nav_items_list', { site_id: 101 })).result.structuredContent.nav_items[0].name, '男裝');
@@ -991,22 +1079,27 @@ test('homepage editing tools call repository implementations', async () => {
 	    assert.equal((await callTool(75, 'slimweb_customer_service_settings_update', { site_id: 101, use_ai_customer_service: false })).result.structuredContent.settings.use_ai_customer_service, false);
 	    assert.equal((await callTool(76, 'slimweb_exports_create', { site_id: 101, export_type: 'members', format: 'csv' })).result.structuredContent.export.type, 'members');
 	    assert.equal((await callTool(77, 'slimweb_audit_list', { site_id: 101 })).result.structuredContent.audit_logs[0].tool_name, 'slimweb_sites_list');
-	    assert.equal((await callTool(61, 'slimweb_themes_update_root_elements', { site_id: 101, theme_id: 22, fragments: { navbar: '<nav>cute</nav>' } })).result.structuredContent.ok, true);
+    assert.equal((await callTool(61, 'slimweb_themes_update_root_elements', { site_id: 101, theme_id: 22, fragments: { navbar: '<nav>cute</nav>' } })).result.structuredContent.ok, true);
     assert.match((await callTool(62, 'slimweb_preview_get_page_url', { site_id: 101, page_key: 'index' })).result.structuredContent.url, /mcp_page_key=index/);
-    assert.equal((await callTool(631, 'slimweb_pages_list', { site_id: 101, query: 'about' })).result.structuredContent.pages[0].public_url, 'https://slimweb.tw/sites/site-1/default-preview/pages/about-us');
-    assert.equal((await callTool(63, 'slimweb_pages_get_home_content', { site_id: 101 })).result.structuredContent.content.html, '<section>Home</section>');
-    assert.equal((await callTool(64, 'slimweb_pages_update_home_content', { site_id: 101, content: { html: '<section>New</section>' } })).result.structuredContent.ok, true);
-    assert.equal((await callTool(65, 'slimweb_pages_upsert', { site_id: 101, page_key: 'about-us', title: '關於我們', content: { html: '<section>About</section>' } })).result.structuredContent.page_key, 'about-us');
-    assert.equal((await callTool(66, 'slimweb_pages_delete', { site_id: 101, page_key: 'landing' })).result.structuredContent.deleted_page_key, 'landing');
-    assert.match((await callTool(67, 'slimweb_assets_upload', {
+    assert.equal((await callTool(620, 'slimweb_pages_check_title', { site_id: 101, title: '  首頁  ' })).result.structuredContent.exists, true);
+    assert.equal((await callTool(620, 'slimweb_pages_check_title', { site_id: 101, title: '  首頁  ' })).result.structuredContent.matches[0].page_key, 'index');
+    assert.equal((await callTool(621, 'slimweb_pages_check_title', { site_id: 101, title: 'home' })).result.structuredContent.matches[0].matched_title, 'Home');
+    assert.equal((await callTool(622, 'slimweb_pages_check_title', { site_id: 101, title: '芙蓉' })).result.structuredContent.exists, true);
+    assert.equal((await callTool(631, 'slimweb_pages_list', { site_id: 101 })).result.structuredContent.pages.find((page) => page.page_key === 'about-us').public_url, 'https://slimweb.tw/sites/site-1/default-preview/pages/about-us');
+    assert.equal((await callTool(63, 'slimweb_pages_get_content', { site_id: 101, page_name: '首頁' })).result.structuredContent.content.html, '<section>Home</section>');
+    assert.equal((await callTool(64, 'slimweb_pages_get_content', { site_id: 101, page_name: '芙蓉' })).result.structuredContent.content.html, '<section>Furong</section>');
+    assert.equal((await callTool(65, 'slimweb_pages_create', { site_id: 101, title: '關於我們', content: { html: '<section>About</section>' } })).result.structuredContent.page_key, 'about-us');
+    assert.equal((await callTool(66, 'slimweb_pages_update', { site_id: 101, page_name: 'about-us', title: '關於我們（更新）', content: { html: '<section>Updated</section>' } })).result.structuredContent.title, '關於我們（更新）');
+    assert.equal((await callTool(67, 'slimweb_pages_delete', { site_id: 101, page_key: 'landing' })).result.structuredContent.deleted_page_key, 'landing');
+    assert.match((await callTool(68, 'slimweb_assets_upload', {
       site_id: 101,
       source: { media_path: 'sites/101/mcp-uploads/committed/upload-1.webp' },
       target_usage: 'home_page',
       asset_scope: 'page'
     })).result.structuredContent.public_url, /hero\.png/);
-    assert.equal((await callTool(68, 'slimweb_themes_delete', { site_id: 101, theme_id: 22 })).result.structuredContent.deleted_theme_id, 22);
+    assert.equal((await callTool(69, 'slimweb_themes_delete', { site_id: 101, theme_id: 22 })).result.structuredContent.deleted_theme_id, 22);
 
-				    assert.deepEqual(calls.map((call) => call[0]), ['select', 'themes_list', 'theme_mode_get', 'design_context_get', 'theme_mode_update', 'themes_create', 'themes_activate', 'shell_context', 'profile_get', 'profile_upsert', 'profile_append', 'site_readiness_get', 'seo_get', 'seo_update', 'integration_get', 'integration_update', 'payment_logistics_get', 'payment_logistics_update', 'orders_list', 'orders_profit_statistics', 'orders_get', 'orders_create_logistics', 'orders_mark_shipped', 'returns_pending_list', 'returns_create_logistics', 'returns_cancel', 'returns_complete', 'refunds_complete', 'refunds_create', 'dashboard_summary', 'settings_get', 'settings_update', 'admins_list', 'admin_upsert', 'admin_delete', 'external_assets_list', 'external_asset_upsert', 'external_asset_delete', 'external_assets_reorder', 'articles_list', 'article_upsert', 'categories_list', 'category_upsert', 'category_delete', 'nav_items_list', 'nav_item_upsert', 'nav_item_delete', 'products_list', 'product_get', 'upload_create', 'upload_commit', 'chatgpt_attachment_import', 'product_upsert', 'product_delete', 'product_import_inspect', 'product_import_validate', 'product_import_commit', 'coupon_templates_list', 'coupon_template_upsert', 'member_coupon_issue', 'members_list', 'member_get', 'newsletter_create', 'discount_codes_list', 'discount_code_upsert', 'member_tiers_list', 'member_tier_upsert', 'threshold_gifts_list', 'threshold_gift_upsert', 'product_add_ons_list', 'product_add_on_upsert', 'customer_service_logs_list', 'customer_service_settings_get', 'customer_service_settings_update', 'export_create', 'audit_list', 'themes_root', 'preview', 'pages_list', 'get_home', 'update_home', 'page_upsert', 'page_delete', 'upload', 'themes_delete']);
+    assert.deepEqual(calls.map((call) => call[0]), ['select', 'themes_list', 'theme_mode_get', 'design_context_get', 'theme_mode_update', 'themes_create', 'themes_activate', 'shell_context', 'profile_get', 'profile_upsert', 'profile_append', 'site_readiness_get', 'seo_get', 'seo_update', 'integration_get', 'integration_update', 'payment_logistics_get', 'payment_logistics_update', 'orders_list', 'orders_profit_statistics', 'orders_get', 'orders_create_logistics', 'orders_mark_shipped', 'returns_pending_list', 'returns_create_logistics', 'returns_cancel', 'returns_complete', 'refunds_complete', 'refunds_create', 'dashboard_summary', 'settings_get', 'settings_update', 'admins_list', 'admin_upsert', 'admin_delete', 'articles_list', 'articles_check_title', 'articles_get_content', 'article_create', 'article_update', 'categories_list', 'category_upsert', 'category_delete', 'nav_items_list', 'nav_item_upsert', 'nav_item_delete', 'products_list', 'product_get', 'upload_create', 'upload_commit', 'chatgpt_attachment_import', 'product_upsert', 'product_delete', 'product_import_inspect', 'product_import_validate', 'product_import_commit', 'coupon_templates_list', 'coupon_template_upsert', 'member_coupon_issue', 'members_list', 'member_get', 'newsletter_create', 'discount_codes_list', 'discount_code_upsert', 'member_tiers_list', 'member_tier_upsert', 'threshold_gifts_list', 'threshold_gift_upsert', 'product_add_ons_list', 'product_add_on_upsert', 'customer_service_logs_list', 'customer_service_settings_get', 'customer_service_settings_update', 'export_create', 'audit_list', 'themes_root', 'preview', 'pages_check_title', 'pages_check_title', 'pages_check_title', 'pages_check_title', 'pages_list', 'get_content', 'get_content', 'page_create', 'page_update', 'page_delete', 'upload', 'themes_delete']);
 		    assert.deepEqual(calls.map((call) => call[1].email), Array.from({ length: calls.length }, () => 'owner@example.com'));
   });
 });
@@ -1429,7 +1522,7 @@ test('authenticated tools list and calls are filtered by web admin permissions',
       name: '測試網站',
       permissions: ['backend_ai_assistant', 'page_management', 'page_management_pages']
     }],
-    getHomeContent: async () => ({ content: { html: '<section>Home</section>' } }),
+    getPageContent: async () => ({ content: { html: '<section>Home</section>' } }),
     listProducts: async () => {
       throw new Error('product tool should not be called without permission');
     }
@@ -1468,7 +1561,7 @@ test('authenticated tools list and calls are filtered by web admin permissions',
     const toolsBody = await toolsResponse.json();
     const toolNames = toolsBody.result.tools.map((tool) => tool.name);
 
-    assert.equal(toolNames.includes('slimweb_pages_get_home_content'), true);
+    assert.equal(toolNames.includes('slimweb_pages_get_content'), true);
     assert.equal(toolNames.includes('slimweb_products_list'), false);
 
     const deniedResponse = await fetch(`${baseUrl}/mcp`, {
