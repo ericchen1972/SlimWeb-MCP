@@ -255,21 +255,20 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 | `slimweb_articles_list` | Available | content read | 列出文章，讓 AI 避免重複建立或挑選要更新的文章。 |
 | `slimweb_articles_check_title` | Available | content read | 檢查文章標題是否撞名。 |
 | `slimweb_articles_get_content` | Available | content read | 讀取單一文章內容與中繼資訊。 |
-| `slimweb_articles_create` | Available | content write + asset write | 新增文章，建立時必須有 16:9 主圖，也可附加內容圖。 |
-| `slimweb_articles_update` | Available | content write + asset write | 修改既有文章，固定流程與頁面修改相同。 |
+| `slimweb_articles_create` | Available | content write + asset write | 新增文章，建立時必須有 16:9 主圖，也可附加內容圖；若 ChatGPT Remote MCP 沒有可用附圖或可直接下載的圖片 URL，先停止並請使用者貼圖。 |
+| `slimweb_articles_update` | Available | content write + asset write | 修改既有文章，固定流程與頁面修改相同；若 ChatGPT Remote MCP 沒有可用附圖或可直接下載的圖片 URL，先停止並請使用者貼圖。 |
 | `slimweb_customer_service_logs_list` | Available | customer service read | 查詢 AI 客服紀錄。 |
 | `slimweb_customer_service_settings_get` | Available | customer service read | 讀取 AI 客服設定摘要。 |
 | `slimweb_customer_service_settings_update` | Available | customer service write | 更新 AI 客服設定。 |
 | `slimweb_exports_create` | Available | export read | 建立會員、訂單或退貨匯出檔。 |
 | `slimweb_images_import_chatgpt_attachment` | Available | asset write | 匯入 ChatGPT web/desktop 對話附件圖片，回傳可用於商品、文章或頁面的 `media_path`。 |
 | `slimweb_debug_attachment_refs` | Available | diagnostic read | 診斷 ChatGPT Remote MCP 實際傳入的附件參數形狀；只回傳去敏摘要，不下載、不上傳、不寫入素材庫。 |
-| `slimweb_sampling_image_debug` | Available | diagnostic write | 透過 sampling 要求 MCP client 生成點陣圖，並把原始 sampling request/response 存下來供除錯。 |
 | `slimweb_assets_upload` | Available | asset write | 只有當 AI flow 明確需要保存可重用素材時才寫入 asset。 |
 | `slimweb_pages_check_title` | Available | content read | 檢查指定頁面標題是否已存在，固定頁會同時比對英文別名，採用 trim + 大小寫不敏感規則。 |
 | `slimweb_pages_list` | Available | content read | 列出站台所有固定頁與自訂頁，不做搜尋條件。 |
 | `slimweb_pages_get_content` | Available | content read | 依頁面名稱讀取單一頁面的內容與中繼資訊。 |
-| `slimweb_pages_create` | Available | content write | 建立新的自訂頁面；頁面標題需先過 `slimweb_pages_check_title`。 |
-| `slimweb_pages_update` | Available | content write | 修改既有自訂頁面；固定頁保持不可修改。 |
+| `slimweb_pages_create` | Available | content write | 建立新的自訂頁面；頁面標題需先過 `slimweb_pages_check_title`。若 ChatGPT Remote MCP 的頁面需求需要圖片但沒有可用附圖或可直接下載的圖片 URL，先停止並請使用者貼圖。 |
+| `slimweb_pages_update` | Available | content write | 修改既有自訂頁面；固定頁保持不可修改。若 ChatGPT Remote MCP 的頁面需求需要圖片但沒有可用附圖或可直接下載的圖片 URL，先停止並請使用者貼圖。 |
 | `slimweb_preview_get_page_url` | Available | content read | 回傳指定 site、page、theme 的預覽 URL，供 AI 自行截圖與檢查。 |
 | `slimweb_audit_list` | Available | audit read | 列出近期 MCP tool execution 紀錄。 |
 
@@ -1186,7 +1185,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 狀態: Available
 - 權限: content write + asset write
 - Scope: active site
-- 用途: 新增文章。建立時必須有 16:9 主圖，也可附加內容圖。若使用者沒有給圖且沒有描述主圖，AI 會依文章標題或內容先畫主圖，若圖是 AI 產出且還沒轉成可上傳附件，需先讓使用者貼回再建立文章。
+- 用途: 新增文章。建立時必須有 16:9 主圖，也可附加內容圖。若使用者沒有給圖且沒有描述主圖，AI 會依文章標題或內容先畫主圖；若目前是 ChatGPT Remote MCP 而且沒有可用附圖或可直接下載的圖片 URL，就先終止任務並請使用者貼圖，等圖是 AI 產出且還沒轉成可上傳附件時再建立文章。
 - Input: `site_id`、`title`、`content_html`、`cover_image`、optional `notion_page_id`、optional `content_images`
 - Output: article summary、article URL、cover URL、content image URLs
 - Side effects: creates `articles`; writes article cover and content images under site article storage paths
@@ -1199,7 +1198,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 狀態: Available
 - 權限: content write + asset write
 - Scope: active site
-- 用途: 修改既有文章。流程與頁面修改相同，讀取現有內容後再決定要不要更新標題、主圖或內容圖。
+- 用途: 修改既有文章。流程與頁面修改相同，讀取現有內容後再決定要不要更新標題、主圖或內容圖；若目前是 ChatGPT Remote MCP 而且沒有可用附圖或可直接下載的圖片 URL，就先終止任務並請使用者貼圖。
 - Input: `site_id`、`article_id`、optional `title`、optional `content_html`、optional `cover_image`、optional `notion_page_id`、optional `content_images`
 - Output: article summary、article URL、cover URL、content image URLs
 - Side effects: modifies `articles`; can replace article cover and content images under site article storage paths
@@ -1304,7 +1303,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 狀態: Available
 - 權限: content write
 - Scope: active site
-- 用途: 建立新的自訂頁面。AI 應先確認標題不撞名，再依設計摘要與圖片素材建立 HTML/CSS，固定頁不可透過這個工具建立或覆寫。
+- 用途: 建立新的自訂頁面。AI 應先確認標題不撞名，再依設計摘要與圖片素材建立 HTML/CSS，固定頁不可透過這個工具建立或覆寫；若目前是 ChatGPT Remote MCP 而且沒有可用附圖或可直接下載的圖片 URL，就先終止任務並請使用者貼圖。
 - Input: `site_id`、`title`、`content.html` or `content.body_html`、optional `page_key`、optional `confirmation_token`
 - Output: write summary、site summary、theme summary、page key、title、public URL、preview URL、bytes written
 - Side effects: writes custom page body and metadata to Webless template storage
@@ -1317,7 +1316,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 狀態: Available
 - 權限: content write
 - Scope: active site
-- 用途: 修改既有自訂頁面。流程會先用 `slimweb_pages_get_content` 讀取目前內容，固定頁不可透過這個工具修改。
+- 用途: 修改既有自訂頁面。流程會先用 `slimweb_pages_get_content` 讀取目前內容，固定頁不可透過這個工具修改；若目前是 ChatGPT Remote MCP 而且沒有可用附圖或可直接下載的圖片 URL，就先終止任務並請使用者貼圖。
 - Input: `site_id`、`page_name`、`content.html` or `content.body_html`、optional `title`、optional `confirmation_token`
 - Output: write summary、site summary、theme summary、page key、title、public URL、preview URL、bytes written
 - Side effects: overwrites custom page body and metadata in configured Webless template storage
@@ -1372,6 +1371,7 @@ AI Client 收到或引用的圖片預設是 reference-only。只有當 tool call
 - 色系與版型分離：`sites.theme_mode` 是唯一 light/dark 來源。AI 不應在一般版型或頁面任務中硬寫文字顏色、按鈕底色等全域 theme CSS；除非使用者明確指定。若使用者要求 neon、螢光、暗色高對比等風格，先確認或切換為 `dark`。
 - 建立或修改版型、頁面視覺、插圖或其他畫圖任務前，AI 必須先讀 `slimweb_design_context_get`；若需要真實 nav/footer/分類資料形狀，再補讀 `slimweb_theme_shell_get_context` 與 `slimweb_theme_style_profile_get`。
 - `slimweb_theme_shell_get_context` 回傳的是 reference-only JSON。AI 可以用它決定 spacing、icon、容器容量與 responsive 行為，但不可把 nav/footer/contact 等真實資料寫死到版型片段。
+- 在 ChatGPT Remote MCP 中，如果頁面或文章需求需要圖片，但使用者沒有附圖，也沒有可直接下載的圖片 URL，AI 必須先終止任務並請使用者貼上或重新上傳圖片，再繼續後面的建立或修改流程。
 
 ### 頁面建立 / 修改流程
 
@@ -1379,9 +1379,9 @@ AI Client 收到或引用的圖片預設是 reference-only。只有當 tool call
 - 如果是建立頁面，先用 `slimweb_pages_check_title` 檢查 `title` 是否撞名；如果 `exists` 為 `true`，立刻停止並告知使用者。
 - 如果是修改頁面，先用 `slimweb_pages_get_content` 取得目前頁面資料；如果找不到資料，立刻停止並告知使用者；如果回傳的是固定頁，立刻停止，因為固定頁不可修改。
 - 再用 `slimweb_design_context_get` 取得目前網站版型摘要、色系與框架。
-- 如果任務需要圖片，先由用戶提供、AI 作圖或兩者兼具。
+- 如果任務需要圖片，先由用戶提供、AI 作圖或兩者兼具；若是 ChatGPT Remote MCP 而且沒有可用附圖或可直接下載的圖片 URL，就先終止任務並請使用者貼上圖片。
 - AI 作圖時，請依照目前色系來畫，讓結果更容易融入現有版型。
-- 如果是 ChatGPT Remote MCP，而圖片是使用者貼上的對話附件，先用 `slimweb_images_import_chatgpt_attachment` 匯入成 `media_path`。
+- 如果是 ChatGPT Remote MCP，而圖片是使用者貼上的對話附件，先用 `slimweb_images_import_chatgpt_attachment` 匯入成 `media_path`；如果一開始就沒有附圖，也沒有可直接下載的圖片 URL，一樣先終止任務並請使用者貼圖。
 - 如果是本地可直接上傳 bytes 的 Client，則用 `slimweb_uploads_create` 取得 signed upload URL，再用 `slimweb_uploads_commit` 取得可重用的 `media_path`。
 - 頁面 HTML 可以自訂 CSS，但不可使用 JavaScript。
 - 如果是建立頁面，使用 `slimweb_pages_create`。
@@ -1395,7 +1395,7 @@ AI Client 收到或引用的圖片預設是 reference-only。只有當 tool call
 - 如果是修改文章，先用 `slimweb_articles_get_content` 取得目前文章資料；如果找不到資料，立刻停止並告知使用者。
 - 新文章一定要有 16:9 主圖；若使用者沒有提供主圖且也沒有描述主圖怎麼畫，AI 就依文章標題或內容先畫主圖。
 - AI 作圖時，請依照目前色系來畫，讓結果更容易融入現有版型。
-- 如果主圖或內容圖是 AI 產出，而目前是 ChatGPT Remote MCP，先停下來等使用者把圖貼回來，再用 `slimweb_images_import_chatgpt_attachment` 匯入成 `media_path`。
+- 如果主圖或內容圖是 AI 產出，而目前是 ChatGPT Remote MCP，先停下來等使用者把圖貼回來，再用 `slimweb_images_import_chatgpt_attachment` 匯入成 `media_path`；如果一開始就沒有附圖，也沒有可直接下載的圖片 URL，一樣先終止任務並請使用者貼圖。
 - 如果是本地可直接上傳 bytes 的 Client，則用 `slimweb_uploads_create` 取得 signed upload URL，再用 `slimweb_uploads_commit` 取得可重用的 `media_path`。
 - 文章 HTML 可以自訂 CSS，但不可使用 JavaScript。
 - 如果是建立文章，使用 `slimweb_articles_create`。

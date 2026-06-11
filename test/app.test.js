@@ -1,9 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
-import os from 'node:os';
-import path from 'node:path';
 import { test } from 'node:test';
 
 import { createRequestHandler } from '../src/app.js';
@@ -61,6 +59,7 @@ const README_TOOL_TABLE_NAMES = [
     /^\|\s*`(slimweb_[a-z0-9_]+)`\s*\|\s*([^|]+?)\s*\|/gm
   )
 ].map((match) => ({ name: match[1], status: match[2].trim() }));
+const README_TEXT = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
 
 const PLANNED_TOOL_NAMES = [
   'slimweb_members_list',
@@ -398,10 +397,12 @@ test('MCP tools list includes homepage editing contract tools', async () => {
     assert.equal(toolsByName.get('slimweb_articles_get_content').inputSchema.required.includes('article_id'), true);
     assert.match(toolsByName.get('slimweb_articles_create').description, /16:9 cover image/i);
     assert.match(toolsByName.get('slimweb_articles_create').description, /slimweb_articles_check_title/i);
+    assert.match(toolsByName.get('slimweb_articles_create').description, /stop the task and ask the user to paste or re-upload the image/i);
     assert.equal(toolsByName.get('slimweb_articles_create').inputSchema.required.includes('cover_image'), true);
     assert.match(toolsByName.get('slimweb_articles_create').inputSchema.properties.cover_image.description, /slimweb_images_import_chatgpt_attachment/);
     assert.equal(toolsByName.get('slimweb_articles_update').inputSchema.required.includes('article_id'), true);
     assert.match(toolsByName.get('slimweb_articles_update').description, /slimweb_articles_get_content/i);
+    assert.match(toolsByName.get('slimweb_articles_update').description, /stop the task and ask the user to paste or re-upload the image/i);
     assert.deepEqual(toolsByName.get('slimweb_images_import_chatgpt_attachment')._meta['openai/fileParams'], ['image']);
     assert.equal(toolsByName.get('slimweb_images_import_chatgpt_attachment').inputSchema.required.includes('image'), true);
     assert.match(toolsByName.get('slimweb_images_import_chatgpt_attachment').description, /ChatGPT web\/desktop/);
@@ -430,6 +431,8 @@ test('MCP tools list includes homepage editing contract tools', async () => {
     assert.equal(toolsByName.get('slimweb_pages_create').inputSchema.properties.page_key.type, 'string');
     assert.equal(toolsByName.get('slimweb_pages_update').inputSchema.required.includes('page_name'), true);
     assert.equal(toolsByName.get('slimweb_pages_update').inputSchema.properties.title.type, 'string');
+    assert.match(toolsByName.get('slimweb_pages_create').description, /stop the task and ask the user to paste or re-upload the image/i);
+    assert.match(toolsByName.get('slimweb_pages_update').description, /stop the task and ask the user to paste or re-upload the image/i);
     assert.equal(toolsByName.get('slimweb_pages_check_title').inputSchema.required.includes('title'), true);
     assert.equal(toolsByName.get('slimweb_pages_list').inputSchema.required.includes('site_id'), true);
     assert.equal(toolsByName.get('slimweb_preview_get_page_url').inputSchema.required.includes('page_key'), true);
@@ -444,77 +447,10 @@ test('MCP tools list includes homepage editing contract tools', async () => {
   });
 });
 
-test('sampling image debug tool persists the raw sampling request and response', async () => {
-  const debugRoot = await mkdtemp(path.join(os.tmpdir(), 'slimweb-sampling-debug-'));
-  const samplingCalls = [];
-
-  await withServerOptions({
-    googleVerifier: {
-      verify: async () => ({
-        sub: 'google-sub-sampling',
-        email: 'owner@example.com',
-        name: 'Owner'
-      })
-    },
-    accountRepository: {
-      listAdminSitesForGoogleProfile: async (profile) => testAdminSitesFor(profile)
-    },
-    sessionSecret: 'test-secret',
-    samplingDebugRoot: debugRoot,
-    samplingHandler: async (request) => {
-      samplingCalls.push(request);
-      return {
-        role: 'assistant',
-        content: [
-          {
-            type: 'image',
-            mimeType: 'image/png',
-            data: 'ZmFrZS1wbmctYnl0ZXM='
-          }
-        ],
-        model: 'gpt-test-image'
-      };
-    }
-  }, async (baseUrl) => {
-    const loginResponse = await fetch(`${baseUrl}/auth/google`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ credential: 'google-id-token' })
-    });
-    const token = (await loginResponse.json()).session.access_token;
-
-    const response = await fetch(`${baseUrl}/mcp`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${token}`
-      },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: 600,
-        method: 'tools/call',
-        params: {
-          name: 'slimweb_sampling_image_debug',
-          arguments: {
-            prompt: 'Draw a tiny raster postcard of Osaka castle at sunset.'
-          }
-        }
-      })
-    });
-
-    const body = await response.json();
-    const savedPath = path.join(debugRoot, 'latest.json');
-    const saved = JSON.parse(await readFile(savedPath, 'utf8'));
-
-    assert.equal(response.status, 200);
-    assert.equal(body.result.structuredContent.ok, true);
-    assert.equal(body.result.structuredContent.sampling_response.role, 'assistant');
-    assert.equal(body.result.structuredContent.sampling_response.content[0].type, 'image');
-    assert.equal(saved.sampling_request.messages[0].content.text, 'Draw a tiny raster postcard of Osaka castle at sunset.');
-    assert.equal(saved.sampling_response.content[0].mimeType, 'image/png');
-    assert.equal(saved.sampling_response.content[0].data, 'ZmFrZS1wbmctYnl0ZXM=');
-    assert.equal(samplingCalls[0].messages[0].content.text, 'Draw a tiny raster postcard of Osaka castle at sunset.');
-  });
+test('README page and article flow docs require ChatGPT users to attach missing images first', () => {
+  assert.match(README_TEXT, /沒有附圖/);
+  assert.match(README_TEXT, /終止任務/);
+  assert.match(README_TEXT, /先停止並請使用者貼圖/);
 });
 
 test('homepage editing tools call repository implementations', async () => {

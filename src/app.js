@@ -1,5 +1,4 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { GoogleIdentityVerifier } from './googleVerifier.js';
@@ -15,6 +14,7 @@ import { WeblessAccountRepository } from './weblessRepository.js';
 
 const SERVICE_NAME = 'slimweb-mcp';
 const SERVICE_VERSION = '0.1.0';
+const CHATGPT_MISSING_IMAGE_GUIDANCE = 'In ChatGPT Remote MCP, if a page or article request needs an image but no usable attached image or directly downloadable image URL is available, stop the task and ask the user to paste or re-upload the image before continuing.';
 const MCP_SERVER_GUIDELINES = [
   'Always list available sites before any other SlimWeb MCP action.',
   'If exactly one site is available, use it directly.',
@@ -25,9 +25,9 @@ const MCP_SERVER_GUIDELINES = [
   'Before creating a page, require a title and check it with slimweb_pages_check_title; stop if a title already exists, including fixed-page English aliases.',
   'Before creating an article, require a title and check it with slimweb_articles_check_title; new articles also require a 16:9 cover image, while optional content images follow the same upload or attachment branch as pages.',
   'Use slimweb_pages_get_content to inspect a page by page_name before modifying it.',
-  'Page creation flow: use slimweb_design_context_get first, then gather images, then use slimweb_uploads_create plus slimweb_uploads_commit or slimweb_images_import_chatgpt_attachment for image bytes, then build HTML/CSS without JavaScript, then create the page with slimweb_pages_create.',
-  'Page update flow: use slimweb_pages_get_content first, then slimweb_design_context_get, then optional image import/upload, then update the page with slimweb_pages_update.',
-  'Article creation flow mirrors page creation flow, but cover_image is mandatory and article content may include optional content images; article updates follow the page update flow.',
+  `Page creation flow: use slimweb_design_context_get first, then gather images; if the request needs an image but ChatGPT Remote MCP has no usable attached image or directly downloadable URL, stop the task and ask the user to paste or re-upload the image before continuing; otherwise use slimweb_uploads_create plus slimweb_uploads_commit or slimweb_images_import_chatgpt_attachment for image bytes, then build HTML/CSS without JavaScript, then create the page with slimweb_pages_create.`,
+  `Page update flow: use slimweb_pages_get_content first, then slimweb_design_context_get, then optional image import/upload; if the update needs an image but ChatGPT Remote MCP has no usable attached image or directly downloadable URL, stop the task and ask the user to paste or re-upload the image before continuing; then update the page with slimweb_pages_update.`,
+  `Article creation flow mirrors page creation flow, but cover_image is mandatory and article content may include optional content images; if the needed cover image or content image is missing in ChatGPT Remote MCP, stop the task and ask the user to paste or re-upload the image before continuing; article updates follow the page update flow.`,
   'For visual verification after page creation or update, use slimweb_preview_get_page_url.'
 ].join(' ');
 const MEMBER_EMAIL_PREVIEW_WIDGET_URI = 'ui://slimweb/member-email-preview.html';
@@ -956,20 +956,6 @@ const MCP_TOOLS = [
     }
   },
   {
-    name: 'slimweb_sampling_image_debug',
-    description: 'Ask the MCP client to generate a raster image through sampling, then persist the raw sampling request and response for debugging. Use this to inspect what image payload a client like ChatGPT actually returns.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        prompt: {
-          type: 'string',
-          description: 'Image generation prompt to send through MCP sampling.'
-        }
-      },
-      required: ['prompt']
-    }
-  },
-  {
     name: 'slimweb_uploads_create',
     description: `Create a short-lived Webless signed upload URL for an image. After this call, a capable AI runtime must PUT the raw image bytes to upload_url with the returned headers, then call slimweb_uploads_commit. This replaces base64 image transport. ${SIGNED_UPLOAD_RUNTIME_GUIDANCE}`,
     inputSchema: {
@@ -1048,7 +1034,7 @@ const MCP_TOOLS = [
   },
   {
     name: 'slimweb_articles_create',
-    description: 'Create a new article. A 16:9 cover image is mandatory, and optional content images may be attached for the article body. Use slimweb_articles_check_title first and generate or import the approved cover image before calling this tool.',
+    description: `Create a new article. A 16:9 cover image is mandatory, and optional content images may be attached for the article body. Use slimweb_articles_check_title first and generate or import the approved cover image before calling this tool. ${CHATGPT_MISSING_IMAGE_GUIDANCE}`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -1083,7 +1069,7 @@ const MCP_TOOLS = [
   },
   {
     name: 'slimweb_articles_update',
-    description: 'Update an existing article by article_id. Use slimweb_articles_get_content first to read the current article state; a cover image can be replaced or left unchanged, and optional content images may be updated as needed.',
+    description: `Update an existing article by article_id. Use slimweb_articles_get_content first to read the current article state; a cover image can be replaced or left unchanged, and optional content images may be updated as needed. ${CHATGPT_MISSING_IMAGE_GUIDANCE}`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -1823,7 +1809,7 @@ const MCP_TOOLS = [
   },
   {
     name: 'slimweb_pages_create',
-    description: 'Create a new custom page. The AI must already have checked title collisions with slimweb_pages_check_title and should use slimweb_design_context_get plus image tools before sending HTML/CSS without JavaScript.',
+    description: `Create a new custom page. The AI must already have checked title collisions with slimweb_pages_check_title and should use slimweb_design_context_get plus image tools before sending HTML/CSS without JavaScript. ${CHATGPT_MISSING_IMAGE_GUIDANCE}`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -1849,7 +1835,7 @@ const MCP_TOOLS = [
   },
   {
     name: 'slimweb_pages_update',
-    description: 'Update an existing custom page by page_name. Use slimweb_pages_get_content first to fetch the current page state; fixed pages are read-only and must not be modified. Use uploaded media_path URLs for reusable images; do not embed base64 images. Custom CSS is allowed in page HTML, but JavaScript is forbidden.',
+    description: `Update an existing custom page by page_name. Use slimweb_pages_get_content first to fetch the current page state; fixed pages are read-only and must not be modified. Use uploaded media_path URLs for reusable images; do not embed base64 images. Custom CSS is allowed in page HTML, but JavaScript is forbidden. ${CHATGPT_MISSING_IMAGE_GUIDANCE}`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -2158,72 +2144,11 @@ function redactAttachmentString(value) {
   }
 }
 
-function defaultSamplingDebugRoot() {
-  return path.join(process.cwd(), 'tmp', 'sampling-image-debug');
-}
-
-async function persistSamplingDebugCapture(context, payload) {
-  const root = context.samplingDebugRoot || defaultSamplingDebugRoot();
-  const targetPath = path.join(root, 'latest.json');
-  await mkdir(root, { recursive: true });
-  await writeFile(targetPath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
-  return targetPath;
-}
-
-async function runSamplingImageDebug(args, context) {
-  if (typeof context.samplingHandler !== 'function') {
-    const error = new Error('Sampling is not configured for this MCP server runtime.');
-    error.code = 'SAMPLING_UNAVAILABLE';
-    throw error;
-  }
-
-  const prompt = String(args.prompt ?? '').trim();
-  if (!prompt) {
-    const error = new Error('prompt is required.');
-    error.code = 'VALIDATION_FAILED';
-    throw error;
-  }
-
-  const samplingRequest = {
-    messages: [{
-      role: 'user',
-      content: {
-        type: 'text',
-        text: prompt
-      }
-    }],
-    systemPrompt: 'Generate exactly one raster image that satisfies the user prompt. Prefer returning image content instead of SVG or plain text.',
-    maxTokens: 1200,
-    modelPreferences: {
-      hints: [{ name: 'image-generation' }],
-      intelligencePriority: 0.7,
-      speedPriority: 0.3
-    },
-    metadata: {
-      debug_tool: 'slimweb_sampling_image_debug'
-    }
-  };
-  const samplingResponse = await context.samplingHandler(samplingRequest);
-  const savedPath = await persistSamplingDebugCapture(context, {
-    captured_at: new Date().toISOString(),
-    sampling_request: samplingRequest,
-    sampling_response: samplingResponse
-  });
-
-  return {
-    ok: true,
-    saved_path: savedPath,
-    sampling_request: samplingRequest,
-    sampling_response: samplingResponse
-  };
-}
-
 function toolExceptionToMcpError(id, error) {
   const codeByReason = {
     VALIDATION_FAILED: -32602,
     NOT_FOUND: -32002,
     FORBIDDEN: -32003,
-    SAMPLING_UNAVAILABLE: -32008,
     UPSTREAM_NOT_CONFIGURED: -32005,
     UPSTREAM_ERROR: -32007,
     UNSAFE_CONTENT: -32006,
@@ -2241,8 +2166,7 @@ function toolExceptionToMcpError(id, error) {
 const BASE_TOOL_NAMES = new Set([
   'slimweb_auth_status',
   'slimweb_sites_list',
-  'slimweb_site_select',
-  'slimweb_sampling_image_debug'
+  'slimweb_site_select'
 ]);
 
 const TOOL_PERMISSION_RULES = {
@@ -2469,16 +2393,6 @@ async function toolResultForCall(message, request, context) {
     case 'slimweb_site_select': {
       try {
         const result = await context.accountRepository.selectSiteForAdminIdentity(sessionIdentity(session), toolArgs(message));
-
-        return mcpResult(message.id ?? null, mcpJsonContent(result));
-      } catch (error) {
-        return toolExceptionToMcpError(message?.id ?? null, error);
-      }
-    }
-
-    case 'slimweb_sampling_image_debug': {
-      try {
-        const result = await runSamplingImageDebug(toolArgs(message), context);
 
         return mcpResult(message.id ?? null, mcpJsonContent(result));
       } catch (error) {
@@ -4150,8 +4064,6 @@ function createDefaultContext(options = {}) {
     googleClientId: options.googleClientId ?? process.env.GOOGLE_CLIENT_ID ?? '27587628711-upin8ch154kqrl88k41978q660oc0pbg.apps.googleusercontent.com',
     googleVerifier: options.googleVerifier ?? new GoogleIdentityVerifier(options),
     accountRepository: options.accountRepository ?? new WeblessAccountRepository(),
-    samplingHandler: options.samplingHandler ?? null,
-    samplingDebugRoot: options.samplingDebugRoot ?? defaultSamplingDebugRoot(),
     sessionSecret: options.sessionSecret ?? process.env.MCP_SESSION_SECRET,
     publicBaseUrl: options.publicBaseUrl ?? process.env.PUBLIC_BASE_URL ?? '',
     secureCookies: options.secureCookies ?? process.env.NODE_ENV === 'production'
