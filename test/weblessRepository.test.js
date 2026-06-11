@@ -2495,6 +2495,49 @@ test('repository creates custom pages at the site level regardless of theme_id',
   assert.equal(read.content.html, '<section class="hero">One homepage</section>\n');
 });
 
+test('repository creates a custom page with a Chinese title when an ASCII page_key is provided', async () => {
+  const storageRoot = await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-'));
+  const repository = new WeblessAccountRepository(fakePool(), {
+    storageRoot,
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+
+  const created = await repository.createPage(11, {
+    site_id: 101,
+    title: '大阪京都6日遊',
+    page_key: 'osaka-kyoto-6d',
+    content: {
+      html: '<section><h1>大阪京都6日遊</h1><p>大阪與京都雙城旅行。</p></section>'
+    }
+  });
+
+  assert.equal(created.page_key, 'osaka-kyoto-6d');
+  assert.equal(created.storage_path, 'sites/101/templates/default/pages/osaka-kyoto-6d/content.blade.php');
+  assert.equal(
+    await readFile(path.join(storageRoot, created.storage_path), 'utf8'),
+    '<section><h1>大阪京都6日遊</h1><p>大阪與京都雙城旅行。</p></section>\n'
+  );
+});
+
+test('repository auto-generates a safe page key for a custom page with a Chinese title', async () => {
+  const storageRoot = await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-'));
+  const repository = new WeblessAccountRepository(fakePool(), {
+    storageRoot,
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+
+  const created = await repository.createPage(11, {
+    site_id: 101,
+    title: '大阪京都6日遊',
+    content: {
+      html: '<section><h1>大阪京都6日遊</h1><p>大阪與京都雙城旅行。</p></section>'
+    }
+  });
+
+  assert.equal(created.page_key, 'page-101');
+  assert.equal(created.storage_path, 'sites/101/templates/default/pages/page-101/content.blade.php');
+});
+
 test('repository creates and searches custom pages with real public urls', async () => {
   const storageRoot = await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-'));
   const repository = new WeblessAccountRepository(fakePool(), {

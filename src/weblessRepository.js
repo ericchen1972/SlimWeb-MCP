@@ -4065,7 +4065,11 @@ export class WeblessAccountRepository {
       ...FIXED_TEMPLATE_PAGE_KEYS,
       ...(await this.listCustomPagesForSite(site, { includeHtml: false })).map((page) => page.page_key)
     ]);
-    const pageKey = uniqueValue(slugify(title) || `page-${site.id}`, existingKeys, 120);
+    const requestedPageKey = nullableString(args.page_key);
+    const pageKeyBase = requestedPageKey
+      ? normalizePageKey(requestedPageKey)
+      : safeGeneratedPageKey(title, `page-${site.id}`);
+    const pageKey = uniqueValue(pageKeyBase, existingKeys, 120);
     const theme = siteLevelHomepageTheme(site);
     const storagePath = pageContentStoragePath(site.id, theme, pageKey);
     const metadataPath = customPageMetadataStoragePath(site.id, pageKey);
@@ -6369,6 +6373,17 @@ function normalizePageKey(value) {
   }
 
   return pageKey;
+}
+
+function safeGeneratedPageKey(value, fallbackPrefix = 'page') {
+  const candidate = String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 100);
+
+  return /[a-z]/.test(candidate) ? candidate : fallbackPrefix;
 }
 
 function normalizeSeoSettings(args, current = {}) {
