@@ -61,6 +61,22 @@ function fakePool() {
         };
       }
 
+      if (sql.includes('from site_pages') && sql.includes('where site_id = $1 and id = $2')) {
+        assert.equal(params[0], 101);
+        assert.equal(params[1], 22);
+
+        return {
+          rows: [{
+            id: 22,
+            site_id: 101,
+            name: '粉色風格',
+            is_default: false,
+            is_active: false,
+            theme_mode: 'light'
+          }]
+        };
+      }
+
       if (sql.includes('from site_pages') && sql.includes('where site_id = $1') && sql.includes('order by is_default desc, sort_order asc')) {
         return {
           rows: [{
@@ -758,6 +774,62 @@ function integrationSettingsPool() {
           line_bot_channel_secret: params[17],
           line_bot_user_id: params[18],
           notion_token: params[19]
+        };
+
+        return { rows: [state.site] };
+      }
+
+      throw new Error(`Unexpected query: ${sql}`);
+    }
+  };
+}
+
+function mailDeliverySettingsPool() {
+  const state = {
+    site: {
+      id: 101,
+      slug: 'site-1',
+      name: '測試網站',
+      domain: '',
+      site_status: 'active',
+      notification_new_order_sms_numbers: null,
+      notification_sms_on_shipped: false,
+      notification_auto_send_reminder_sms: false,
+      notification_reminder_sms_content: null,
+      notification_smtp_host: null,
+      notification_smtp_username: null,
+      notification_smtp_password: null,
+      notification_smtp_port: null,
+      notification_smtp_from_email: null,
+      notification_smtp_ssl: false
+    }
+  };
+
+  return {
+    state,
+    async query(sql, params) {
+      if (sql.includes('from sites') && sql.includes('account_id = $1 and id = $2')) {
+        return { rows: [state.site] };
+      }
+
+      if (sql.includes('from sites') && sql.includes('where id = $1') && sql.includes('notification_smtp_host')) {
+        assert.equal(params[0], 101);
+        return { rows: [state.site] };
+      }
+
+      if (sql.includes('update sites') && sql.includes('notification_smtp_host = $5') && sql.includes('notification_smtp_ssl = $10')) {
+        state.site = {
+          ...state.site,
+          notification_new_order_sms_numbers: params[0],
+          notification_sms_on_shipped: params[1],
+          notification_auto_send_reminder_sms: params[2],
+          notification_reminder_sms_content: params[3],
+          notification_smtp_host: params[4],
+          notification_smtp_username: params[5],
+          notification_smtp_password: params[6],
+          notification_smtp_port: params[7],
+          notification_smtp_from_email: params[8],
+          notification_smtp_ssl: params[9]
         };
 
         return { rows: [state.site] };
@@ -1898,6 +1970,82 @@ test('repository updates and reads site integration settings for admin display',
   assert.equal(read.settings.notion_token, 'notion-secret');
 });
 
+test('repository updates and reads only facebook settings', async () => {
+  const pool = integrationSettingsPool();
+  const repository = new WeblessAccountRepository(pool, {
+    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-'))
+  });
+
+  const updated = await repository.updateFacebookSettings(11, {
+    site_id: 101,
+    facebook_app_id: 'fb-app',
+    facebook_page_id: 'fb-page',
+    facebook_comment_on_products: true,
+    facebook_comment_on_posts: true
+  });
+  const read = await repository.getFacebookSettings(11, { site_id: 101 });
+
+  assert.equal(updated.ok, true);
+  assert.equal(read.settings.facebook_app_id, 'fb-app');
+  assert.equal(read.settings.facebook_page_id, 'fb-page');
+  assert.equal(read.settings.facebook_comment_on_products, true);
+  assert.equal(read.settings.facebook_comment_on_posts, true);
+});
+
+test('repository updates and reads only notion settings', async () => {
+  const pool = integrationSettingsPool();
+  const repository = new WeblessAccountRepository(pool, {
+    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-'))
+  });
+
+  const updated = await repository.updateNotionSettings(11, {
+    site_id: 101,
+    notion_token: 'notion-secret'
+  });
+  const read = await repository.getNotionSettings(11, { site_id: 101 });
+
+  assert.equal(updated.ok, true);
+  assert.equal(read.settings.notion_token, 'notion-secret');
+});
+
+test('repository updates and reads mail delivery settings with SMTP fields', async () => {
+  const pool = mailDeliverySettingsPool();
+  const repository = new WeblessAccountRepository(pool, {
+    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-'))
+  });
+
+  const updated = await repository.updateMailDeliverySettings(11, {
+    site_id: 101,
+    notification_smtp_host: 'smtp.gmail.com',
+    notification_smtp_username: 'mailer@example.com',
+    notification_smtp_password: 'app-password',
+    notification_smtp_port: '465',
+    notification_smtp_from_email: 'mailer@example.com',
+    notification_smtp_ssl: true
+  });
+  const read = await repository.getMailDeliverySettings(11, { site_id: 101 });
+
+  assert.equal(updated.ok, true);
+  assert.equal(read.settings.notification_smtp_host, 'smtp.gmail.com');
+  assert.equal(read.settings.notification_smtp_username, 'mailer@example.com');
+  assert.equal(read.settings.notification_smtp_port, '465');
+  assert.equal(read.settings.notification_smtp_ssl, true);
+});
+
+test('repository rejects email member verification when SMTP is incomplete', async () => {
+  const repository = new WeblessAccountRepository(readinessPool(), {
+    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-'))
+  });
+
+  await assert.rejects(
+    () => repository.updateBasicSettings(11, {
+      site_id: 101,
+      member_verification: 'email'
+    }),
+    /SMTP/
+  );
+});
+
 test('repository updates supported payment and logistics providers with card exclusivity', async () => {
   const pool = paymentLogisticsPool();
   const repository = new WeblessAccountRepository(pool, {
@@ -2571,6 +2719,28 @@ test('repository creates and searches custom pages with real public urls', async
   assert.equal(page?.can_edit, true);
   assert.equal(page?.can_delete, true);
   assert.ok(pages.pages.length >= 1);
+});
+
+test('repository lists custom pages with selected theme preview urls when theme_id is provided', async () => {
+  const storageRoot = await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-'));
+  const repository = new WeblessAccountRepository(fakePool(), {
+    storageRoot,
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+
+  await repository.createPage(11, {
+    site_id: 101,
+    title: 'Finland Aurora Trip',
+    content: {
+      html: '<section><h1>極光之旅</h1></section>'
+    }
+  });
+
+  const pages = await repository.listPages(11, { site_id: 101, theme_id: 22 });
+  const page = pages.pages.find((entry) => entry.page_key === 'finland-aurora-trip');
+
+  assert.equal(page?.public_url, 'https://slimweb.tw/sites/site-1/default-preview?mcp_site_id=101&mcp_page_key=finland-aurora-trip&preview_page=finland-aurora-trip&mcp_theme_id=22&preview_style_scheme=22');
+  assert.equal(page?.preview_url, 'https://slimweb.tw/sites/site-1/default-preview?mcp_site_id=101&mcp_page_key=finland-aurora-trip&preview_page=finland-aurora-trip&mcp_theme_id=22&preview_style_scheme=22');
 });
 
 test('repository creates and reads Webless custom page content files in GCS', async () => {

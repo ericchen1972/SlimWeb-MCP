@@ -971,6 +971,36 @@ export class WeblessAccountRepository {
     };
   }
 
+  async getFacebookSettings(accountId, args) {
+    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
+    const settings = pickFacebookSettings(await this.findIntegrationSettingsForSite(site.id));
+
+    return {
+      site,
+      settings
+    };
+  }
+
+  async getNotionSettings(accountId, args) {
+    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
+    const settings = pickNotionSettings(await this.findIntegrationSettingsForSite(site.id));
+
+    return {
+      site,
+      settings
+    };
+  }
+
+  async getMailDeliverySettings(accountId, args) {
+    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
+    const settings = await this.findMailDeliverySettingsForSite(site.id);
+
+    return {
+      site,
+      settings
+    };
+  }
+
   async getMailTemplates(accountId, args) {
     const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
 
@@ -1061,6 +1091,77 @@ export class WeblessAccountRepository {
       site,
       layout: formatMailLayout(result.rows[0]),
       default_layout_html: DEFAULT_MAIL_LAYOUT_HTML
+    };
+  }
+
+  async updateMailDeliverySettings(accountId, args) {
+    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
+    const current = await this.findMailDeliverySettingsForSite(site.id);
+    const next = normalizeMailDeliverySettings(args, current);
+
+    const result = await this.pool.query(
+      `
+        update sites
+        set
+          notification_new_order_sms_numbers = $1,
+          notification_sms_on_shipped = $2,
+          notification_auto_send_reminder_sms = $3,
+          notification_reminder_sms_content = $4,
+          notification_smtp_host = $5,
+          notification_smtp_username = $6,
+          notification_smtp_password = $7,
+          notification_smtp_port = $8,
+          notification_smtp_from_email = $9,
+          notification_smtp_ssl = $10,
+          updated_at = now()
+        where id = $11
+        returning ${MAIL_DELIVERY_SETTINGS_COLUMNS.join(', ')}
+      `,
+      [
+        next.notification_new_order_sms_numbers,
+        next.notification_sms_on_shipped,
+        next.notification_auto_send_reminder_sms,
+        next.notification_reminder_sms_content,
+        next.notification_smtp_host,
+        next.notification_smtp_username,
+        next.notification_smtp_password,
+        next.notification_smtp_port,
+        next.notification_smtp_from_email,
+        next.notification_smtp_ssl,
+        site.id
+      ]
+    );
+
+    return {
+      ok: true,
+      site,
+      settings: formatMailDeliverySettings(result.rows[0] ?? next)
+    };
+  }
+
+  async updateFacebookSettings(accountId, args) {
+    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
+    const current = await this.findIntegrationSettingsForSite(site.id);
+    const next = normalizeIntegrationSettings(args, current);
+    const result = await this.persistIntegrationSettings(site.id, next);
+
+    return {
+      ok: true,
+      site,
+      settings: pickFacebookSettings(result)
+    };
+  }
+
+  async updateNotionSettings(accountId, args) {
+    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
+    const current = await this.findIntegrationSettingsForSite(site.id);
+    const next = normalizeIntegrationSettings(args, current);
+    const result = await this.persistIntegrationSettings(site.id, next);
+
+    return {
+      ok: true,
+      site,
+      settings: pickNotionSettings(result)
     };
   }
 
@@ -1790,6 +1891,17 @@ export class WeblessAccountRepository {
     const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
     const current = await this.findBasicSettingsForSite(site.id);
     const next = normalizeBasicSettings(args, current);
+    const mailDeliverySettings = next.member_verification === 'email'
+      ? await this.findMailDeliverySettingsForSite(site.id)
+      : null;
+
+    if (next.member_verification === 'email' && !isSmtpConfigured(mailDeliverySettings)) {
+      throw codedError(
+        'VALIDATION_FAILED',
+        'SMTP settings must be fully configured before member_verification can be set to email.'
+      );
+    }
+
     const result = await this.pool.query(
       `
         update sites
@@ -2043,7 +2155,16 @@ export class WeblessAccountRepository {
     const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
     const current = await this.findIntegrationSettingsForSite(site.id);
     const next = normalizeIntegrationSettings(args, current);
+    const settings = await this.persistIntegrationSettings(site.id, next);
 
+    return {
+      ok: true,
+      site,
+      settings
+    };
+  }
+
+  async persistIntegrationSettings(siteId, next) {
     const result = await this.pool.query(
       `
         update sites
@@ -2093,15 +2214,11 @@ export class WeblessAccountRepository {
         next.line_bot_channel_secret,
         next.line_bot_user_id,
         next.notion_token,
-        site.id
+        siteId
       ]
     );
 
-    return {
-      ok: true,
-      site,
-      settings: formatIntegrationSettings(result.rows[0] ?? next)
-    };
+    return formatIntegrationSettings(result.rows[0] ?? next);
   }
 
   async listArticles(accountId, args) {
@@ -4003,15 +4120,22 @@ export class WeblessAccountRepository {
 
   async listPages(accountId, args) {
     const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const customPages = await this.listCustomPagesForSite(site, { includeHtml: false });
+    const previewTheme = args.theme_id === undefined || args.theme_id === null || String(args.theme_id).trim() === ''
+      ? null
+      : await this.resolveThemeForSite(site.id, args.theme_id);
+    const previewThemeId = previewTheme?.id ?? 'default';
+    const customPages = await this.listCustomPagesForSite(site, {
+      includeHtml: false,
+      previewThemeId
+    });
     const fixedPages = fixedTemplatePages().map((page) => ({
       ...page,
       type: 'fixed',
       is_fixed: true,
       can_edit: false,
       can_delete: false,
-      public_url: this.previewUrlFor(site, page.page_key, 'default'),
-      preview_url: this.previewUrlFor(site, page.page_key, 'default')
+      public_url: this.previewUrlFor(site, page.page_key, previewThemeId),
+      preview_url: this.previewUrlFor(site, page.page_key, previewThemeId)
     }));
     const pages = [...fixedPages, ...customPages];
 
@@ -4146,7 +4270,7 @@ export class WeblessAccountRepository {
     };
   }
 
-  async listCustomPagesForSite(site, { includeHtml = false } = {}) {
+  async listCustomPagesForSite(site, { includeHtml = false, previewThemeId = 'default' } = {}) {
     const directory = `sites/${site.id}/templates/default/pages`;
     const files = await this.storage.listFiles(directory);
     const keys = [...new Set(files
@@ -4169,8 +4293,10 @@ export class WeblessAccountRepository {
         is_fixed: false,
         can_edit: true,
         can_delete: true,
-        public_url: this.customPagePublicUrlFor(site, key),
-        preview_url: this.previewUrlFor(site, key, 'default'),
+        public_url: previewThemeId === 'default'
+          ? this.customPagePublicUrlFor(site, key)
+          : this.previewUrlFor(site, key, previewThemeId),
+        preview_url: this.previewUrlFor(site, key, previewThemeId),
         storage_path: html !== '' ? contentPath : null,
         metadata_path: metadataPath,
         ...(includeHtml ? { html } : {})
@@ -6598,13 +6724,13 @@ function thirdPartyLoginReadiness(settings) {
   const hasLine = !isBlank(settings.line_login_channel_id) && !isBlank(settings.line_login_channel_secret);
 
   if (!hasGoogle && !hasLine) {
-    issues.push(readinessIssue('third_party_login_missing', '第三方登入未設定', 'Google Client ID 與 LINE Login Channel 資料都尚未填寫。', ['slimweb_integration_settings_get', 'slimweb_integration_settings_update']));
+    issues.push(readinessIssue('third_party_login_missing', '第三方登入未設定', 'Google Client ID 與 LINE Login Channel 資料都尚未填寫。', []));
   } else {
     if (!hasGoogle) {
-      issues.push(readinessIssue('google_login_missing', 'Google 登入未設定', '尚未填寫 Google Client ID。', ['slimweb_integration_settings_update']));
+      issues.push(readinessIssue('google_login_missing', 'Google 登入未設定', '尚未填寫 Google Client ID。', []));
     }
     if (!hasLine) {
-      issues.push(readinessIssue('line_login_incomplete', 'LINE 登入未設定完整', 'LINE Channel ID 或 Channel Secret 尚未填寫完整。', ['slimweb_integration_settings_update']));
+      issues.push(readinessIssue('line_login_incomplete', 'LINE 登入未設定完整', 'LINE Channel ID 或 Channel Secret 尚未填寫完整。', []));
     }
   }
 
@@ -6623,7 +6749,9 @@ function emailReadiness(settings, layout) {
     'notification_smtp_port',
     'notification_smtp_from_email'
   ];
-  const missingSmtpFields = smtpFields.filter((field) => isBlank(settings[field]));
+  const missingSmtpFields = isSmtpConfigured(settings)
+    ? []
+    : smtpFields.filter((field) => isBlank(settings[field]));
 
   if (missingSmtpFields.length > 0) {
     issues.push(readinessIssue(
@@ -6820,6 +6948,21 @@ function formatIntegrationSettings(row) {
   return settings;
 }
 
+function pickFacebookSettings(settings = {}) {
+  return {
+    facebook_app_id: settings.facebook_app_id ?? null,
+    facebook_page_id: settings.facebook_page_id ?? null,
+    facebook_comment_on_products: Boolean(settings.facebook_comment_on_products),
+    facebook_comment_on_posts: Boolean(settings.facebook_comment_on_posts)
+  };
+}
+
+function pickNotionSettings(settings = {}) {
+  return {
+    notion_token: settings.notion_token ?? null
+  };
+}
+
 function defaultMailTemplate(triggerEvent) {
   const defaults = {
     order_created: {
@@ -6897,6 +7040,41 @@ function formatMailDeliverySettings(row) {
   settings.notification_smtp_ssl = Boolean(row.notification_smtp_ssl);
 
   return settings;
+}
+
+function normalizeMailDeliverySettings(args, current = {}) {
+  const normalized = {};
+  const booleanColumns = new Set([
+    'notification_sms_on_shipped',
+    'notification_auto_send_reminder_sms',
+    'notification_smtp_ssl'
+  ]);
+
+  for (const column of MAIL_DELIVERY_SETTINGS_COLUMNS) {
+    if (booleanColumns.has(column)) {
+      normalized[column] = Object.prototype.hasOwnProperty.call(args, column)
+        ? Boolean(args[column])
+        : Boolean(current[column]);
+    } else {
+      normalized[column] = Object.prototype.hasOwnProperty.call(args, column)
+        ? nullableString(args[column])
+        : (current[column] ?? null);
+    }
+  }
+
+  return normalized;
+}
+
+function isSmtpConfigured(settings = {}) {
+  const requiredSmtpFields = [
+    'notification_smtp_host',
+    'notification_smtp_username',
+    'notification_smtp_password',
+    'notification_smtp_port',
+    'notification_smtp_from_email'
+  ];
+
+  return requiredSmtpFields.every((field) => !isBlank(settings[field]));
 }
 
 function normalizeMailTemplateUpdates(value) {

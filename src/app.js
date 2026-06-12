@@ -538,8 +538,8 @@ const MCP_TOOLS = [
     }
   },
   {
-    name: 'slimweb_integration_settings_get',
-    description: 'Read site integration settings. Google and LINE fields are for member login; Facebook also supports member login, Messenger/Page ID, and Facebook comments; AI API and Notion are separate integration tabs.',
+    name: 'slimweb_facebook_settings_get',
+    description: 'Read the Facebook integration fields shown in the SlimWeb admin settings, including member-login App ID, Page ID, and Facebook comments toggles.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -549,47 +549,71 @@ const MCP_TOOLS = [
     }
   },
   {
-    name: 'slimweb_integration_settings_update',
-    description: 'Update site integration settings. Google and LINE are member-login integrations; Facebook can also configure Messenger/Page ID and Facebook comments; AI API and Notion credentials are separate integration tabs.',
+    name: 'slimweb_facebook_settings_update',
+    description: 'Update the Facebook integration fields shown in the SlimWeb admin settings, including App ID, Page ID, and Facebook comments toggles.',
     inputSchema: {
       type: 'object',
       properties: {
         site_id: { type: 'integer' },
-        sms_account: { type: 'string' },
-        sms_password: { type: 'string' },
-        facebook_app_id: {
-          type: 'string',
-          description: 'Facebook App ID for member Facebook login.'
-        },
-        facebook_page_id: {
-          type: 'string',
-          description: 'Facebook Page ID for Messenger/customer-service connection.'
-        },
-        facebook_comment_on_products: {
-          type: 'boolean',
-          description: 'Enable Facebook comments on product pages.'
-        },
-        facebook_comment_on_posts: {
-          type: 'boolean',
-          description: 'Enable Facebook comments on article pages.'
-        },
-        line_login_channel_id: {
-          type: 'string',
-          description: 'LINE Login Channel ID for member LINE login.'
-        },
-        line_login_channel_secret: {
-          type: 'string',
-          description: 'LINE Login Channel Secret for member LINE login.'
-        },
-        google_login_client_id: {
-          type: 'string',
-          description: 'Google OAuth Client ID for member Google login.'
-        },
-        use_ai_customer_service: { type: 'boolean' },
-        ai_provider: { type: 'string', enum: ['openai_gpt', 'google_gemini'] },
-        ai_api_key: { type: 'string' },
-        ai_model_name: { type: 'string' },
+        facebook_app_id: { type: 'string' },
+        facebook_page_id: { type: 'string' },
+        facebook_comment_on_products: { type: 'boolean' },
+        facebook_comment_on_posts: { type: 'boolean' }
+      },
+      required: ['site_id']
+    }
+  },
+  {
+    name: 'slimweb_notion_settings_get',
+    description: 'Read the Notion API token field shown in the SlimWeb admin settings.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        site_id: { type: 'integer' }
+      },
+      required: ['site_id']
+    }
+  },
+  {
+    name: 'slimweb_notion_settings_update',
+    description: 'Update the Notion API token field shown in the SlimWeb admin settings.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        site_id: { type: 'integer' },
         notion_token: { type: 'string' }
+      },
+      required: ['site_id']
+    }
+  },
+  {
+    name: 'slimweb_mail_delivery_settings_get',
+    description: 'Read SlimWeb mail delivery settings, including SMTP server fields and order/reminder notification options shown in the admin mail settings page.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        site_id: { type: 'integer' }
+      },
+      required: ['site_id']
+    }
+  },
+  {
+    name: 'slimweb_mail_delivery_settings_update',
+    description: 'Update SlimWeb mail delivery settings, including SMTP server fields and order/reminder notification options shown in the admin mail settings page.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        site_id: { type: 'integer' },
+        notification_new_order_sms_numbers: { type: 'string' },
+        notification_sms_on_shipped: { type: 'boolean' },
+        notification_auto_send_reminder_sms: { type: 'boolean' },
+        notification_reminder_sms_content: { type: 'string' },
+        notification_smtp_host: { type: 'string' },
+        notification_smtp_username: { type: 'string' },
+        notification_smtp_password: { type: 'string' },
+        notification_smtp_port: { type: ['string', 'integer'] },
+        notification_smtp_from_email: { type: 'string' },
+        notification_smtp_ssl: { type: 'boolean' }
       },
       required: ['site_id']
     }
@@ -840,7 +864,11 @@ const MCP_TOOLS = [
       properties: {
         site_id: { type: 'integer' },
         site_status: { type: 'string', enum: ['active', 'maintenance'] },
-        member_verification: { type: 'string', enum: ['none', 'email'] },
+        member_verification: {
+          type: 'string',
+          enum: ['none', 'email'],
+          description: 'email requires complete SMTP settings first; configure them through slimweb_mail_delivery_settings_update before enabling email verification.'
+        },
         website_type: { type: 'string', enum: ['ecommerce', 'brand'] },
         default_country_code: { type: 'string', enum: ['TW', 'JP', 'KR', 'SG', 'HK', 'CN', 'US', 'CA', 'GB', 'AU'] },
         product_load_mode: { type: 'string', enum: ['pagination', 'dynamic'] },
@@ -1772,7 +1800,11 @@ const MCP_TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        site_id: { type: 'integer' }
+        site_id: { type: 'integer' },
+        theme_id: {
+          type: ['integer', 'string'],
+          description: 'Optional preview theme for page links. Use this when the caller wants page URLs rendered under a selected non-active theme.'
+        }
       },
       required: ['site_id']
     }
@@ -2185,8 +2217,12 @@ const TOOL_PERMISSION_RULES = {
   slimweb_site_readiness_get: [],
   slimweb_seo_settings_get: ['seo_settings'],
   slimweb_seo_settings_update: ['seo_settings'],
-  slimweb_integration_settings_get: ['integration_settings'],
-  slimweb_integration_settings_update: ['integration_settings'],
+  slimweb_facebook_settings_get: ['integration_settings'],
+  slimweb_facebook_settings_update: ['integration_settings'],
+  slimweb_notion_settings_get: ['integration_settings'],
+  slimweb_notion_settings_update: ['integration_settings'],
+  slimweb_mail_delivery_settings_get: ['mail_settings'],
+  slimweb_mail_delivery_settings_update: ['mail_settings'],
   slimweb_mail_templates_get: ['mail_settings'],
   slimweb_mail_templates_update: ['mail_settings'],
   slimweb_mail_layout_get: ['mail_settings'],
@@ -2595,9 +2631,9 @@ async function toolResultForCall(message, request, context) {
       }
     }
 
-    case 'slimweb_integration_settings_get': {
+    case 'slimweb_facebook_settings_get': {
       try {
-        const result = await context.accountRepository.getIntegrationSettings(
+        const result = await context.accountRepository.getFacebookSettings(
           await actorForTool(session, name, toolArgs(message), context),
           toolArgs(message)
         );
@@ -2608,9 +2644,61 @@ async function toolResultForCall(message, request, context) {
       }
     }
 
-    case 'slimweb_integration_settings_update': {
+    case 'slimweb_facebook_settings_update': {
       try {
-        const result = await context.accountRepository.updateIntegrationSettings(
+        const result = await context.accountRepository.updateFacebookSettings(
+          await actorForTool(session, name, toolArgs(message), context),
+          toolArgs(message)
+        );
+
+        return mcpResult(message.id ?? null, mcpJsonContent(result));
+      } catch (error) {
+        return toolExceptionToMcpError(message?.id ?? null, error);
+      }
+    }
+
+    case 'slimweb_notion_settings_get': {
+      try {
+        const result = await context.accountRepository.getNotionSettings(
+          await actorForTool(session, name, toolArgs(message), context),
+          toolArgs(message)
+        );
+
+        return mcpResult(message.id ?? null, mcpJsonContent(result));
+      } catch (error) {
+        return toolExceptionToMcpError(message?.id ?? null, error);
+      }
+    }
+
+    case 'slimweb_notion_settings_update': {
+      try {
+        const result = await context.accountRepository.updateNotionSettings(
+          await actorForTool(session, name, toolArgs(message), context),
+          toolArgs(message)
+        );
+
+        return mcpResult(message.id ?? null, mcpJsonContent(result));
+      } catch (error) {
+        return toolExceptionToMcpError(message?.id ?? null, error);
+      }
+    }
+
+    case 'slimweb_mail_delivery_settings_get': {
+      try {
+        const result = await context.accountRepository.getMailDeliverySettings(
+          await actorForTool(session, name, toolArgs(message), context),
+          toolArgs(message)
+        );
+
+        return mcpResult(message.id ?? null, mcpJsonContent(result));
+      } catch (error) {
+        return toolExceptionToMcpError(message?.id ?? null, error);
+      }
+    }
+
+    case 'slimweb_mail_delivery_settings_update': {
+      try {
+        const result = await context.accountRepository.updateMailDeliverySettings(
           await actorForTool(session, name, toolArgs(message), context),
           toolArgs(message)
         );

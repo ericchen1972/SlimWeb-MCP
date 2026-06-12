@@ -197,8 +197,12 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 | `slimweb_site_readiness_get` | Available | site readiness read | 回傳站台目前缺少或不完整的設定區塊，讓 AI 可主動回答開站缺口。 |
 | `slimweb_seo_settings_get` | Available | content read | 讀取後台 SEO 設定頁也會顯示的 SEO / AEO / GEO 欄位。 |
 | `slimweb_seo_settings_update` | Available | content write | 更新站台層級 SEO、AEO、GEO、OG 與 llms.txt 設定。 |
-| `slimweb_integration_settings_get` | Available | settings read | 讀取後台串接設定頁顯示的 Facebook、Google 會員登入、LINE 會員登入、AI API、Notion 等欄位。 |
-| `slimweb_integration_settings_update` | Available | settings write | 更新串接設定欄位；Google/LINE 用於會員登入，Facebook 另支援 Messenger/Page ID 與留言板。 |
+| `slimweb_facebook_settings_get` | Available | settings read | 讀取後台 Facebook 串接欄位，包含 App ID、Page ID 與留言板開關。 |
+| `slimweb_facebook_settings_update` | Available | settings write | 更新後台 Facebook 串接欄位，包含 App ID、Page ID 與留言板開關。 |
+| `slimweb_notion_settings_get` | Available | settings read | 讀取後台 Notion API token 欄位。 |
+| `slimweb_notion_settings_update` | Available | settings write | 更新後台 Notion API token 欄位。 |
+| `slimweb_mail_delivery_settings_get` | Available | mail settings read | 讀取後台郵件寄送設定頁的 SMTP 與通知欄位。 |
+| `slimweb_mail_delivery_settings_update` | Available | mail settings write | 更新後台郵件寄送設定頁的 SMTP 與通知欄位。 |
 | `slimweb_mail_templates_get` | Available | mail settings read | 讀取各寄送時機的郵件標題與內容；內容會套用單一共用郵件版型。 |
 | `slimweb_mail_templates_update` | Available | mail settings write | 更新各寄送時機的郵件標題、HTML 內容與啟用狀態。 |
 | `slimweb_mail_layout_get` | Available | mail settings read | 讀取站台唯一共用郵件版型與預設版型 HTML。 |
@@ -265,7 +269,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 | `slimweb_debug_attachment_refs` | Available | diagnostic read | 診斷 ChatGPT Remote MCP 實際傳入的附件參數形狀；只回傳去敏摘要，不下載、不上傳、不寫入素材庫。 |
 | `slimweb_assets_upload` | Available | asset write | 只有當 AI flow 明確需要保存可重用素材時才寫入 asset。 |
 | `slimweb_pages_check_title` | Available | content read | 檢查指定頁面標題是否已存在，固定頁會同時比對英文別名，採用 trim + 大小寫不敏感規則。 |
-| `slimweb_pages_list` | Available | content read | 列出站台所有固定頁與自訂頁，不做搜尋條件。 |
+| `slimweb_pages_list` | Available | content read | 列出站台所有固定頁與自訂頁；可選填 `theme_id` 讓回傳連結使用指定版型預覽。 |
 | `slimweb_pages_get_content` | Available | content read | 依頁面名稱讀取單一頁面的內容與中繼資訊。 |
 | `slimweb_pages_create` | Available | content write | 建立新的自訂頁面；頁面標題需先過 `slimweb_pages_check_title`。若 ChatGPT Remote MCP 的頁面需求需要圖片但沒有可用附圖或可直接下載的圖片 URL，先停止並請使用者貼圖。 |
 | `slimweb_pages_update` | Available | content write | 修改既有自訂頁面；固定頁保持不可修改。若 ChatGPT Remote MCP 的頁面需求需要圖片但沒有可用附圖或可直接下載的圖片 URL，先停止並請使用者貼圖。 |
@@ -542,29 +546,81 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 錯誤情境: validation failed、site not found、permission denied、conflict
 - Audit fields: request ID、user ID、account ID、site ID、changed fields
 
-### `slimweb_integration_settings_get`
+### `slimweb_facebook_settings_get`
 
 - 狀態: Available
 - 權限: settings read
 - Scope: active site
-- 用途: 讀取後台串接設定頁的資料。Google 與 LINE 欄位目前只對應會員登入串接；Facebook 除會員登入外，也包含 Messenger/Page ID 與 FB 留言板設定；另含 AI API、Notion 與簡訊設定。
+- 用途: 讀取後台 Facebook 串接欄位，包含會員登入 App ID、Facebook Page ID，以及商品頁 / 文章頁 Facebook 留言板開關。
 - Input: `site_id`
-- Output: site summary、settings (`facebook_app_id`, `facebook_page_id`, `facebook_comment_on_products`, `facebook_comment_on_posts`, `line_login_channel_id`, `line_login_channel_secret`, `google_login_client_id`, `ai_provider`, `ai_api_key`, `ai_model_name`, `notion_token`, etc.)
+- Output: site summary、settings (`facebook_app_id`, `facebook_page_id`, `facebook_comment_on_products`, `facebook_comment_on_posts`)
 - Side effects: none
 - 是否需要 confirmation: no
 - 錯誤情境: site not found、permission denied
 - Audit fields: request ID、user ID、account ID、site ID
 
-### `slimweb_integration_settings_update`
+### `slimweb_facebook_settings_update`
 
 - 狀態: Available
 - 權限: settings write
 - Scope: active site
-- 用途: 更新後台串接設定。使用者把會員登入、Facebook Messenger/Page ID、FB 留言板、AI API 或 Notion 的 key/token/id 交給 AI 後，AI 可用此 tool 保存回 Webless 的同一份 settings。
-- Input: `site_id` plus any subset of integration fields
+- 用途: 更新後台 Facebook 串接欄位，包含會員登入 App ID、Facebook Page ID，以及商品頁 / 文章頁 Facebook 留言板開關。
+- Input: `site_id` plus any subset of Facebook settings fields
 - Output: updated settings、site summary
-- Side effects: updates `sites` integration columns that SlimWeb admin displays
-- 是否需要 confirmation: yes when changing API keys, bot tokens, Notion token, login client IDs, or disabling/enabling customer-facing integrations
+- Side effects: updates `sites` Facebook integration columns that SlimWeb admin displays
+- 是否需要 confirmation: yes when changing login App ID, customer-facing Page ID, or enabling/disabling Facebook comments
+- 錯誤情境: validation failed、site not found、permission denied、conflict
+- Audit fields: request ID、user ID、account ID、site ID、changed fields
+
+### `slimweb_notion_settings_get`
+
+- 狀態: Available
+- 權限: settings read
+- Scope: active site
+- 用途: 讀取後台 Notion API token 欄位。
+- Input: `site_id`
+- Output: site summary、settings (`notion_token`)
+- Side effects: none
+- 是否需要 confirmation: no
+- 錯誤情境: site not found、permission denied
+- Audit fields: request ID、user ID、account ID、site ID
+
+### `slimweb_notion_settings_update`
+
+- 狀態: Available
+- 權限: settings write
+- Scope: active site
+- 用途: 更新後台 Notion API token 欄位。
+- Input: `site_id`、`notion_token`
+- Output: updated settings、site summary
+- Side effects: updates `sites.notion_token`
+- 是否需要 confirmation: yes when changing the Notion API token
+- 錯誤情境: validation failed、site not found、permission denied、conflict
+- Audit fields: request ID、user ID、account ID、site ID、changed fields
+
+### `slimweb_mail_delivery_settings_get`
+
+- 狀態: Available
+- 權限: mail settings read
+- Scope: active site
+- 用途: 讀取後台郵件寄送設定頁的 SMTP 與通知欄位，包含 SMTP host、username、password、port、from email、SSL，以及出貨/提醒通知設定。
+- Input: `site_id`
+- Output: site summary、settings (`notification_new_order_sms_numbers`, `notification_sms_on_shipped`, `notification_auto_send_reminder_sms`, `notification_reminder_sms_content`, `notification_smtp_host`, `notification_smtp_username`, `notification_smtp_password`, `notification_smtp_port`, `notification_smtp_from_email`, `notification_smtp_ssl`)
+- Side effects: none
+- 是否需要 confirmation: no
+- 錯誤情境: site not found、permission denied
+- Audit fields: request ID、user ID、account ID、site ID
+
+### `slimweb_mail_delivery_settings_update`
+
+- 狀態: Available
+- 權限: mail settings write
+- Scope: active site
+- 用途: 更新後台郵件寄送設定頁的 SMTP 與通知欄位。當使用者要啟用 email 會員註冊驗證時，應先用此 tool 完成 SMTP 設定。
+- Input: `site_id` plus any subset of mail delivery fields
+- Output: updated settings、site summary
+- Side effects: updates `sites` mail delivery columns that SlimWeb admin displays
+- 是否需要 confirmation: yes when changing SMTP credentials, sender email, or customer-facing reminder behavior
 - 錯誤情境: validation failed、site not found、permission denied、conflict
 - Audit fields: request ID、user ID、account ID、site ID、changed fields
 
@@ -687,9 +743,10 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 權限: settings write
 - Scope: active site
 - 用途: 更新允許 MCP 修改的基本設定。
-- Input: patch object，僅允許 allowlist 欄位，例如 site status、country、product loading mode、return days allowed
+- Input: patch object，僅允許 allowlist 欄位，例如 site status、member verification、country、product loading mode、return days allowed
 - Output: updated settings summary、changed fields、warnings、audit ID
 - Side effects: modifies site settings
+- Rule: 若要把 `member_verification` 設成 `email`，必須先完成 SMTP 設定；若 SMTP 欄位未完整設定，tool 會拒絕更新。
 - 是否需要 confirmation: yes for disabling site、changing return policy、or settings that affect storefront behavior
 - 錯誤情境: validation failed、permission denied、unsupported field、conflict
 - Audit fields: request ID、user ID、account ID、site ID、changed fields
