@@ -445,7 +445,7 @@ export class WeblessAccountRepository {
 
   async listThemesForAccountSite(accountId, args) {
     const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const themes = await this.listThemesForSite(site.id);
+    const themes = (await this.listThemesForSite(site.id)).filter((theme) => !theme.is_default);
 
     return {
       site,
@@ -4150,7 +4150,16 @@ export class WeblessAccountRepository {
   async getPageContent(accountId, args) {
     const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
     const pageName = requireNonEmptyString(args.page_name, 'page_name');
-    const pageRecord = await this.findPageForSite(site, pageName, { includeHtml: true });
+    const lookup = normalizeTitleMatch(pageName);
+    const customPages = await this.listCustomPagesForSite(site, { includeHtml: true });
+    const customMatch = customPages.find((page) => pageLookupCandidates(page).some((candidate) => normalizeTitleMatch(candidate) === lookup));
+    const pageRecord = customMatch
+      ? {
+        ...customMatch,
+        exists: true,
+        content: { html: customMatch.html ?? '' }
+      }
+      : null;
     if (!pageRecord) {
       throw codedError('NOT_FOUND', `Page not found or not accessible: ${pageName}`);
     }

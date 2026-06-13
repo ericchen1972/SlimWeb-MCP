@@ -182,7 +182,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 | `slimweb_auth_status` | Available | authenticated user | 回傳登入狀態、使用者摘要、目前 account。 |
 | `slimweb_sites_list` | Available | account read | 列出使用者可操作的 SlimWeb sites。 |
 | `slimweb_site_select` | Available | account read | 驗證並回傳 AI 後續 tool 呼叫要操作的 site。 |
-| `slimweb_themes_list` | Available | content read | 列出站台的 Default 與自訂版型。 |
+| `slimweb_themes_list` | Available | content read | 列出站台自訂版型；Default 會被忽略。 |
 | `slimweb_site_theme_mode_get` | Available | content read | 讀取站台層級色系；Default 與所有自訂版型都沿用這個 light/dark 設定。 |
 | `slimweb_design_context_get` | Available | content read | 回傳目前啟用版型的設計摘要、站台明暗色系與固定框架 `Tailwind`，供 AI 在視覺設計或畫圖前先讀取。 |
 | `slimweb_site_theme_mode_update` | Available | content write | 將站台層級色系切換為 light 或 dark。 |
@@ -206,7 +206,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 | `slimweb_mail_templates_get` | Available | mail settings read | 讀取各寄送時機的郵件標題與內容；內容會套用單一共用郵件版型。 |
 | `slimweb_mail_templates_update` | Available | mail settings write | 更新各寄送時機的郵件標題、HTML 內容與啟用狀態。 |
 | `slimweb_mail_layout_get` | Available | mail settings read | 讀取站台唯一共用郵件版型與預設版型 HTML。 |
-| `slimweb_mail_layout_update` | Available | mail settings write | 更新站台唯一共用郵件版型；版型應保留 `{content}` 佔位符。 |
+| `slimweb_mail_layout_update` | Available | mail settings write | 更新站台唯一共用郵件版型；呼叫前必須先用 `slimweb_mail_layout_get` 取得同站台目前版型，再基於回傳 HTML 修改並保留 `{content}`、`{site_name}`、`{site_url}`、`{logo_url}`。 |
 | `slimweb_payment_logistics_get` | Available | payment/logistics read | 讀取 SlimWeb 目前支援的金物流供應商與站台設定。 |
 | `slimweb_payment_logistics_update` | Available | payment/logistics write | 更新支援的金物流資料與啟用狀態；線上刷卡金流只能啟用一家，LINE Pay 例外。 |
 | `slimweb_dashboard_summary` | Available | dashboard read | 讀取 KPI、最新訂單、最新會員、低庫存提醒等後台首頁摘要。 |
@@ -270,9 +270,9 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 | `slimweb_assets_upload` | Available | asset write | 只有當 AI flow 明確需要保存可重用素材時才寫入 asset。 |
 | `slimweb_pages_check_title` | Available | content read | 檢查指定頁面標題是否已存在，固定頁會同時比對英文別名，採用 trim + 大小寫不敏感規則。 |
 | `slimweb_pages_list` | Available | content read | 列出站台所有固定頁與自訂頁；可選填 `theme_id` 讓回傳連結使用指定版型預覽。 |
-| `slimweb_pages_get_content` | Available | content read | 依頁面名稱讀取單一頁面的內容與中繼資訊。 |
+| `slimweb_pages_get_content` | Available | content read | 依頁面名稱讀取單一自訂頁面的內容與中繼資訊；不搜尋固定頁。 |
 | `slimweb_pages_create` | Available | content write | 建立新的自訂頁面；頁面標題需先過 `slimweb_pages_check_title`。若 ChatGPT Remote MCP 的頁面需求需要圖片但沒有可用附圖或可直接下載的圖片 URL，先停止並請使用者貼圖。 |
-| `slimweb_pages_update` | Available | content write | 修改既有自訂頁面；固定頁保持不可修改。若 ChatGPT Remote MCP 的頁面需求需要圖片但沒有可用附圖或可直接下載的圖片 URL，先停止並請使用者貼圖。 |
+| `slimweb_pages_update` | Available | content write | 修改既有自訂頁面。若 ChatGPT Remote MCP 的頁面需求需要圖片但沒有可用附圖或可直接下載的圖片 URL，先停止並請使用者貼圖。 |
 | `slimweb_preview_get_page_url` | Available | content read | 回傳指定 site、page、theme 的預覽 URL，供 AI 自行截圖與檢查。 |
 | `slimweb_audit_list` | Available | audit read | 列出近期 MCP tool execution 紀錄。 |
 
@@ -670,11 +670,11 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 狀態: Available
 - 權限: mail settings write
 - Scope: active site
-- 用途: 更新站台唯一共用郵件版型。預設版型為網站 logo + 網站名稱、分隔線、內容、分隔線、footer 網站網址。
+- 用途: 更新站台唯一共用郵件版型。預設版型為網站 logo + 網站名稱、分隔線、內容、分隔線、footer 網站網址。呼叫本工具前必須先用 `slimweb_mail_layout_get` 讀取同一個 `site_id` 的目前版型，再以回傳的 current/default HTML 為基礎修改；不要憑空重寫整份 HTML，以免遺失 logo、站名、footer、placeholder 或既有結構。
 - Input: `site_id`、`html`、`is_active`
 - Output: updated layout、default layout HTML
 - Side effects: upserts `site_mail_layouts`
-- Rule: 建議保留 `{content}`；若缺少 `{content}`，Webless 會在版型後方附加郵件內容。
+- Rule: `html` 是完整替換。每次更新前都要先呼叫 `slimweb_mail_layout_get`，基於回傳 HTML 做最小修改；必須保留 `{content}`、`{site_name}`、`{site_url}`、`{logo_url}`。
 - 是否需要 confirmation: yes
 - 錯誤情境: validation failed、site not found、permission denied
 - Audit fields: request ID、user ID、account ID、site ID
@@ -1347,7 +1347,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 狀態: Available
 - 權限: content read
 - Scope: active site
-- 用途: 依 `page_name` 讀取單一頁面的內容與中繼資訊，首頁與自訂頁都走同一個讀取工具。
+- 用途: 依 `page_name` 讀取單一自訂頁面的內容與中繼資訊；固定頁不在此工具搜尋範圍內。
 - Input: `site_id`、`page_name`
 - Output: site summary、page summary、content HTML、storage path、metadata path、public URL、preview URL
 - Side effects: none
@@ -1373,12 +1373,12 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 狀態: Available
 - 權限: content write
 - Scope: active site
-- 用途: 修改既有自訂頁面。流程會先用 `slimweb_pages_get_content` 讀取目前內容，固定頁不可透過這個工具修改；若目前是 ChatGPT Remote MCP 而且沒有可用附圖或可直接下載的圖片 URL，就先終止任務並請使用者貼圖。
+- 用途: 修改既有自訂頁面。流程會先用 `slimweb_pages_get_content` 讀取目前自訂頁內容；若目前是 ChatGPT Remote MCP 而且沒有可用附圖或可直接下載的圖片 URL，就先終止任務並請使用者貼圖。
 - Input: `site_id`、`page_name`、`content.html` or `content.body_html`、optional `title`、optional `confirmation_token`
 - Output: write summary、site summary、theme summary、page key、title、public URL、preview URL、bytes written
 - Side effects: overwrites custom page body and metadata in configured Webless template storage
 - 是否需要 confirmation: yes when replacing customer-facing content
-- 錯誤情境: page not found、fixed page、unsafe content、site not found、storage adapter not configured
+- 錯誤情境: page not found、unsafe content、site not found、storage adapter not configured
 - Audit fields: request ID、user ID、account ID、site ID、page key、title
 
 ### `slimweb_preview_get_page_url`
@@ -1430,34 +1430,128 @@ AI Client 收到或引用的圖片預設是 reference-only。只有當 tool call
 - `slimweb_theme_shell_get_context` 回傳的是 reference-only JSON。AI 可以用它決定 spacing、icon、容器容量與 responsive 行為，但不可把 nav/footer/contact 等真實資料寫死到版型片段。
 - 在 ChatGPT Remote MCP 中，如果頁面或文章需求需要圖片，但使用者沒有附圖，也沒有可直接下載的圖片 URL，AI 必須先終止任務並請使用者貼上或重新上傳圖片，再繼續後面的建立或修改流程。
 
-### 頁面建立 / 修改流程
+### 必要執行的通用規則
 
-- 先判斷任務是建立頁面還是修改頁面。
-- 如果是建立頁面，先用 `slimweb_pages_check_title` 檢查 `title` 是否撞名；如果 `exists` 為 `true`，立刻停止並告知使用者。
-- 如果是修改頁面，先用 `slimweb_pages_get_content` 取得目前頁面資料；如果找不到資料，立刻停止並告知使用者；如果回傳的是固定頁，立刻停止，因為固定頁不可修改。
-- 再用 `slimweb_design_context_get` 取得目前網站版型摘要、色系與框架。
-- 如果任務需要圖片，先由用戶提供、AI 作圖或兩者兼具；若是 ChatGPT Remote MCP 而且沒有可用附圖或可直接下載的圖片 URL，就先終止任務並請使用者貼上圖片。
-- AI 作圖時，請依照目前色系來畫，讓結果更容易融入現有版型。
-- 如果是 ChatGPT Remote MCP，而圖片是使用者貼上的對話附件，先用 `slimweb_images_import_chatgpt_attachment` 匯入成 `media_path`；如果一開始就沒有附圖，也沒有可直接下載的圖片 URL，一樣先終止任務並請使用者貼圖。
-- 如果是本地可直接上傳 bytes 的 Client，則用 `slimweb_uploads_create` 取得 signed upload URL，再用 `slimweb_uploads_commit` 取得可重用的 `media_path`。
-- 頁面 HTML 可以自訂 CSS，但不可使用 JavaScript。
-- 如果是建立頁面，使用 `slimweb_pages_create`。
-- 如果是修改頁面，使用 `slimweb_pages_update`。
-- 頁面建立或更新後，可用 `slimweb_preview_get_page_url` 做預覽驗證。
+- 執行任何 MCP 工具前，必須先執行 `SlimWeb.slimweb_sites_list` 取得 `site_id`。
+- 如果超過一個以上的 `site_id`，終止任務，列出 `site_id` 讓用戶選擇。
+- 禁止使用 `SlimWeb.slimweb_sites_list` 結果內不存在的 `site_id`。
 
-### 文章建立 / 修改流程
+### 通用圖片規則
 
-- 先依照頁面相同的主流程處理：先讀設計摘要，再處理圖片，再排 HTML。
-- 如果是建立文章，先用 `slimweb_articles_check_title` 檢查 `title` 是否撞名；如果 `exists` 為 `true`，立刻停止並告知使用者。
-- 如果是修改文章，先用 `slimweb_articles_get_content` 取得目前文章資料；如果找不到資料，立刻停止並告知使用者。
-- 新文章一定要有 16:9 主圖；若使用者沒有提供主圖且也沒有描述主圖怎麼畫，AI 就依文章標題或內容先畫主圖。
-- AI 作圖時，請依照目前色系來畫，讓結果更容易融入現有版型。
-- 如果主圖或內容圖是 AI 產出，而目前是 ChatGPT Remote MCP，先停下來等使用者把圖貼回來，再用 `slimweb_images_import_chatgpt_attachment` 匯入成 `media_path`；如果一開始就沒有附圖，也沒有可直接下載的圖片 URL，一樣先終止任務並請使用者貼圖。
-- 如果是本地可直接上傳 bytes 的 Client，則用 `slimweb_uploads_create` 取得 signed upload URL，再用 `slimweb_uploads_commit` 取得可重用的 `media_path`。
-- 文章 HTML 可以自訂 CSS，但不可使用 JavaScript。
-- 如果是建立文章，使用 `slimweb_articles_create`。
-- 如果是修改文章，使用 `slimweb_articles_update`。
-- 文章建立或更新後，可用 `slimweb_preview_get_page_url` 做預覽驗證。
+- 如果任務需要圖片素材，AI 必須先取得可用的圖片 URL 或 media path，才能建立或修改頁面、文章。
+- 如果圖片已經是公開可存取的 URL，可以直接使用該 URL。
+- 如果 Client 具備本地端檔案操作與上傳能力，使用 `slimweb_uploads_create` 與 `slimweb_uploads_commit` 將圖片上傳至 server，取得可用的 media path / URL。
+- 如果 Client 不具備本地端檔案操作或無法直接上傳圖片，但使用者已在對話中貼上圖片附件，使用 `slimweb_images_import_chatgpt_attachment` 匯入附件並取得圖片 URL 或 media path。
+- 如果 Client 不具備本地端檔案操作或無法直接上傳圖片，且使用者尚未貼上圖片附件或圖片 URL，必須停止任務，請使用者先貼上圖片或提供圖片 URL。
+- 如果圖片由 AI 產生，產生圖片時應參考 `slimweb_design_context_get` 取得的網站色系與設計方向，讓圖片與目前版型一致。
+- 如果圖片由 AI 產生且 Client 不具備本地端檔案操作與上傳能力，必須停止任務，要求用戶將 AI 所繪製的圖片貼回對話框。
+
+### 建立頁面
+
+- 建立頁面前必須有 `title`，沒有就先詢問使用者。
+- 使用 `slimweb_pages_check_title` 檢查標題是否撞名；如果 `exists` 為 `true`，立刻停止並告知使用者。
+- 使用 `slimweb_design_context_get` 取得目前網站版型摘要、色系與框架。
+- 頁面如果有圖片需求，依照通用圖片規則處理。
+- 以網站版型摘要、色系、使用框架為基礎進行設計。
+- HTML 可以自訂 CSS 以及視覺設計所需要的 JavaScript。
+- 使用 `slimweb_pages_create` 建立頁面。
+- 建立完成後回傳頁面 URL，可用 `slimweb_preview_get_page_url` 做預覽驗證。
+
+### 編輯頁面
+
+- 編輯頁面前必須有 `page_name`，沒有就先詢問使用者。
+- 使用 `slimweb_pages_get_content` 取得目前頁面內容。
+- 如果找不到頁面，立刻停止並告知使用者。
+- 如果需要新增或替換圖片，依通用圖片規則處理。
+- 參考目前內容與 `slimweb_design_context_get` 的設計摘要修改 HTML。
+- 使用 `slimweb_pages_update` 回存頁面。
+- 編輯完成後回傳頁面 URL，可用 `slimweb_preview_get_page_url` 做預覽驗證。
+
+### 建立文章
+
+- 建立文章前必須有 `title`，沒有就先詢問使用者。
+- 使用 `slimweb_articles_check_title` 檢查標題是否撞名；如果 `exists` 為 `true`，立刻停止並告知使用者。
+- 使用 `slimweb_design_context_get` 取得目前網站版型摘要、色系與框架。
+- 新文章一定要有 16:9 主圖。
+- 如果使用者沒有提供主圖，也沒有描述主圖怎麼畫，AI 就依文章標題或內容先畫主圖。
+- 如果使用者要求內容圖，也依通用圖片規則處理。
+- 參考 `slimweb_design_context_get` 的設計摘要排版文章 HTML；文章標題由系統欄位顯示，`content_html` 不應重複放同名 `h1`。
+- 使用 `slimweb_articles_create` 建立文章。
+- 建立完成後回傳文章 URL。
+
+### 編輯文章
+
+- 編輯文章前必須有文章識別資訊；使用者可以提供 `article_id` 或文章標題，兩者都沒有就先詢問使用者。
+- 如果使用者提供的是文章標題，先使用 `slimweb_articles_list` 取得文章列表，依標題比對目標文章並取得 `article_id`；如果找不到或有多筆相近結果，立刻停止並請使用者確認。
+- 使用 `slimweb_articles_get_content` 取得目前文章內容。
+- 如果找不到文章，立刻停止並告知使用者。
+- 使用 `slimweb_design_context_get` 取得目前網站版型摘要、色系與框架。
+- 如果需要新增或替換主圖、內容圖，依照通用圖片規則處理。
+- 參考目前文章內容與 `slimweb_design_context_get` 的設計摘要修改 `content_html`。
+- 如果修改文章標題，必須先使用 `slimweb_articles_check_title` 檢查新標題是否撞名；如果 `exists` 為 `true`，立刻停止並告知使用者。
+- `content_html` 不應重複放同名 `h1`，因為 SlimWeb 會另外渲染文章標題。
+- 使用 `slimweb_articles_update` 回存文章。
+- 編輯完成後回傳文章 URL。
+
+### 刪除文章
+
+- 目前 SlimWeb MCP 沒有文章刪除工具。
+- AI 不可以自行發明 `slimweb_articles_delete`，也不可以用其他工具繞過刪除。
+- 如果使用者要求刪除文章，AI 必須停止任務，並告知使用者目前 MCP 不支援文章刪除。
+
+### 建立版型
+
+- 建立版型前必須有 `name`，沒有就先詢問使用者。
+- 使用 `slimweb_themes_list` 檢查是否已有同名或近似自訂版型；如果已有明確同名版型，立刻停止並告知使用者。
+- 如果使用者要求暗色、螢光、neon、高對比等明顯依賴明暗模式的風格，先使用 `slimweb_site_theme_mode_get` 確認目前色系；必要時使用 `slimweb_site_theme_mode_update` 切換 light / dark。
+- 使用 `slimweb_themes_create_from_default` 從 Default 建立新的自訂版型。
+- 使用 `slimweb_theme_shell_get_context` 取得 navbar、footer、分類、登入、購物車等真實 shell reference 資料。
+- 使用 `slimweb_design_context_get` 取得目前網站設計摘要、色系與框架。
+- 依照使用者需求、網站色系、shell reference 與框架設計版型基底，包含 navbar、footer、root CSS、body background、全站視覺氛圍等。
+- 使用 `slimweb_themes_update_root_elements` 寫入新版型的 navbar、footer 與 root CSS；不可用此工具修改單一頁面內容。
+- 使用 `slimweb_theme_style_profile_upsert` 保存此版型的風格摘要，例如色彩、字體、版面、插圖方向、避免事項與使用者需求。
+- 建立完成後回傳版型名稱與 `theme_id`；只有在使用者明確要求啟用時，才使用 `slimweb_themes_activate` 啟用新版型。
+
+### 修改版型
+
+- 修改版型前必須有 `theme_id` 或版型名稱，沒有就先詢問使用者。
+- 使用 `slimweb_themes_list` 找到目標自訂版型；如果找不到或有多個可能目標，立刻停止並請使用者確認。
+- 使用 `slimweb_theme_style_profile_get` 取得目前版型風格摘要與歷史需求。
+- 使用 `slimweb_theme_shell_get_context` 取得 navbar、footer、分類、登入、購物車等真實 shell reference 資料。
+- 使用 `slimweb_design_context_get` 取得目前網站設計摘要、色系與框架。
+- 如果使用者要求暗色、螢光、neon、高對比等明顯依賴明暗模式的風格，先使用 `slimweb_site_theme_mode_get` 確認目前色系；必要時使用 `slimweb_site_theme_mode_update` 切換 light / dark。
+- 依照使用者需求、既有風格摘要、網站色系、shell reference 與框架修改版型基底，包含 navbar、footer、root CSS、body background、全站視覺氛圍等。
+- 使用 `slimweb_themes_update_root_elements` 回存 navbar、footer 與 root CSS；不可用此工具修改單一頁面內容。
+- 使用 `slimweb_theme_style_profile_upsert` 更新版型風格摘要。
+- 使用 `slimweb_theme_style_profile_append_request` 追加本次使用者修改需求與 AI 設計說明。
+- 修改完成後回傳版型名稱與 `theme_id`；只有在使用者明確要求啟用時，才使用 `slimweb_themes_activate` 啟用該版型。
+
+### Email 共用版型編輯
+
+- Email 共用版型只有編輯流程，沒有建立流程；使用者要求建立 email 版型時，應視為編輯站台唯一共用 email 版型。
+- 使用 `slimweb_mail_layout_get` 取得目前共用 email 版型、預設版型 HTML 與可用 placeholders。
+- Email 共用版型是所有 email 內容外層共用的 layout，例如背景、logo、站名、外框、footer、整體容器與全域按鈕樣式。
+- 必須以 `slimweb_mail_layout_get` 回傳的 current layout 或 default layout 為基礎修改，不可憑空重寫整份 HTML。
+- 必須保留 `{content}` placeholder，因為各事件 email 內容會被插入 `{content}`。
+- 必須保留 `{site_name}`、`{site_url}`、`{logo_url}` 等既有 placeholders。
+- Email HTML 應使用 email client 友善寫法：簡單結構、inline style、固定寬度容器、保守 CSS；避免 JavaScript、外部 CSS、複雜互動與一般網頁 layout 技術。
+- 如果共用版型需要圖片，依照通用圖片規則處理，且圖片應使用穩定可公開存取的 URL。
+- 使用 `slimweb_mail_layout_update` 回存完整 HTML，並設定 `is_active`。
+- 編輯完成後告知使用者：此共用 email 版型會套用到所有 email 內容。
+
+### Email 內容編輯
+
+- Email 內容編輯前，必須先確認使用者要修改哪一種 email 內容；如果沒有明確指定，就先詢問使用者。
+- 使用 `slimweb_mail_templates_get` 取得目前所有 email 內容模板。
+- AI 必須從使用者語意判斷目標 email 類型，不可猜測或受歷史紀錄影響。
+- 可編輯項目包含：email 標題、email 內容 HTML、內容內部版型、內容圖片，以及是否啟用。
+- 如果需要新增或替換圖片，依照通用圖片規則處理。
+- 修改內容 HTML 時，只處理該 email 事件的內容本身，不可在這裡修改全站共用 email 外框。
+- Email 內容 HTML 應使用 email client 友善寫法：inline style、簡單表格或區塊、保守 CSS；避免 JavaScript、外部 CSS 與複雜互動。
+- 如果只是修改標題，使用 `slimweb_mail_templates_update` 更新對應 `trigger_event` 的 `subject`。
+- 如果修改內容或內容版型，使用 `slimweb_mail_templates_update` 更新對應 `trigger_event` 的 `content`。
+- 如果使用者要求啟用或停用某封 email，使用 `slimweb_mail_templates_update` 更新對應 `trigger_event` 的 `is_active`。
+- 編輯完成後回傳修改的 email 類型、標題與更新結果。
 
 ## 安全要求
 

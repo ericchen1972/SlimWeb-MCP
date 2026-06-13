@@ -16,19 +16,22 @@ const SERVICE_NAME = 'slimweb-mcp';
 const SERVICE_VERSION = '0.1.0';
 const CHATGPT_MISSING_IMAGE_GUIDANCE = 'In ChatGPT Remote MCP, if a page or article request needs an image but no usable attached image or directly downloadable image URL is available, stop the task and ask the user to paste or re-upload the image before continuing.';
 const MCP_SERVER_GUIDELINES = [
-  'Always list available sites before any other SlimWeb MCP action.',
-  'If exactly one site is available, use it directly.',
-  'If more than one site is available, ask the user which site to operate.',
-  'Always confirm the target site with slimweb_site_select before any site-scoped tool.',
-  'Distinguish page and article from user intent only; do not infer from history.',
-  'Treat themes as the base styling layer for every page, including the homepage.',
-  'Before creating a page, require a title and check it with slimweb_pages_check_title; stop if a title already exists, including fixed-page English aliases.',
-  'Before creating an article, require a title and check it with slimweb_articles_check_title; new articles also require a 16:9 cover image, while optional content images follow the same upload or attachment branch as pages.',
-  'Use slimweb_pages_get_content to inspect a page by page_name before modifying it.',
-  `Page creation flow: use slimweb_design_context_get first, then gather images; if the request needs an image but ChatGPT Remote MCP has no usable attached image or directly downloadable URL, stop the task and ask the user to paste or re-upload the image before continuing; otherwise use slimweb_uploads_create plus slimweb_uploads_commit or slimweb_images_import_chatgpt_attachment for image bytes, then build HTML/CSS without JavaScript, then create the page with slimweb_pages_create.`,
-  `Page update flow: use slimweb_pages_get_content first, then slimweb_design_context_get, then optional image import/upload; if the update needs an image but ChatGPT Remote MCP has no usable attached image or directly downloadable URL, stop the task and ask the user to paste or re-upload the image before continuing; then update the page with slimweb_pages_update.`,
-  `Article creation flow mirrors page creation flow, but cover_image is mandatory and article content may include optional content images; if the needed cover image or content image is missing in ChatGPT Remote MCP, stop the task and ask the user to paste or re-upload the image before continuing; article updates follow the page update flow.`,
-  'For visual verification after page creation or update, use slimweb_preview_get_page_url.'
+'Before calling any SlimWeb MCP tool, first call SlimWeb.slimweb_sites_list to obtain valid site_id values.',
+'If SlimWeb.slimweb_sites_list returns more than one site_id, stop the task and list the available site_id values for the user to choose from.',
+'Never use a site_id that does not appear in the SlimWeb.slimweb_sites_list result.',
+'Distinguish page and article from user intent only; do not infer from history.',
+'Treat themes as the base styling layer for every page, including the homepage.',
+'Image rules: if a task needs image assets, obtain usable image URLs or media paths before creating or editing pages or articles. Publicly reachable image URLs may be used directly. Clients that can read local bytes and upload must use slimweb_uploads_create plus slimweb_uploads_commit. Clients that cannot upload bytes but have a ChatGPT conversation image attachment must use slimweb_images_import_chatgpt_attachment. If the client cannot upload and the user has not provided an attachment or image URL, stop and ask the user to paste or upload the image. When generating images, use the current design context colors and direction. If an image is AI-generated in a client that cannot upload it, stop and ask the user to paste the generated image back into the conversation.',
+'Page create flow: require a title, call slimweb_pages_check_title, stop on duplicate titles including fixed-page English aliases, call slimweb_design_context_get, follow the image rules for any page images, design from the site summary, colors, and framework, build HTML with custom CSS and visual JavaScript when needed, call slimweb_pages_create, and return the page URL; use slimweb_preview_get_page_url for preview verification.',
+'Page edit flow: require page_name, call slimweb_pages_get_content, stop if the custom page does not exist, follow the image rules for added or replacement images, call slimweb_design_context_get, modify HTML from the current content and design context, call slimweb_pages_update, and return the page URL; use slimweb_preview_get_page_url for preview verification.',
+'Article create flow: require a title, call slimweb_articles_check_title, stop on duplicate titles, call slimweb_design_context_get, require a 16:9 cover image and follow the image rules, generate the cover from article title or content if the user gave no image direction, follow the image rules for optional content images, do not repeat the article title as an h1 in content_html, call slimweb_articles_create, and return the article URL.',
+'Article edit flow: require article_id or an article title; if the user provides a title, call slimweb_articles_list and match the target title to an article_id, stopping if none or multiple similar matches are found. Call slimweb_articles_get_content, stop if the article does not exist, call slimweb_design_context_get, follow the image rules for added or replacement cover/content images, modify content_html from the current article and design context, call slimweb_articles_check_title before changing the title and stop on duplicates, do not repeat the article title as an h1, call slimweb_articles_update, and return the article URL.',
+'Article delete flow: no SlimWeb MCP article deletion tool is currently available; do not invent a tool or delete through another tool, and tell the user article deletion is not supported by the current MCP.',
+'Theme create flow: require a name, call slimweb_themes_list to check custom theme duplicates, stop on an exact duplicate, call slimweb_site_theme_mode_get and optionally slimweb_site_theme_mode_update for dark/neon/high-contrast requests, call slimweb_themes_create_from_default, call slimweb_theme_shell_get_context, call slimweb_design_context_get, design navbar/footer/root CSS/body background/overall visual atmosphere from user intent, site colors, shell reference, and framework, call slimweb_themes_update_root_elements without changing page body content, call slimweb_theme_style_profile_upsert, return the theme name and theme_id, and only call slimweb_themes_activate when the user explicitly asks to activate it.',
+'Theme edit flow: require theme_id or a theme name, call slimweb_themes_list to find the target custom theme and stop if none or multiple possible targets are found, call slimweb_theme_style_profile_get, call slimweb_theme_shell_get_context, call slimweb_design_context_get, call slimweb_site_theme_mode_get and optionally slimweb_site_theme_mode_update for dark/neon/high-contrast requests, modify navbar/footer/root CSS/body background/overall visual atmosphere from user intent, existing style profile, site colors, shell reference, and framework, call slimweb_themes_update_root_elements without changing page body content, call slimweb_theme_style_profile_upsert, call slimweb_theme_style_profile_append_request, return the theme name and theme_id, and only call slimweb_themes_activate when the user explicitly asks to activate it.',
+'Shared email layout edit flow: there is no create flow for the shared email layout. Call slimweb_mail_layout_get first, modify the returned current/default HTML rather than rewriting from scratch, preserve {content}, and always preserve existing placeholders such as {site_name}, {site_url}, and {logo_url}. Use email-client-safe HTML only, follow image rules for public image URLs if needed, call slimweb_mail_layout_update, and tell the user the shared layout applies to every event email.',
+'Event email content edit flow: call slimweb_mail_templates_get first and identify the exact trigger_event from user intent. Use slimweb_mail_templates_update to edit the event subject, content HTML, internal content layout, content images, or enabled state. Do not use event email content tools to change the shared email layout wrapper.',
+'For visual verification after page creation or update, use slimweb_preview_get_page_url.'
 ].join(' ');
 const MEMBER_EMAIL_PREVIEW_WIDGET_URI = 'ui://slimweb/member-email-preview.html';
 const MEMBER_EMAIL_PREVIEW_WIDGET_HTML = `<!doctype html>
@@ -235,7 +238,7 @@ const MCP_TOOLS = [
   },
   {
     name: 'slimweb_themes_list',
-    description: 'List page style schemes/themes for a SlimWeb site, including Default and the currently active theme. Color mode is site-level; call slimweb_site_theme_mode_get/update for light or dark.',
+    description: 'List custom page style schemes/themes for a SlimWeb site. Default is intentionally omitted from this public list. Color mode is site-level; call slimweb_site_theme_mode_get/update for light or dark.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -669,7 +672,7 @@ const MCP_TOOLS = [
   },
   {
     name: 'slimweb_mail_layout_update',
-    description: 'Update the single shared SlimWeb email layout wrapper. The layout should include {content}; otherwise SlimWeb appends content after the layout.',
+    description: 'Update the single shared SlimWeb email layout wrapper. Before calling this tool, always call slimweb_mail_layout_get for the same site_id and modify the returned current/default html so existing logo, site text, footer, placeholders, and content structure are preserved. The html must preserve {content}, {site_name}, {site_url}, and {logo_url}.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1826,7 +1829,7 @@ const MCP_TOOLS = [
   },
   {
     name: 'slimweb_pages_get_content',
-    description: 'Read a page by page_name and return its content plus metadata. Use this before editing a page or when the AI needs the current page state.',
+    description: 'Read a custom page by page_name and return its content plus metadata. Fixed template pages are not searched. Use this before editing a custom page or when the AI needs the current custom page state.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1867,7 +1870,7 @@ const MCP_TOOLS = [
   },
   {
     name: 'slimweb_pages_update',
-    description: `Update an existing custom page by page_name. Use slimweb_pages_get_content first to fetch the current page state; fixed pages are read-only and must not be modified. Use uploaded media_path URLs for reusable images; do not embed base64 images. Custom CSS is allowed in page HTML, but JavaScript is forbidden. ${CHATGPT_MISSING_IMAGE_GUIDANCE}`,
+    description: `Update an existing custom page by page_name. Use slimweb_pages_get_content first to fetch the current custom page state. Use uploaded media_path URLs for reusable images; do not embed base64 images. Custom CSS is allowed in page HTML, but JavaScript is forbidden. ${CHATGPT_MISSING_IMAGE_GUIDANCE}`,
     inputSchema: {
       type: 'object',
       properties: {

@@ -2612,6 +2612,22 @@ test('repository creates and reads Webless custom page content files', async () 
   assert.equal(read.content.html, '<section><h1>日本旅遊三城小旅行</h1><p>京都、北海道、大阪</p></section>\n');
 });
 
+test('repository getPageContent only searches custom pages', async () => {
+  const storageRoot = await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-'));
+  const repository = new WeblessAccountRepository(fakePool(), {
+    storageRoot,
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+
+  await assert.rejects(
+    () => repository.getPageContent(11, {
+      site_id: 101,
+      page_name: 'index'
+    }),
+    /Page not found or not accessible: index/
+  );
+});
+
 test('repository creates custom pages at the site level regardless of theme_id', async () => {
   const storageRoot = await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-'));
   const repository = new WeblessAccountRepository(fakePool(), {
@@ -3180,6 +3196,19 @@ test('repository creates a theme by copying only default shell files', async () 
   );
   assert.equal(pool.queries.some((query) => query.sql === 'BEGIN'), true);
   assert.equal(pool.queries.some((query) => query.sql === 'COMMIT'), true);
+});
+
+test('repository public theme list excludes Default', async () => {
+  const repository = new WeblessAccountRepository(themeMutationPool(), {
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+
+  const result = await repository.listThemesForAccountSite(11, {
+    site_id: 101
+  });
+
+  assert.deepEqual(result.themes.map((theme) => theme.name), ['可愛版型']);
+  assert.equal(result.themes.some((theme) => theme.is_default), false);
 });
 
 test('repository updates site-level theme mode', async () => {
