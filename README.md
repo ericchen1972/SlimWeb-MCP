@@ -452,13 +452,13 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 
 - 狀態: Available
 - 權限: content write
-- Scope: active site and non-Default theme
-- 用途: 更新新版型的 root elements，例如 navbar、footer，以及 root-level CSS。Default 版型不可用此 tool 修改 root elements。`css` 不是局部 patch，會替換 `assets/root-elements/css/00-mcp-theme.css`，所以只改 navbar 時也必須帶上要保留的 footer、body background 等 MCP-managed root CSS。
+- Scope: active site and theme
+- 用途: 更新版型的 root elements，例如 navbar、footer，以及 root-level CSS。`css` 不是局部 patch，會替換 `assets/root-elements/css/00-mcp-theme.css`，所以只改 navbar 時也必須帶上要保留的 footer、body background 等 MCP-managed root CSS。
 - Input: `site_id`、`theme_id`、optional `fragments.navbar`、`fragments.footer`、optional `css`
 - Output: write summary、theme summary、updated fragments、CSS updated flag、preview URL
 - Side effects: writes root element Blade fragments and replaces `assets/root-elements/css/00-mcp-theme.css`
 - 是否需要 confirmation: yes for customer-facing active theme
-- 錯誤情境: theme not found、attempting to modify Default、unsafe HTML、storage adapter not configured
+- 錯誤情境: theme not found、unsafe HTML、storage adapter not configured
 - Audit fields: request ID、user ID、account ID、site ID、theme ID、updated fragments
 
 ### `slimweb_theme_style_profile_get`

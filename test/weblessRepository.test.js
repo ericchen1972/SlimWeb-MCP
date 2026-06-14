@@ -3464,6 +3464,30 @@ test('repository updates root element fragments and css for a custom theme', asy
     await readFile(path.join(storageRoot, 'sites/101/templates/schemes/22/assets/root-elements/css/00-mcp-theme.css'), 'utf8'),
     '.cute-nav{background:#fff7d6}\n'
   );
+
+  const defaultResult = await repository.updateThemeRootElements(11, {
+    site_id: 101,
+    theme_id: 7,
+    fragments: {
+      navbar: '<nav class="default-nav">Default nav</nav>',
+      footer: '<footer class="default-footer">Default footer</footer>'
+    },
+    css: '.default-nav{background:#fff0f5}'
+  });
+  assert.equal(defaultResult.ok, true);
+  assert.deepEqual(defaultResult.updated_fragments, ['navbar', 'footer']);
+  assert.equal(
+    await readFile(path.join(storageRoot, 'sites/101/templates/default/root-elements/navbar.blade.php'), 'utf8'),
+    '<nav class="default-nav">Default nav</nav>\n'
+  );
+  assert.equal(
+    await readFile(path.join(storageRoot, 'sites/101/templates/default/root-elements/footer.blade.php'), 'utf8'),
+    '<footer class="default-footer">Default footer</footer>\n'
+  );
+  assert.equal(
+    await readFile(path.join(storageRoot, 'sites/101/templates/default/assets/root-elements/css/00-mcp-theme.css'), 'utf8'),
+    '.default-nav{background:#fff0f5}\n'
+  );
 });
 
 function orderOperationsPool() {

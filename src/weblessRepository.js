@@ -643,10 +643,6 @@ export class WeblessAccountRepository {
     const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
     const theme = await this.resolveThemeForSite(site.id, args.theme_id);
 
-    if (theme.is_default) {
-      throw codedError('VALIDATION_FAILED', 'Default theme root elements cannot be modified through this tool. Create a non-Default theme first.');
-    }
-
     const fragments = normalizeRootFragments(args.fragments);
     const updatedFragments = [];
 

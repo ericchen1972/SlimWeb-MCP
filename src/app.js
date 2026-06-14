@@ -414,7 +414,7 @@ const MCP_TOOLS = [
   },
   {
     name: 'slimweb_themes_update_root_elements',
-    description: 'Update root-level theme fragments such as navbar, footer, and theme-level CSS for a non-Default theme. Do not use this to overwrite page body content. The css field replaces the MCP-managed root-elements CSS file, so include every MCP-managed root style that should remain, including footer/background rules.',
+    description: 'Update root-level theme fragments such as navbar, footer, and theme-level CSS for a theme. Do not use this to overwrite page body content. The css field replaces the MCP-managed root-elements CSS file, so include every MCP-managed root style that should remain, including footer/background rules.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -424,7 +424,7 @@ const MCP_TOOLS = [
         },
         theme_id: {
           type: ['integer', 'string'],
-          description: 'Target non-Default theme ID.'
+          description: 'Target theme ID.'
         },
         fragments: {
           type: 'object',
