@@ -189,8 +189,8 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 | `slimweb_themes_create_from_default` | Available | content write | 建立新版型，並只複製 Default shell/root-element template；新版型作為每一頁的基底樣式，包含首頁。 |
 | `slimweb_themes_activate` | Available | content write | 將指定版型設為前台啟用版型；會影響實際前台呈現。 |
 | `slimweb_themes_delete` | Available | content write | 刪除非 Default 版型與其 template 內容；Default 不能刪除。 |
-| `slimweb_theme_shell_get_context` | Available | content read | 回傳設計用 reference-only JSON，包含 nav、分類、購物車/登入按鈕與 footer 聯絡資訊。 |
-| `slimweb_themes_update_root_elements` | Available | content write | 更新非 Default 版型的 navbar、footer 與 root CSS。 |
+| `slimweb_theme_shell_get_context` | Available | content read | 回傳設計用 reference-only JSON，包含 nav、分類、購物車/登入按鈕、footer 聯絡資訊與目前 MCP-managed root CSS。 |
+| `slimweb_themes_update_root_elements` | Available | content write | 更新非 Default 版型的 navbar、footer 與 root CSS；`css` 會替換 MCP-managed root CSS 檔，需包含要保留的 footer/background 規則。 |
 | `slimweb_theme_style_profile_get` | Available | content read | 讀取版型風格摘要與需求歷史。 |
 | `slimweb_theme_style_profile_upsert` | Available | content write | 建立或更新版型風格摘要、色彩、字體、版面、插圖與避免事項。 |
 | `slimweb_theme_style_profile_append_request` | Available | content write | 追加一筆使用者風格需求或變更紀錄。 |
@@ -261,6 +261,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 | `slimweb_articles_get_content` | Available | content read | 讀取單一文章內容與中繼資訊。 |
 | `slimweb_articles_create` | Available | content write + asset write | 新增文章，建立時必須有 16:9 主圖，也可附加內容圖；若 ChatGPT Remote MCP 沒有可用附圖或可直接下載的圖片 URL，先停止並請使用者貼圖。 |
 | `slimweb_articles_update` | Available | content write + asset write | 修改既有文章，固定流程與頁面修改相同；若 ChatGPT Remote MCP 沒有可用附圖或可直接下載的圖片 URL，先停止並請使用者貼圖。 |
+| `slimweb_content_seo_update` | Available | content write | 更新單一頁面或文章的內容層級 SEO / AEO / GEO；不能單獨執行，只能接在建立/編輯頁面或文章流程後。 |
 | `slimweb_customer_service_logs_list` | Available | customer service read | 查詢 AI 客服紀錄。 |
 | `slimweb_customer_service_settings_get` | Available | customer service read | 讀取 AI 客服設定摘要。 |
 | `slimweb_customer_service_settings_update` | Available | customer service write | 更新 AI 客服設定。 |
@@ -452,10 +453,10 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 狀態: Available
 - 權限: content write
 - Scope: active site and non-Default theme
-- 用途: 更新新版型的 root elements，例如 navbar、footer，以及 root-level CSS。Default 版型不可用此 tool 修改 root elements。
+- 用途: 更新新版型的 root elements，例如 navbar、footer，以及 root-level CSS。Default 版型不可用此 tool 修改 root elements。`css` 不是局部 patch，會替換 `assets/root-elements/css/00-mcp-theme.css`，所以只改 navbar 時也必須帶上要保留的 footer、body background 等 MCP-managed root CSS。
 - Input: `site_id`、`theme_id`、optional `fragments.navbar`、`fragments.footer`、optional `css`
 - Output: write summary、theme summary、updated fragments、CSS updated flag、preview URL
-- Side effects: writes root element Blade fragments and `assets/root-elements/css/00-mcp-theme.css`
+- Side effects: writes root element Blade fragments and replaces `assets/root-elements/css/00-mcp-theme.css`
 - 是否需要 confirmation: yes for customer-facing active theme
 - 錯誤情境: theme not found、attempting to modify Default、unsafe HTML、storage adapter not configured
 - Audit fields: request ID、user ID、account ID、site ID、theme ID、updated fragments
@@ -1263,6 +1264,19 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 錯誤情境: validation failed、article not found、permission denied、conflict
 - Audit fields: request ID、user ID、account ID、site ID、article ID、changed fields
 
+### `slimweb_content_seo_update`
+
+- 狀態: Available
+- 權限: content write
+- Scope: active site
+- 用途: 更新單一自訂頁面或單一文章的內容層級 SEO / AEO / GEO metadata。此工具不能單獨執行，必須接在 `slimweb_pages_create`、`slimweb_pages_update`、`slimweb_articles_create` 或 `slimweb_articles_update` 之後。
+- Input: `site_id`、`content_type` (`page` or `article`)、`workflow_context` (`page_create`、`page_update`、`article_create`、`article_update`)、page target (`page_name` or `page_key`) or `article_id`，以及 optional SEO / AEO / GEO fields
+- Output: updated content target、SEO / AEO / GEO metadata、metadata path
+- Side effects: updates custom page `.page.json` SEO metadata or MCP-managed article SEO metadata JSON
+- 是否需要 confirmation: no when it is part of a confirmed create/edit content workflow
+- 錯誤情境: missing workflow_context、workflow/content type mismatch、page not found、article not found、validation failed、permission denied
+- Rule: 不可用 `slimweb_content_seo_update` 處理全站 SEO；全站 SEO 必須使用 `slimweb_seo_settings_update`。
+
 ### `slimweb_customer_service_logs_list`
 
 - 狀態: Available
@@ -1428,6 +1442,7 @@ AI Client 收到或引用的圖片預設是 reference-only。只有當 tool call
 - 色系與版型分離：`sites.theme_mode` 是唯一 light/dark 來源。AI 不應在一般版型或頁面任務中硬寫文字顏色、按鈕底色等全域 theme CSS；除非使用者明確指定。若使用者要求 neon、螢光、暗色高對比等風格，先確認或切換為 `dark`。
 - 建立或修改版型、頁面視覺、插圖或其他畫圖任務前，AI 必須先讀 `slimweb_design_context_get`；若需要真實 nav/footer/分類資料形狀，再補讀 `slimweb_theme_shell_get_context` 與 `slimweb_theme_style_profile_get`。
 - `slimweb_theme_shell_get_context` 回傳的是 reference-only JSON。AI 可以用它決定 spacing、icon、容器容量與 responsive 行為，但不可把 nav/footer/contact 等真實資料寫死到版型片段。
+- `slimweb_theme_shell_get_context.root_css.current_css` 是目前 MCP-managed root CSS；修改版型 CSS 時先讀這份 CSS，改完後把完整 CSS 傳給 `slimweb_themes_update_root_elements.css` 存回。
 - 在 ChatGPT Remote MCP 中，如果頁面或文章需求需要圖片，但使用者沒有附圖，也沒有可直接下載的圖片 URL，AI 必須先終止任務並請使用者貼上或重新上傳圖片，再繼續後面的建立或修改流程。
 
 ### 必要執行的通用規則
@@ -1446,6 +1461,17 @@ AI Client 收到或引用的圖片預設是 reference-only。只有當 tool call
 - 如果圖片由 AI 產生，產生圖片時應參考 `slimweb_design_context_get` 取得的網站色系與設計方向，讓圖片與目前版型一致。
 - 如果圖片由 AI 產生且 Client 不具備本地端檔案操作與上傳能力，必須停止任務，要求用戶將 AI 所繪製的圖片貼回對話框。
 
+### 內容 SEO / AEO / GEO 規則
+
+- 建立或編輯頁面、文章後，AI 應預設產生內容層級 SEO / AEO / GEO metadata。
+- 即使使用者沒有明確要求 SEO，也應依照頁面或文章的主題、標題、內容與圖片自動產生。
+- 只有在使用者明確表示「不用 SEO」、「不要改 SEO」、「只改內容」時，才跳過此步驟。
+- 使用 `slimweb_content_seo_update` 更新單一頁面或單一文章的內容層級 SEO / AEO / GEO。
+- `slimweb_content_seo_update` 不能單獨執行，必須搭配建立/編輯頁面，或建立/編輯文章流程。
+- 頁面建立後使用 `workflow_context: page_create`；頁面編輯後使用 `workflow_context: page_update`。
+- 文章建立後使用 `workflow_context: article_create`；文章編輯後使用 `workflow_context: article_update`。
+- 不可使用 `slimweb_seo_settings_update` 來處理單一頁面或單一文章的 SEO，因為那是全站設定。
+
 ### 建立頁面
 
 - 建立頁面前必須有 `title`，沒有就先詢問使用者。
@@ -1455,6 +1481,7 @@ AI Client 收到或引用的圖片預設是 reference-only。只有當 tool call
 - 以網站版型摘要、色系、使用框架為基礎進行設計。
 - HTML 可以自訂 CSS 以及視覺設計所需要的 JavaScript。
 - 使用 `slimweb_pages_create` 建立頁面。
+- 除非使用者明確表示不用 SEO，建立後使用 `slimweb_content_seo_update` 搭配 `workflow_context: page_create` 更新內容層級 SEO / AEO / GEO。
 - 建立完成後回傳頁面 URL，可用 `slimweb_preview_get_page_url` 做預覽驗證。
 
 ### 編輯頁面
@@ -1465,6 +1492,7 @@ AI Client 收到或引用的圖片預設是 reference-only。只有當 tool call
 - 如果需要新增或替換圖片，依通用圖片規則處理。
 - 參考目前內容與 `slimweb_design_context_get` 的設計摘要修改 HTML。
 - 使用 `slimweb_pages_update` 回存頁面。
+- 除非使用者明確表示不用 SEO，編輯後使用 `slimweb_content_seo_update` 搭配 `workflow_context: page_update` 更新內容層級 SEO / AEO / GEO。
 - 編輯完成後回傳頁面 URL，可用 `slimweb_preview_get_page_url` 做預覽驗證。
 
 ### 建立文章
@@ -1477,6 +1505,7 @@ AI Client 收到或引用的圖片預設是 reference-only。只有當 tool call
 - 如果使用者要求內容圖，也依通用圖片規則處理。
 - 參考 `slimweb_design_context_get` 的設計摘要排版文章 HTML；文章標題由系統欄位顯示，`content_html` 不應重複放同名 `h1`。
 - 使用 `slimweb_articles_create` 建立文章。
+- 除非使用者明確表示不用 SEO，建立後使用 `slimweb_content_seo_update` 搭配 `workflow_context: article_create` 更新內容層級 SEO / AEO / GEO。
 - 建立完成後回傳文章 URL。
 
 ### 編輯文章
@@ -1491,6 +1520,7 @@ AI Client 收到或引用的圖片預設是 reference-only。只有當 tool call
 - 如果修改文章標題，必須先使用 `slimweb_articles_check_title` 檢查新標題是否撞名；如果 `exists` 為 `true`，立刻停止並告知使用者。
 - `content_html` 不應重複放同名 `h1`，因為 SlimWeb 會另外渲染文章標題。
 - 使用 `slimweb_articles_update` 回存文章。
+- 除非使用者明確表示不用 SEO，編輯後使用 `slimweb_content_seo_update` 搭配 `workflow_context: article_update` 更新內容層級 SEO / AEO / GEO。
 - 編輯完成後回傳文章 URL。
 
 ### 刪除文章
@@ -1505,10 +1535,11 @@ AI Client 收到或引用的圖片預設是 reference-only。只有當 tool call
 - 使用 `slimweb_themes_list` 檢查是否已有同名或近似自訂版型；如果已有明確同名版型，立刻停止並告知使用者。
 - 如果使用者要求暗色、螢光、neon、高對比等明顯依賴明暗模式的風格，先使用 `slimweb_site_theme_mode_get` 確認目前色系；必要時使用 `slimweb_site_theme_mode_update` 切換 light / dark。
 - 使用 `slimweb_themes_create_from_default` 從 Default 建立新的自訂版型。
-- 使用 `slimweb_theme_shell_get_context` 取得 navbar、footer、分類、登入、購物車等真實 shell reference 資料。
+- 使用 `slimweb_theme_shell_get_context` 取得 navbar、footer、分類、登入、購物車等真實 shell reference 資料，以及目前 MCP-managed root CSS。
 - 使用 `slimweb_design_context_get` 取得目前網站設計摘要、色系與框架。
 - 依照使用者需求、網站色系、shell reference 與框架設計版型基底，包含 navbar、footer、root CSS、body background、全站視覺氛圍等。
-- 使用 `slimweb_themes_update_root_elements` 寫入新版型的 navbar、footer 與 root CSS；不可用此工具修改單一頁面內容。
+- 修改 `slimweb_theme_shell_get_context.root_css.current_css` 後，使用 `slimweb_themes_update_root_elements` 寫入新版型的 navbar、footer 與完整 root CSS；不可用此工具修改單一頁面內容。
+- `slimweb_themes_update_root_elements.css` 會替換 MCP-managed root CSS 檔，不是 patch 單一 selector；回存時要包含所有需要保留的 navbar、footer、body background 等 root CSS。
 - 使用 `slimweb_theme_style_profile_upsert` 保存此版型的風格摘要，例如色彩、字體、版面、插圖方向、避免事項與使用者需求。
 - 建立完成後回傳版型名稱與 `theme_id`；只有在使用者明確要求啟用時，才使用 `slimweb_themes_activate` 啟用新版型。
 
@@ -1517,11 +1548,12 @@ AI Client 收到或引用的圖片預設是 reference-only。只有當 tool call
 - 修改版型前必須有 `theme_id` 或版型名稱，沒有就先詢問使用者。
 - 使用 `slimweb_themes_list` 找到目標自訂版型；如果找不到或有多個可能目標，立刻停止並請使用者確認。
 - 使用 `slimweb_theme_style_profile_get` 取得目前版型風格摘要與歷史需求。
-- 使用 `slimweb_theme_shell_get_context` 取得 navbar、footer、分類、登入、購物車等真實 shell reference 資料。
+- 使用 `slimweb_theme_shell_get_context` 取得 navbar、footer、分類、登入、購物車等真實 shell reference 資料，以及目前 MCP-managed root CSS。
 - 使用 `slimweb_design_context_get` 取得目前網站設計摘要、色系與框架。
 - 如果使用者要求暗色、螢光、neon、高對比等明顯依賴明暗模式的風格，先使用 `slimweb_site_theme_mode_get` 確認目前色系；必要時使用 `slimweb_site_theme_mode_update` 切換 light / dark。
 - 依照使用者需求、既有風格摘要、網站色系、shell reference 與框架修改版型基底，包含 navbar、footer、root CSS、body background、全站視覺氛圍等。
-- 使用 `slimweb_themes_update_root_elements` 回存 navbar、footer 與 root CSS；不可用此工具修改單一頁面內容。
+- 修改 `slimweb_theme_shell_get_context.root_css.current_css` 後，使用 `slimweb_themes_update_root_elements` 回存 navbar、footer 與完整 root CSS；不可用此工具修改單一頁面內容。
+- `slimweb_themes_update_root_elements.css` 會替換 MCP-managed root CSS 檔，不是 patch 單一 selector；修改局部視覺時要一併保留既有 navbar、footer、body background 等 root CSS。
 - 使用 `slimweb_theme_style_profile_upsert` 更新版型風格摘要。
 - 使用 `slimweb_theme_style_profile_append_request` 追加本次使用者修改需求與 AI 設計說明。
 - 修改完成後回傳版型名稱與 `theme_id`；只有在使用者明確要求啟用時，才使用 `slimweb_themes_activate` 啟用該版型。

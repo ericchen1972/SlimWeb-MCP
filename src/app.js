@@ -22,10 +22,11 @@ const MCP_SERVER_GUIDELINES = [
 'Distinguish page and article from user intent only; do not infer from history.',
 'Treat themes as the base styling layer for every page, including the homepage.',
 'Image rules: if a task needs image assets, obtain usable image URLs or media paths before creating or editing pages or articles. Publicly reachable image URLs may be used directly. Clients that can read local bytes and upload must use slimweb_uploads_create plus slimweb_uploads_commit. Clients that cannot upload bytes but have a ChatGPT conversation image attachment must use slimweb_images_import_chatgpt_attachment. If the client cannot upload and the user has not provided an attachment or image URL, stop and ask the user to paste or upload the image. When generating images, use the current design context colors and direction. If an image is AI-generated in a client that cannot upload it, stop and ask the user to paste the generated image back into the conversation.',
-'Page create flow: require a title, call slimweb_pages_check_title, stop on duplicate titles including fixed-page English aliases, call slimweb_design_context_get, follow the image rules for any page images, design from the site summary, colors, and framework, build HTML with custom CSS and visual JavaScript when needed, call slimweb_pages_create, and return the page URL; use slimweb_preview_get_page_url for preview verification.',
-'Page edit flow: require page_name, call slimweb_pages_get_content, stop if the custom page does not exist, follow the image rules for added or replacement images, call slimweb_design_context_get, modify HTML from the current content and design context, call slimweb_pages_update, and return the page URL; use slimweb_preview_get_page_url for preview verification.',
-'Article create flow: require a title, call slimweb_articles_check_title, stop on duplicate titles, call slimweb_design_context_get, require a 16:9 cover image and follow the image rules, generate the cover from article title or content if the user gave no image direction, follow the image rules for optional content images, do not repeat the article title as an h1 in content_html, call slimweb_articles_create, and return the article URL.',
-'Article edit flow: require article_id or an article title; if the user provides a title, call slimweb_articles_list and match the target title to an article_id, stopping if none or multiple similar matches are found. Call slimweb_articles_get_content, stop if the article does not exist, call slimweb_design_context_get, follow the image rules for added or replacement cover/content images, modify content_html from the current article and design context, call slimweb_articles_check_title before changing the title and stop on duplicates, do not repeat the article title as an h1, call slimweb_articles_update, and return the article URL.',
+'Content SEO/AEO/GEO rule: after creating or editing a page or article, generate content-level SEO/AEO/GEO metadata from the actual title, body, topic, and images, then call slimweb_content_seo_update with workflow_context page_create, page_update, article_create, or article_update. Skip this only when the user explicitly says not to update SEO. Never use slimweb_content_seo_update as a standalone tool, and never use slimweb_seo_settings_update for single-page or single-article SEO.',
+'Page create flow: require a title, call slimweb_pages_check_title, stop on duplicate titles including fixed-page English aliases, call slimweb_design_context_get, follow the image rules for any page images, design from the site summary, colors, and framework, build HTML with custom CSS and visual JavaScript when needed, call slimweb_pages_create, call slimweb_content_seo_update with workflow_context page_create unless the user explicitly opted out of SEO, and return the page URL; use slimweb_preview_get_page_url for preview verification.',
+'Page edit flow: require page_name, call slimweb_pages_get_content, stop if the custom page does not exist, follow the image rules for added or replacement images, call slimweb_design_context_get, modify HTML from the current content and design context, call slimweb_pages_update, call slimweb_content_seo_update with workflow_context page_update unless the user explicitly opted out of SEO, and return the page URL; use slimweb_preview_get_page_url for preview verification.',
+'Article create flow: require a title, call slimweb_articles_check_title, stop on duplicate titles, call slimweb_design_context_get, require a 16:9 cover image and follow the image rules, generate the cover from article title or content if the user gave no image direction, follow the image rules for optional content images, do not repeat the article title as an h1 in content_html, call slimweb_articles_create, call slimweb_content_seo_update with workflow_context article_create unless the user explicitly opted out of SEO, and return the article URL.',
+'Article edit flow: require article_id or an article title; if the user provides a title, call slimweb_articles_list and match the target title to an article_id, stopping if none or multiple similar matches are found. Call slimweb_articles_get_content, stop if the article does not exist, call slimweb_design_context_get, follow the image rules for added or replacement cover/content images, modify content_html from the current article and design context, call slimweb_articles_check_title before changing the title and stop on duplicates, do not repeat the article title as an h1, call slimweb_articles_update, call slimweb_content_seo_update with workflow_context article_update unless the user explicitly opted out of SEO, and return the article URL.',
 'Article delete flow: no SlimWeb MCP article deletion tool is currently available; do not invent a tool or delete through another tool, and tell the user article deletion is not supported by the current MCP.',
 'Theme create flow: require a name, call slimweb_themes_list to check custom theme duplicates, stop on an exact duplicate, call slimweb_site_theme_mode_get and optionally slimweb_site_theme_mode_update for dark/neon/high-contrast requests, call slimweb_themes_create_from_default, call slimweb_theme_shell_get_context, call slimweb_design_context_get, design navbar/footer/root CSS/body background/overall visual atmosphere from user intent, site colors, shell reference, and framework, call slimweb_themes_update_root_elements without changing page body content, call slimweb_theme_style_profile_upsert, return the theme name and theme_id, and only call slimweb_themes_activate when the user explicitly asks to activate it.',
 'Theme edit flow: require theme_id or a theme name, call slimweb_themes_list to find the target custom theme and stop if none or multiple possible targets are found, call slimweb_theme_style_profile_get, call slimweb_theme_shell_get_context, call slimweb_design_context_get, call slimweb_site_theme_mode_get and optionally slimweb_site_theme_mode_update for dark/neon/high-contrast requests, modify navbar/footer/root CSS/body background/overall visual atmosphere from user intent, existing style profile, site colors, shell reference, and framework, call slimweb_themes_update_root_elements without changing page body content, call slimweb_theme_style_profile_upsert, call slimweb_theme_style_profile_append_request, return the theme name and theme_id, and only call slimweb_themes_activate when the user explicitly asks to activate it.',
@@ -189,6 +190,54 @@ const IMPORTABLE_IMAGE_SOURCE_SCHEMA = {
   ],
   additionalProperties: false
 };
+const CONTENT_SEO_INPUT_PROPERTIES = {
+  site_id: { type: 'integer' },
+  content_type: {
+    type: 'string',
+    enum: ['page', 'article'],
+    description: 'Target content type. Use page after slimweb_pages_create/slimweb_pages_update, or article after slimweb_articles_create/slimweb_articles_update.'
+  },
+  workflow_context: {
+    type: 'string',
+    enum: ['page_create', 'page_update', 'article_create', 'article_update'],
+    description: 'Required proof that this tool is being called as part of a page/article create or edit workflow. This tool must not be used standalone.'
+  },
+  page_name: {
+    type: 'string',
+    description: 'Required for content_type=page. Page title or page key returned by the page create/update flow.'
+  },
+  page_key: {
+    type: 'string',
+    description: 'Optional page key for content_type=page.'
+  },
+  article_id: {
+    type: 'integer',
+    description: 'Required for content_type=article. Article ID returned or resolved by the article create/update flow.'
+  },
+  seo_title: { type: 'string' },
+  seo_description: { type: 'string' },
+  seo_keywords: { type: 'string' },
+  canonical_url: { type: 'string' },
+  robots_policy: {
+    type: 'string',
+    enum: ['index,follow', 'noindex,follow', 'noindex,nofollow']
+  },
+  og_title: { type: 'string' },
+  og_description: { type: 'string' },
+  og_image_url: { type: 'string' },
+  llms_txt: { type: 'string' },
+  aeo_business_summary: { type: 'string' },
+  aeo_target_audience: { type: 'string' },
+  aeo_products_services: { type: 'string' },
+  aeo_customer_questions: { type: 'string' },
+  aeo_answer_style: { type: 'string' },
+  aeo_entity_facts: { type: 'string' },
+  geo_citation_targets: { type: 'string' },
+  geo_verifiable_claims: { type: 'string' },
+  geo_trust_signals: { type: 'string' },
+  geo_same_as_profiles: { type: 'string' },
+  geo_comparison_positioning: { type: 'string' }
+};
 const PRODUCT_IMAGE_ITEM_SCHEMA = {
   anyOf: [
     {
@@ -347,7 +396,7 @@ const MCP_TOOLS = [
   },
   {
     name: 'slimweb_theme_shell_get_context',
-    description: 'Return reference-only JSON describing real storefront shell data such as nav items, category counts, cart/login buttons, and footer contact items. Call before creating or modifying visual theme elements.',
+    description: 'Return reference-only JSON describing real storefront shell data such as nav items, category counts, cart/login buttons, footer contact items, and the current MCP-managed root CSS. Call before creating or modifying visual theme elements; edit the returned root_css.current_css and pass the complete CSS back to slimweb_themes_update_root_elements.css.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -365,7 +414,7 @@ const MCP_TOOLS = [
   },
   {
     name: 'slimweb_themes_update_root_elements',
-    description: 'Update root-level theme fragments such as navbar, footer, and theme-level CSS for a non-Default theme. Do not use this to overwrite page body content.',
+    description: 'Update root-level theme fragments such as navbar, footer, and theme-level CSS for a non-Default theme. Do not use this to overwrite page body content. The css field replaces the MCP-managed root-elements CSS file, so include every MCP-managed root style that should remain, including footer/background rules.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1132,6 +1181,15 @@ const MCP_TOOLS = [
         }
       },
       required: ['site_id', 'article_id']
+    }
+  },
+  {
+    name: 'slimweb_content_seo_update',
+    description: 'Update content-level SEO/AEO/GEO metadata only as part of a page/article create or edit workflow. Do not call this tool as a standalone SEO task; use slimweb_seo_settings_update for site-wide SEO settings. For pages, call after slimweb_pages_create or slimweb_pages_update. For articles, call after slimweb_articles_create or slimweb_articles_update.',
+    inputSchema: {
+      type: 'object',
+      properties: CONTENT_SEO_INPUT_PROPERTIES,
+      required: ['site_id', 'content_type', 'workflow_context']
     }
   },
   {
@@ -2258,6 +2316,7 @@ const TOOL_PERMISSION_RULES = {
   slimweb_articles_get_content: ['article_management', 'article_list'],
   slimweb_articles_create: ['article_management', 'article_list'],
   slimweb_articles_update: ['article_management', 'article_list'],
+  slimweb_content_seo_update: ['page_management', 'page_management_pages', 'article_management', 'article_list'],
   slimweb_categories_list: ['product_management', 'product_management_categories'],
   slimweb_categories_upsert: ['product_management', 'product_management_categories'],
   slimweb_categories_delete: ['product_management', 'product_management_categories'],
@@ -3109,6 +3168,19 @@ async function toolResultForCall(message, request, context) {
     case 'slimweb_articles_update': {
       try {
         const result = await context.accountRepository.updateArticle(
+          await actorForTool(session, name, toolArgs(message), context),
+          toolArgs(message)
+        );
+
+        return mcpResult(message.id ?? null, mcpJsonContent(result));
+      } catch (error) {
+        return toolExceptionToMcpError(message?.id ?? null, error);
+      }
+    }
+
+    case 'slimweb_content_seo_update': {
+      try {
+        const result = await context.accountRepository.updateContentSeo(
           await actorForTool(session, name, toolArgs(message), context),
           toolArgs(message)
         );

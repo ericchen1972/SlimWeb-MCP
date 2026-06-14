@@ -386,6 +386,9 @@ function designContextPool() {
       }
 
       if (sql.includes('contact_email') && sql.includes('from sites')) {
+        assert.doesNotMatch(sql, /\bai_api_key\b/);
+        assert.doesNotMatch(sql, /\bai_model_name\b/);
+
         return {
           rows: [{
             contact_email: 'owner@example.com',
@@ -400,9 +403,7 @@ function designContextPool() {
             contact_mobile: '0975892729',
             contact_tax_id: null,
             contact_copyright: '© SlimWeb',
-            use_ai_customer_service: true,
-            ai_api_key: 'secret',
-            ai_model_name: 'gpt-test'
+            use_ai_customer_service: true
           }]
         };
       }
@@ -2612,6 +2613,57 @@ test('repository creates and reads Webless custom page content files', async () 
   assert.equal(read.content.html, '<section><h1>日本旅遊三城小旅行</h1><p>京都、北海道、大阪</p></section>\n');
 });
 
+test('repository updates content SEO metadata for custom pages after page workflows', async () => {
+  const storageRoot = await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-'));
+  const repository = new WeblessAccountRepository(fakePool(), {
+    storageRoot,
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+
+  await repository.createPage(11, {
+    site_id: 101,
+    title: '京都三日遊',
+    content: {
+      html: '<section><h1>京都三日遊</h1><p>清水寺、嵐山與祇園。</p></section>'
+    }
+  });
+
+  const updated = await repository.updateContentSeo(11, {
+    site_id: 101,
+    content_type: 'page',
+    page_name: '京都三日遊',
+    workflow_context: 'page_create',
+    seo_title: '京都三日遊行程規劃',
+    og_description: '清水寺、嵐山與祇園的三日旅行安排。'
+  });
+  const metadata = JSON.parse(await readFile(path.join(storageRoot, updated.metadata_path), 'utf8'));
+
+  assert.equal(updated.ok, true);
+  assert.equal(updated.content_type, 'page');
+  assert.equal(updated.page.page_key, 'page-101');
+  assert.equal(metadata.name, '京都三日遊');
+  assert.equal(metadata.seo.seo_title, '京都三日遊行程規劃');
+  assert.equal(metadata.seo.og_description, '清水寺、嵐山與祇園的三日旅行安排。');
+  assert.equal(metadata.seo.robots_policy, 'index,follow');
+});
+
+test('repository rejects standalone content SEO updates without workflow context', async () => {
+  const repository = new WeblessAccountRepository(fakePool(), {
+    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+
+  await assert.rejects(
+    () => repository.updateContentSeo(11, {
+      site_id: 101,
+      content_type: 'page',
+      page_name: '京都三日遊',
+      seo_title: '京都三日遊'
+    }),
+    /workflow_context must be page_create, page_update, article_create, or article_update/
+  );
+});
+
 test('repository getPageContent only searches custom pages', async () => {
   const storageRoot = await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-'));
   const repository = new WeblessAccountRepository(fakePool(), {
@@ -3250,10 +3302,15 @@ test('repository activates a selected theme for a site', async () => {
 });
 
 test('repository returns theme shell context for design reference', async () => {
+  const storageRoot = await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-'));
   const repository = new WeblessAccountRepository(designContextPool(), {
-    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+    storageRoot,
     publicSiteBaseUrl: 'https://slimweb.tw'
   });
+  await repository.storage.write(
+    'sites/101/templates/schemes/22/assets/root-elements/css/00-mcp-theme.css',
+    Buffer.from('.navbar{background:pink}\n.footer{background:mistyrose}\n', 'utf8')
+  );
 
   const context = await repository.getThemeShellContext(11, {
     site_id: 101,
@@ -3267,6 +3324,8 @@ test('repository returns theme shell context for design reference', async () => 
   assert.equal(context.product_categories.counts.total_items, 1);
   assert.equal(context.footer.counts.contact_items, 8);
   assert.equal(context.online_support.enabled, true);
+  assert.equal(context.root_css.current_css, '.navbar{background:pink}\n.footer{background:mistyrose}\n');
+  assert.equal(context.root_css.update_field, 'css');
 });
 
 test('repository accepts model-shaped theme id values for theme shell context', async () => {

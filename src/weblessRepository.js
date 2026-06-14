@@ -677,6 +677,7 @@ export class WeblessAccountRepository {
       this.listSiteCategories(site.id),
       this.getSiteDesignDetails(site.id)
     ]);
+    const currentRootCss = await this.getThemeManagedRootCss(theme);
 
     const contactItems = contactItemsFromSiteDetails(siteDetails);
 
@@ -722,8 +723,13 @@ export class WeblessAccountRepository {
         },
         contact_items: contactItems
       },
+      root_css: {
+        current_css: currentRootCss,
+        update_tool: 'slimweb_themes_update_root_elements',
+        update_field: 'css'
+      },
       online_support: {
-        enabled: Boolean(siteDetails.use_ai_customer_service && siteDetails.ai_api_key && siteDetails.ai_model_name)
+        enabled: Boolean(siteDetails.use_ai_customer_service)
       }
     };
   }
@@ -4256,7 +4262,9 @@ export class WeblessAccountRepository {
     const theme = siteLevelHomepageTheme(site);
     const storagePath = pageContentStoragePath(site.id, theme, pageRecord.page_key);
     const metadataPath = customPageMetadataStoragePath(site.id, pageRecord.page_key);
+    const existingMetadata = parseJsonObject(await this.storage.readText(metadataPath));
     const metadata = {
+      ...existingMetadata,
       key: pageRecord.page_key,
       name: nextTitle,
       updated_at: new Date().toISOString()
@@ -4276,6 +4284,69 @@ export class WeblessAccountRepository {
       public_url: this.customPagePublicUrlFor(site, pageRecord.page_key),
       preview_url: this.previewUrlFor(site, pageRecord.page_key, theme.id),
       bytes_written: Buffer.byteLength(html.trim() + '\n')
+    };
+  }
+
+  async updateContentSeo(accountId, args) {
+    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
+    const workflowContext = requireContentSeoWorkflowContext(args.workflow_context);
+    const contentType = requireContentSeoType(args.content_type);
+    validateContentSeoWorkflow(contentType, workflowContext);
+    const seo = normalizeContentSeoPayload(args);
+
+    if (contentType === 'page') {
+      const pageName = requireNonEmptyString(args.page_name ?? args.page_key, 'page_name');
+      const pageRecord = await this.getPageContent(accountId, {
+        site_id: site.id,
+        page_name: pageName
+      });
+      const metadataPath = customPageMetadataStoragePath(site.id, pageRecord.page_key);
+      const metadata = {
+        ...parseJsonObject(await this.storage.readText(metadataPath)),
+        key: pageRecord.page_key,
+        name: pageRecord.title,
+        seo,
+        seo_updated_at: new Date().toISOString()
+      };
+
+      await this.storage.write(metadataPath, Buffer.from(JSON.stringify(metadata, null, 2) + '\n', 'utf8'), 'application/json; charset=utf-8');
+
+      return {
+        ok: true,
+        site,
+        content_type: contentType,
+        workflow_context: workflowContext,
+        page: {
+          page_key: pageRecord.page_key,
+          title: pageRecord.title,
+          public_url: pageRecord.public_url,
+          preview_url: pageRecord.preview_url
+        },
+        seo,
+        metadata_path: metadataPath
+      };
+    }
+
+    const articleId = requireInteger(args.article_id, 'article_id');
+    const article = await this.findArticleForSite(site.id, articleId);
+    const metadataPath = articleSeoMetadataStoragePath(site.id, articleId);
+    const metadata = {
+      article_id: articleId,
+      title: article.title,
+      seo,
+      seo_updated_at: new Date().toISOString()
+    };
+
+    await this.storage.write(metadataPath, Buffer.from(JSON.stringify(metadata, null, 2) + '\n', 'utf8'), 'application/json; charset=utf-8');
+
+    return {
+      ok: true,
+      site,
+      content_type: contentType,
+      workflow_context: workflowContext,
+      article: formatArticle(article, site, this.publicSiteBaseUrl, false),
+      seo,
+      metadata_path: metadataPath
     };
   }
 
@@ -5278,9 +5349,7 @@ export class WeblessAccountRepository {
           contact_mobile,
           contact_tax_id,
           contact_copyright,
-          use_ai_customer_service,
-          ai_api_key,
-          ai_model_name
+          use_ai_customer_service
         from sites
         where id = $1
         limit 1
@@ -5289,6 +5358,10 @@ export class WeblessAccountRepository {
     );
 
     return result.rows[0] ?? {};
+  }
+
+  async getThemeManagedRootCss(theme) {
+    return await this.storage.readText(`${themeDirectory(theme)}/assets/root-elements/css/00-mcp-theme.css`) ?? '';
   }
 
   async findSeoSettingsForSite(siteId) {
@@ -6533,6 +6606,47 @@ function normalizeSeoSettings(args, current = {}) {
   normalized.robots_policy = normalizeRobotsPolicy(normalized.robots_policy);
 
   return normalized;
+}
+
+function normalizeContentSeoPayload(args) {
+  const normalized = {};
+
+  for (const column of SEO_SETTINGS_COLUMNS) {
+    normalized[column] = Object.prototype.hasOwnProperty.call(args, column)
+      ? nullableString(args[column])
+      : null;
+  }
+
+  normalized.robots_policy = normalizeRobotsPolicy(normalized.robots_policy);
+
+  return normalized;
+}
+
+function requireContentSeoType(value) {
+  const contentType = requireNonEmptyString(value, 'content_type').toLowerCase();
+  if (!['page', 'article'].includes(contentType)) {
+    throw codedError('VALIDATION_FAILED', 'content_type must be page or article.');
+  }
+
+  return contentType;
+}
+
+function requireContentSeoWorkflowContext(value) {
+  const workflowContext = String(value ?? '').trim().toLowerCase();
+  if (!['page_create', 'page_update', 'article_create', 'article_update'].includes(workflowContext)) {
+    throw codedError('VALIDATION_FAILED', 'workflow_context must be page_create, page_update, article_create, or article_update.');
+  }
+
+  return workflowContext;
+}
+
+function validateContentSeoWorkflow(contentType, workflowContext) {
+  if (contentType === 'page' && !['page_create', 'page_update'].includes(workflowContext)) {
+    throw codedError('VALIDATION_FAILED', 'Page SEO updates require workflow_context page_create or page_update.');
+  }
+  if (contentType === 'article' && !['article_create', 'article_update'].includes(workflowContext)) {
+    throw codedError('VALIDATION_FAILED', 'Article SEO updates require workflow_context article_create or article_update.');
+  }
 }
 
 function normalizeRobotsPolicy(value) {
@@ -10406,6 +10520,10 @@ function homeContentStoragePath(siteId) {
 
 function customPageMetadataStoragePath(siteId, pageKey) {
   return `sites/${siteId}/templates/default/pages/${normalizePageKey(pageKey)}/.page.json`;
+}
+
+function articleSeoMetadataStoragePath(siteId, articleId) {
+  return `sites/${siteId}/articles/${requireInteger(articleId, 'article_id')}/seo.json`;
 }
 
 function pageContentStoragePath(siteId, theme, pageKey) {
