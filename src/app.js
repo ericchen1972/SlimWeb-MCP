@@ -16,9 +16,9 @@ const SERVICE_NAME = 'slimweb-mcp';
 const SERVICE_VERSION = '0.1.0';
 const CHATGPT_MISSING_IMAGE_GUIDANCE = 'In ChatGPT Remote MCP, if a page or article request needs an image but no usable attached image or directly downloadable image URL is available, stop the task and ask the user to paste or re-upload the image before continuing.';
 const MCP_SERVER_GUIDELINES = [
-'Before calling any SlimWeb MCP tool, first call SlimWeb.slimweb_sites_list to obtain valid site_id values.',
-'If SlimWeb.slimweb_sites_list returns more than one site_id, stop the task and list the available site_id values for the user to choose from.',
-'Never use a site_id that does not appear in the SlimWeb.slimweb_sites_list result.',
+'Before calling any SlimWeb MCP tool, first call SlimWeb.slimweb_sites_list to obtain valid site_code values and site names.',
+'If SlimWeb.slimweb_sites_list returns more than one site, stop the task and list the available site names for the user to choose from.',
+'Never use a site_code that does not appear in the SlimWeb.slimweb_sites_list result. Do not ask the user for numeric site_id values.',
 'Distinguish page and article from user intent only; do not infer from history.',
 'Treat themes as the base styling layer for every page, including the homepage.',
 'Image rules: if a task needs image assets, obtain usable image URLs or media paths before creating or editing pages or articles. Publicly reachable image URLs may be used directly. Clients that can read local bytes and upload must use slimweb_uploads_create plus slimweb_uploads_commit. Clients that cannot upload bytes but have a ChatGPT conversation image attachment must use slimweb_images_import_chatgpt_attachment. If the client cannot upload and the user has not provided an attachment or image URL, stop and ask the user to paste or upload the image. When generating images, use the current design context colors and direction. If an image is AI-generated in a client that cannot upload it, stop and ask the user to paste the generated image back into the conversation.',
@@ -89,6 +89,42 @@ const DEFAULT_OUTPUT_SCHEMA = {
   properties: {},
   additionalProperties: true
 };
+const SITE_CODE_SCHEMA = {
+  type: 'string',
+  description: 'Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id.'
+};
+
+function publicInputSchema(schema) {
+  if (!schema || typeof schema !== 'object') {
+    return schema;
+  }
+
+  const clone = structuredClone(schema);
+  if (clone.properties?.site_id) {
+    delete clone.properties.site_id;
+    clone.properties.site_code = SITE_CODE_SCHEMA;
+  }
+  if (Array.isArray(clone.required)) {
+    clone.required = clone.required.map((field) => field === 'site_id' ? 'site_code' : field);
+  }
+
+  return clone;
+}
+
+function publicTool(tool) {
+  return {
+    ...tool,
+    inputSchema: publicInputSchema(tool.inputSchema),
+    outputSchema: tool.outputSchema ?? DEFAULT_OUTPUT_SCHEMA
+  };
+}
+
+function publicSiteSelectionPayload(site) {
+  return {
+    site_code: site.site_code ?? site.callback_code ?? null,
+    name: site.name
+  };
+}
 function orderIdentityInputSchema() {
   return {
     type: 'object',
@@ -2383,13 +2419,8 @@ function sessionIdentity(session) {
 }
 
 async function toolsForSession(session, context) {
-  const withDefaultOutputSchema = (tool) => ({
-    ...tool,
-    outputSchema: tool.outputSchema ?? DEFAULT_OUTPUT_SCHEMA
-  });
-
   if (!session) {
-    return MCP_TOOLS.map(withDefaultOutputSchema);
+    return MCP_TOOLS.map(publicTool);
   }
 
   const identity = sessionIdentity(session);
@@ -2412,7 +2443,7 @@ async function toolsForSession(session, context) {
 
     const required = TOOL_PERMISSION_RULES[tool.name] ?? [];
     return hasAnyPermission(Array.from(union), required);
-  }).map(withDefaultOutputSchema);
+  }).map(publicTool);
 }
 
 function forbiddenError(message) {
@@ -2432,8 +2463,13 @@ async function actorForTool(session, name, args, context) {
     : {
         ...identity,
         ...(await context.accountRepository.listSitesForAdminIdentity(identity))
-          .find((site) => String(site.site_id ?? site.id) === String(args.site_id))
+          .find((site) => String(site.site_code ?? site.callback_code) === String(args.site_code)
+            || String(site.site_id ?? site.id) === String(args.site_id))
       };
+
+  if (actor?.site_id && args && typeof args === 'object' && !args.site_id) {
+    args.site_id = actor.site_id;
+  }
 
   if (!hasAnyPermission(actor.permissions, ['backend_ai_assistant'])) {
     throw forbiddenError('This web admin does not have backend AI assistant permission.');
@@ -2482,9 +2518,9 @@ async function toolResultForCall(message, request, context) {
         google_email: session.email,
         requires_selection: sites.length > 1,
         selection_instruction: sites.length > 1
-          ? 'Multiple sites are available. Ask the user which site to operate before calling site-scoped tools. Do not guess.'
-          : 'Use the single available site_id for site-scoped tools.',
-        sites
+          ? 'Multiple sites are available. Ask the user which site name to operate before calling site-scoped tools. Use the matching site_code; do not ask for numeric site_id.'
+          : 'Use the single available site_code for site-scoped tools.',
+        sites: sites.map(publicSiteSelectionPayload)
       }));
     }
 
@@ -2492,7 +2528,10 @@ async function toolResultForCall(message, request, context) {
       try {
         const result = await context.accountRepository.selectSiteForAdminIdentity(sessionIdentity(session), toolArgs(message));
 
-        return mcpResult(message.id ?? null, mcpJsonContent(result));
+        return mcpResult(message.id ?? null, mcpJsonContent({
+          ...result,
+          selected_site: publicSiteSelectionPayload(result.selected_site ?? {})
+        }));
       } catch (error) {
         return toolExceptionToMcpError(message?.id ?? null, error);
       }

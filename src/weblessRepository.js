@@ -349,12 +349,17 @@ export class WeblessAccountRepository {
       site_admin_id: actor.site_admin_id,
       permissions: actor.permissions,
       themes,
-      requires_site_id_for_mutations: true
+      requires_site_code_for_mutations: true
     };
   }
 
   async resolveAdminSiteForIdentity(identity, args) {
-    const siteId = requireInteger(args.site_id, 'site_id');
+    const siteCode = String(args.site_code ?? '').trim();
+    const siteId = siteCode === '' ? requireInteger(args.site_id, 'site_id') : null;
+    const siteWhere = siteCode === ''
+      ? 's.id = $1'
+      : 's.callback_code = $1';
+    const siteLookupValue = siteCode === '' ? siteId : siteCode;
     const result = await this.pool.query(
       `
         select
@@ -380,7 +385,7 @@ export class WeblessAccountRepository {
           ) as first_admin_id
         from site_admins a
         inner join sites s on s.id = a.site_id
-        where s.id = $1
+        where ${siteWhere}
           and (
             ($2 <> '' and a.google_sub = $2)
             or lower(a.google_email) = lower($3)
@@ -388,12 +393,12 @@ export class WeblessAccountRepository {
         order by a.id asc
         limit 1
       `,
-      [siteId, String(identity.google_id ?? ''), String(identity.email ?? '')]
+      [siteLookupValue, String(identity.google_id ?? ''), String(identity.email ?? '')]
     );
     const row = result.rows[0];
 
     if (!row) {
-      throw codedError('NOT_FOUND', `Site not found or not accessible: ${siteId}`);
+      throw codedError('NOT_FOUND', `Site not found or not accessible: ${siteLookupValue}`);
     }
 
     const site = formatAdminSite(row, this.clientMcpBaseUrl);
@@ -433,14 +438,35 @@ export class WeblessAccountRepository {
   }
 
   async selectSiteForAccount(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
+    const site = args.site_code
+      ? await this.getSiteForAccountCode(accountId, String(args.site_code))
+      : await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
     const themes = await this.listThemesForSite(site.id);
 
     return {
       selected_site: site,
       themes,
-      requires_site_id_for_mutations: true
+      requires_site_code_for_mutations: true
     };
+  }
+
+  async getSiteForAccountCode(accountId, siteCode) {
+    const result = await this.pool.query(
+      `
+        select id, slug, name, domain, callback_code, site_status, theme_mode, icon_path
+        from sites
+        where account_id = $1 and callback_code = $2
+        limit 1
+      `,
+      [accountId, siteCode]
+    );
+    const site = result.rows[0];
+
+    if (!site) {
+      throw codedError('NOT_FOUND', `Site not found or not accessible: ${siteCode}`);
+    }
+
+    return formatSite(site, this.clientMcpBaseUrl);
   }
 
   async listThemesForAccountSite(accountId, args) {
@@ -7904,6 +7930,7 @@ function formatSite(row, clientMcpBaseUrl = '') {
   return {
     id: row.id,
     slug: row.slug,
+    site_code: row.callback_code ?? null,
     name: row.name,
     domain: row.domain,
     callback_code: row.callback_code ?? null,
@@ -7924,6 +7951,7 @@ function formatAdminSite(row, clientMcpBaseUrl = '') {
   return {
     id: row.id,
     site_id: row.id,
+    site_code: row.callback_code ?? null,
     account_id: row.account_id ?? null,
     site_admin_id: row.site_admin_id,
     slug: row.slug,

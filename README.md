@@ -89,7 +89,7 @@ Session layer 負責把 Google 驗證後的身份轉成 SlimWeb 可以接受的 
 - token 不可包含 SlimWeb 內部 secret。
 - MCP 驗證以 Web admin 為準，不以 webless 主會員 `accounts` 作為授權主體。
 - Google 登入後必須能在 `site_admins` 找到至少一個擁有 `backend_ai_assistant` 權限的管理員身份，否則拒絕登入 MCP。
-- session claims 至少要包含 Google `email`、`google_id`/`sub`、名稱與過期時間；站台與權限在每次 tool call 依 `site_id` 重新查 `site_admins`。
+- session claims 至少要包含 Google `email`、`google_id`/`sub`、名稱與過期時間；站台與權限在每次 tool call 依公開 `site_code` 解析內部 `site_id` 後重新查 `site_admins`。
 - 每次 tool 呼叫都要重新檢查權限，不可只依賴 discovery 時的結果。
 
 ### 權限與站台 Scope Guard
@@ -98,7 +98,8 @@ Session layer 負責把 Google 驗證後的身份轉成 SlimWeb 可以接受的 
 
 最低 scope 欄位：
 
-- `site_id`
+- `site_code`
+- 內部解析後的 `site_id`
 - `site_admin_id`
 - `google_email`
 - `google_sub`
@@ -111,7 +112,7 @@ Session layer 負責把 Google 驗證後的身份轉成 SlimWeb 可以接受的 
 - 指定站台內找不到對應 Google 帳號的 Web admin 身份。
 - 該 Web admin 沒有 `backend_ai_assistant` 權限。
 - 該 Web admin 沒有 tool 所需 permission。
-- tool 嘗試修改指定 `site_id` 以外的資料。
+- tool 嘗試修改指定 `site_code` 解析站台以外的資料。
 - 高風險操作需要 confirmation，但 request 沒有 confirmation token。
 
 ### SlimWeb Backend Adapter
@@ -134,12 +135,12 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 
 規則：
 
-- 使用者登入後，AI 應先呼叫 `slimweb_sites_list` 取得可操作網站。
+- 使用者登入後，AI 應先呼叫 `slimweb_sites_list` 取得可操作網站的 `site_code` 與站台名稱。
 - 若只有一個 site，可自動選定該 site。
-- 若有多個 site，且使用者沒有明確說出網站名稱、網域、site ID 或足以唯一識別的線索，AI 必須向使用者確認要操作哪個網站。
+- 若有多個 site，且使用者沒有明確說出網站名稱、網域、site code 或足以唯一識別的線索，AI 必須向使用者確認要操作哪個網站。
 - 若使用者描述能比對到多個 site，AI 必須列出候選網站並要求使用者選擇。
-- MCP 不保存 active site；所有 site-scoped tools 都必須明確帶入 `site_id`。
-- 如果 AI 傳錯 `site_id`，server 會以 `NOT_FOUND` 或 `FORBIDDEN` 拒絕，不替 AI 猜測。
+- MCP 不保存 active site；所有 site-scoped tools 都必須明確帶入 `site_code`。
+- 如果 AI 傳錯 `site_code`，server 會以 `NOT_FOUND` 或 `FORBIDDEN` 拒絕，不替 AI 猜測。
 - AI Client 不需要知道 SlimWeb 的目錄結構，只需要透過 tools 查詢資料、選擇目標、提交結構化操作。
 
 建議 AI 操作順序：
@@ -353,7 +354,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 權限: authenticated Web admin with `backend_ai_assistant`
 - Scope: selected `site_id`
 - 用途: 驗證使用者可操作指定 site，並回傳 site summary 與可用 theme/page scheme。AI Client 不可在多站台歧義時自行猜測。
-- Input: `site_id`
+- Input: `site_code`
 - Output: selected site summary、themes、mutation scope hints
 - Side effects: none；目前不把 active site 寫入 session，write tools 仍必須明確帶 `site_id`
 - 是否需要 confirmation: no
@@ -366,7 +367,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 權限: content read
 - Scope: active site
 - 用途: 列出目前站台可用版型，讓 AI 知道 Default、active theme 與可設計的自訂版型。
-- Input: `site_id`
+- Input: `site_code`
 - Output: site summary、site-level theme mode、theme IDs、names、is default、is active、inherits site theme mode
 - Side effects: none
 - 是否需要 confirmation: no
@@ -379,7 +380,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 權限: content read
 - Scope: active site
 - 用途: 讀取站台層級色系。此設定是 Default 與所有自訂版型的唯一 light/dark 來源。
-- Input: `site_id`
+- Input: `site_code`
 - Output: site summary、`theme_mode` (`light` 或 `dark`)、scope
 - Side effects: none
 - 是否需要 confirmation: no
@@ -390,7 +391,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 權限: content read
 - Scope: active site
 - 用途: 在 AI 開始任何頁面視覺設計、版型設計、插圖或畫圖前，先回傳目前啟用版型的設計摘要、站台明暗色系與固定框架資訊，避免風格走偏。
-- Input: `site_id`
+- Input: `site_code`
 - Output: site summary、active theme summary、`design_summary`、`color_mode` (`light` 或 `dark`)、`color_mode_label`（明亮或黑暗）、`framework` (`Tailwind`)
 - Side effects: none
 - 是否需要 confirmation: no
@@ -402,7 +403,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 權限: content write
 - Scope: active site
 - 用途: 更新站台層級色系。使用者要求 neon、螢光字、暗色高對比或明亮極簡時，AI 應先確認色調屬於 `light` 或 `dark`，必要時呼叫此 tool。
-- Input: `site_id`、`theme_mode` (`light` 或 `dark`)
+- Input: `site_code`、`theme_mode` (`light` 或 `dark`)
 - Output: updated site summary、`theme_mode`、scope
 - Side effects: updates `sites.theme_mode`; custom style schemes inherit this value.
 - 是否需要 confirmation: yes when changing an existing site color mode
@@ -413,7 +414,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 權限: content write
 - Scope: active site
 - 用途: 建立新版型。此 tool 會新增一筆非 Default `site_pages` 記錄，並只將 Default 的 shell/root-element template storage 複製到新版型目錄。
-- Input: `site_id`、`name`
+- Input: `site_code`、`name`
 - Output: site summary、created theme summary、copied flag、`copied_scope`、`content_fallback`、`inherits_site_theme_mode`、preview URL
 - Side effects: creates site page style scheme and copies Default shell files. It does not copy `pages/*` body/content files.
 - 色系規則: 此 tool 不選擇 light/dark；新版型沿用 `sites.theme_mode`。若設計需求跟色調有關，先用 `slimweb_site_theme_mode_get/update`。
@@ -427,7 +428,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 權限: content write
 - Scope: active site and selected theme
 - 用途: 將指定版型設為前台啟用版型。AI 必須在使用者明確確認要切換前台版型後才呼叫。
-- Input: `site_id`、`theme_id`
+- Input: `site_code`、`theme_id`
 - Output: site summary、activated theme summary、updated themes list、preview URL
 - Side effects: sets all other site themes inactive and selected theme active
 - 是否需要 confirmation: yes
@@ -440,7 +441,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 權限: content read
 - Scope: active site and selected theme
 - 用途: 在建立或修改版型前，讓 AI 取得實際會接上的資料摘要 JSON，例如 nav item 數量/名稱/樹狀結構、商品分類數量/名稱、購物車/登入/註冊按鈕與 footer 聯絡資訊數量。
-- Input: `site_id`、`theme_id`
+- Input: `site_code`、`theme_id`
 - Output: `reference_only: true`、site summary、theme summary、`theme_scope`、`navbar`、`product_categories`、`storefront_actions`、`footer`
 - Side effects: none
 - 重要規則: 此 JSON 僅供設計參考，不可直接把 nav/footer/contact 寫死進 root element 或 page body。AI 應依此資料量預留版面、選擇 icon/spacing，實際資料仍由 Webless runtime 接上。
@@ -454,7 +455,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 權限: content write
 - Scope: active site and theme
 - 用途: 更新版型的 root elements，例如 navbar、footer，以及 root-level CSS。`css` 不是局部 patch，會替換 `assets/root-elements/css/00-mcp-theme.css`，所以只改 navbar 時也必須帶上要保留的 footer、body background 等 MCP-managed root CSS。
-- Input: `site_id`、`theme_id`、optional `fragments.navbar`、`fragments.footer`、optional `css`
+- Input: `site_code`、`theme_id`、optional `fragments.navbar`、`fragments.footer`、optional `css`
 - Output: write summary、theme summary、updated fragments、CSS updated flag、preview URL
 - Side effects: writes root element Blade fragments and replaces `assets/root-elements/css/00-mcp-theme.css`
 - 是否需要 confirmation: yes for customer-facing active theme
@@ -467,7 +468,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 權限: content read
 - Scope: active site and selected theme
 - 用途: 讀取版型風格摘要，讓 AI 在視覺設計前知道既有方向、限制與使用者曾提出的變更。
-- Input: `site_id`、`theme_id`
+- Input: `site_code`、`theme_id`
 - Output: site summary、theme summary、nullable `profile`
 - Side effects: none
 - 是否需要 confirmation: no
@@ -480,7 +481,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 權限: content write
 - Scope: active site and selected theme
 - 用途: 建立或更新版型風格摘要，包含 `summary`、`target_audience`、`visual_keywords`、`color_notes`、`typography_notes`、`layout_notes`、`illustration_notes`、`avoid_notes`、`user_request(s)`、`ai_design_notes`。
-- Input: `site_id`、`theme_id` and at least one style/profile field
+- Input: `site_code`、`theme_id` and at least one style/profile field
 - Output: write summary、theme summary、profile
 - Side effects: upserts `site_theme_style_profiles`
 - 是否需要 confirmation: no, unless changing an active customer-facing theme's declared direction against the user's current request
@@ -493,7 +494,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 權限: content write
 - Scope: active site and selected theme
 - 用途: 追加一筆使用者需求或變更紀錄，不覆蓋既有風格摘要。適合記錄「文青一點」、「字體不要那麼粗」、「背景補手繪插圖」等要求。
-- Input: `site_id`、`theme_id`、`request`、optional `ai_notes`
+- Input: `site_code`、`theme_id`、`request`、optional `ai_notes`
 - Output: write summary、theme summary、updated profile
 - Side effects: appends to `site_theme_style_profiles.user_requests` and increments profile version
 - 是否需要 confirmation: no
@@ -506,7 +507,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 權限: site readiness read
 - Scope: active site
 - 用途: 讀取站台開站/營運準備度，回傳目前缺少或不完整的地方，讓 AI 可以主動告知使用者「還缺什麼」。
-- Input: `site_id`, optional `include_optional`
+- Input: `site_code`, optional `include_optional`
 - Output: site summary、summary (`status`, `readiness_score`, issue counts)、categories、missing_categories、next_actions、evidence counts
 - 檢查範圍:
   - 金物流: 是否啟用、憑證是否完整、是否仍全為 test mode
@@ -527,7 +528,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 權限: content read
 - Scope: active site
 - 用途: 讀取站台層級 SEO / AEO / GEO 設定，這些欄位會顯示在 SlimWeb 後台的 SEO 設定頁。
-- Input: `site_id`
+- Input: `site_code`
 - Output: site summary、settings (`seo_title`, `seo_description`, `seo_keywords`, `canonical_url`, `robots_policy`, `og_title`, `og_description`, `og_image_url`, `llms_txt`, `aeo_business_summary`, `aeo_target_audience`, `aeo_products_services`, `aeo_customer_questions`, `aeo_answer_style`, `aeo_entity_facts`, `geo_citation_targets`, `geo_verifiable_claims`, `geo_trust_signals`, `geo_same_as_profiles`, `geo_comparison_positioning`)
 - Side effects: none
 - 是否需要 confirmation: no
@@ -540,7 +541,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 權限: content write
 - Scope: active site
 - 用途: 更新站台層級 SEO、OG、llms.txt、AEO 與 GEO 欄位。適合「我是賣服飾的，幫我做好 SEO / AEO / GEO」這類需求，由 AI 產生結構化設定後寫入同一份後台資料。
-- Input: `site_id` plus any subset of SEO/AEO/GEO fields
+- Input: `site_code` plus any subset of SEO/AEO/GEO fields
 - Output: updated settings、site summary
 - Side effects: updates `sites` SEO/AEO/GEO columns that SlimWeb admin displays
 - 是否需要 confirmation: yes when changing robots policy to noindex or replacing existing customer-facing metadata
@@ -553,7 +554,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 權限: settings read
 - Scope: active site
 - 用途: 讀取後台 Facebook 串接欄位，包含會員登入 App ID、Facebook Page ID，以及商品頁 / 文章頁 Facebook 留言板開關。
-- Input: `site_id`
+- Input: `site_code`
 - Output: site summary、settings (`facebook_app_id`, `facebook_page_id`, `facebook_comment_on_products`, `facebook_comment_on_posts`)
 - Side effects: none
 - 是否需要 confirmation: no
@@ -566,7 +567,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 權限: settings write
 - Scope: active site
 - 用途: 更新後台 Facebook 串接欄位，包含會員登入 App ID、Facebook Page ID，以及商品頁 / 文章頁 Facebook 留言板開關。
-- Input: `site_id` plus any subset of Facebook settings fields
+- Input: `site_code` plus any subset of Facebook settings fields
 - Output: updated settings、site summary
 - Side effects: updates `sites` Facebook integration columns that SlimWeb admin displays
 - 是否需要 confirmation: yes when changing login App ID, customer-facing Page ID, or enabling/disabling Facebook comments
@@ -579,7 +580,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 權限: settings read
 - Scope: active site
 - 用途: 讀取後台 Notion API token 欄位。
-- Input: `site_id`
+- Input: `site_code`
 - Output: site summary、settings (`notion_token`)
 - Side effects: none
 - 是否需要 confirmation: no
@@ -592,7 +593,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 權限: settings write
 - Scope: active site
 - 用途: 更新後台 Notion API token 欄位。
-- Input: `site_id`、`notion_token`
+- Input: `site_code`、`notion_token`
 - Output: updated settings、site summary
 - Side effects: updates `sites.notion_token`
 - 是否需要 confirmation: yes when changing the Notion API token
@@ -605,7 +606,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 權限: mail settings read
 - Scope: active site
 - 用途: 讀取後台郵件寄送設定頁的 SMTP 與通知欄位，包含 SMTP host、username、password、port、from email、SSL，以及出貨/提醒通知設定。
-- Input: `site_id`
+- Input: `site_code`
 - Output: site summary、settings (`notification_new_order_sms_numbers`, `notification_sms_on_shipped`, `notification_auto_send_reminder_sms`, `notification_reminder_sms_content`, `notification_smtp_host`, `notification_smtp_username`, `notification_smtp_password`, `notification_smtp_port`, `notification_smtp_from_email`, `notification_smtp_ssl`)
 - Side effects: none
 - 是否需要 confirmation: no
@@ -618,7 +619,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 權限: mail settings write
 - Scope: active site
 - 用途: 更新後台郵件寄送設定頁的 SMTP 與通知欄位。當使用者要啟用 email 會員註冊驗證時，應先用此 tool 完成 SMTP 設定。
-- Input: `site_id` plus any subset of mail delivery fields
+- Input: `site_code` plus any subset of mail delivery fields
 - Output: updated settings、site summary
 - Side effects: updates `sites` mail delivery columns that SlimWeb admin displays
 - 是否需要 confirmation: yes when changing SMTP credentials, sender email, or customer-facing reminder behavior
@@ -632,7 +633,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - Scope: active site
 - 用途: 讀取各事件郵件內容。這些是「內容模板」，不是共用外框；寄送時 SlimWeb 會把內容放進唯一共用郵件版型的 `{content}`。
 - 支援事件: `order_created`、`order_shipped`、`store_arrived`、`return_requested`、`return_logistics`、`registration_code`、`password_reset`
-- Input: `site_id`
+- Input: `site_code`
 - Output: templates、layout rule
 - Side effects: none
 - 是否需要 confirmation: no
@@ -645,7 +646,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 權限: mail settings write
 - Scope: active site
 - 用途: 更新各事件郵件的 subject、HTML content 與啟用狀態。AI 可依使用者商品、品牌語氣、訂單流程設計郵件內容，但不應在這裡修改整體版型。
-- Input: `site_id`、`templates[]`，每筆包含 `trigger_event` 與 optional `subject`、`content`、`is_active`
+- Input: `site_code`、`templates[]`，每筆包含 `trigger_event` 與 optional `subject`、`content`、`is_active`
 - Output: updated templates
 - Side effects: upserts `mail_templates`
 - Rule: `member_name` 會在寄送時替換為會員/買家名稱；訂單相關事件會由 Webless 自動附上訂單明細。
@@ -659,7 +660,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 權限: mail settings read
 - Scope: active site
 - 用途: 讀取站台唯一共用郵件版型。所有事件郵件都共用這一個外框。
-- Input: `site_id`
+- Input: `site_code`
 - Output: current layout、default layout HTML、available placeholders (`{content}`, `{site_name}`, `{site_url}`, `{logo_url}`)
 - Side effects: none
 - 是否需要 confirmation: no
@@ -672,7 +673,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 權限: mail settings write
 - Scope: active site
 - 用途: 更新站台唯一共用郵件版型。預設版型為網站 logo + 網站名稱、分隔線、內容、分隔線、footer 網站網址。呼叫本工具前必須先用 `slimweb_mail_layout_get` 讀取同一個 `site_id` 的目前版型，再以回傳的 current/default HTML 為基礎修改；不要憑空重寫整份 HTML，以免遺失 logo、站名、footer、placeholder 或既有結構。
-- Input: `site_id`、`html`、`is_active`
+- Input: `site_code`、`html`、`is_active`
 - Output: updated layout、default layout HTML
 - Side effects: upserts `site_mail_layouts`
 - Rule: `html` 是完整替換。每次更新前都要先呼叫 `slimweb_mail_layout_get`，基於回傳 HTML 做最小修改；必須保留 `{content}`、`{site_name}`、`{site_url}`、`{logo_url}`。
@@ -689,7 +690,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 支援金流: `ecpay` (綠界 ECPay)、`newebpay` (藍新 NewebPay)、`linepay` (LINE Pay)
 - LINE Pay 支援測試環境與付款等待頁語系設定；後台欄位以 Channel ID / Channel Secret 對應 `merchant_id` / `hash_key`，不使用 `hash_iv`。
 - 支援物流: `ecpay` (綠界物流)、`newebpay` (藍新物流)、`hct` (新竹物流)
-- Input: `site_id`
+- Input: `site_code`
 - Output: supported payment/logistics providers、online card exclusivity rule、answer policy、current provider states、provider Notify URL / Return URL、store-map callback URL
 - Side effects: none
 - 是否需要 confirmation: no
@@ -702,7 +703,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 權限: payment/logistics write
 - Scope: active site
 - 用途: 更新支援的金流與物流供應商設定。金流包含 mode、啟用狀態、merchant ID、HashKey、HashIV、語系；物流包含啟用狀態、寄件資訊、超商通路、綠界 C2C/B2C 型態與新竹物流代收設定。綠界/藍新物流沿用同家金流的環境與商店代號，不另外儲存 HashKey/HashIV。
-- Input: `site_id`、optional `payments[]`、optional `logistics[]`
+- Input: `site_code`、optional `payments[]`、optional `logistics[]`
 - Output: updated provider states、supported provider list、answer policy
 - Side effects: upserts `site_payment_providers` / `site_logistics_providers`; writes encrypted provider settings compatible with Webless Laravel `encrypted:array`
 - Rule: `ecpay` 與 `newebpay` 屬於線上刷卡金流，同一站台只能啟用其中一家；啟用其中一家會停用另一家。`linepay` 可同時啟用，不受此限制。
@@ -1055,7 +1056,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 收件範圍:
   - `recipient_scope=all_members`: 建立給全部會員的電子報，不傳 `member_ids`。
   - `recipient_scope=members`: 建立給指定會員的電子報，必須先用 `slimweb_members_list` / `slimweb_members_get` 確認會員並傳 `member_ids`。
-- Input: `site_id`、`recipient_scope=members|all_members`、`member_ids`、`title`、`html_content`、optional `scheduled_at`
+- Input: `site_code`、`recipient_scope=members|all_members`、`member_ids`、`title`、`html_content`、optional `scheduled_at`
 - Output: site summary、newsletter summary、recipient summary、delivery guidance
 - Side effects: creates `site_newsletters` and, for selected members, `site_newsletter_recipients`; does not send or queue email directly.
 - 發送時間: 如果使用者沒有指定 `scheduled_at`，AI 應省略欄位，由 MCP 端自動填入「當下時間 + 5 分鐘」。
@@ -1205,7 +1206,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 權限: content read
 - Scope: active site
 - 用途: 列出文章，支援 AI 查詢既有內容、避免重複建立，或挑選要更新的文章。
-- Input: `site_id`、optional `page`、optional `per_page`
+- Input: `site_code`、optional `page`、optional `per_page`
 - Output: article summaries、pagination
 - Side effects: none
 - 是否需要 confirmation: no
@@ -1218,7 +1219,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 權限: content read
 - Scope: active site
 - 用途: 檢查文章標題是否撞名。
-- Input: `site_id`、`title`
+- Input: `site_code`、`title`
 - Output: article title check result、matches
 - Side effects: none
 - 是否需要 confirmation: no
@@ -1231,7 +1232,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 權限: content read
 - Scope: active site
 - 用途: 讀取單一文章內容與中繼資訊。
-- Input: `site_id`、`article_id`
+- Input: `site_code`、`article_id`
 - Output: article、cover URL、article URL、content body
 - Side effects: none
 - 是否需要 confirmation: no
@@ -1244,7 +1245,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 權限: content write + asset write
 - Scope: active site
 - 用途: 新增文章。建立時必須有 16:9 主圖，也可附加內容圖。若使用者沒有給圖且沒有描述主圖，AI 會依文章標題或內容先畫主圖；若目前是 ChatGPT Remote MCP 而且沒有可用附圖或可直接下載的圖片 URL，就先終止任務並請使用者貼圖，等圖是 AI 產出且還沒轉成可上傳附件時再建立文章。
-- Input: `site_id`、`title`、`content_html`、`cover_image`、optional `notion_page_id`、optional `content_images`
+- Input: `site_code`、`title`、`content_html`、`cover_image`、optional `notion_page_id`、optional `content_images`
 - Output: article summary、article URL、cover URL、content image URLs
 - Side effects: creates `articles`; writes article cover and content images under site article storage paths
 - 是否需要 confirmation: yes when the cover image was AI-generated and still needs user re-upload in ChatGPT clients
@@ -1257,7 +1258,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 權限: content write + asset write
 - Scope: active site
 - 用途: 修改既有文章。流程與頁面修改相同，讀取現有內容後再決定要不要更新標題、主圖或內容圖；若目前是 ChatGPT Remote MCP 而且沒有可用附圖或可直接下載的圖片 URL，就先終止任務並請使用者貼圖。
-- Input: `site_id`、`article_id`、optional `title`、optional `content_html`、optional `cover_image`、optional `notion_page_id`、optional `content_images`
+- Input: `site_code`、`article_id`、optional `title`、optional `content_html`、optional `cover_image`、optional `notion_page_id`、optional `content_images`
 - Output: article summary、article URL、cover URL、content image URLs
 - Side effects: modifies `articles`; can replace article cover and content images under site article storage paths
 - 是否需要 confirmation: yes when replacing an existing article body or cover image
@@ -1270,7 +1271,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 權限: content write
 - Scope: active site
 - 用途: 更新單一自訂頁面或單一文章的內容層級 SEO / AEO / GEO metadata。此工具不能單獨執行，必須接在 `slimweb_pages_create`、`slimweb_pages_update`、`slimweb_articles_create` 或 `slimweb_articles_update` 之後。
-- Input: `site_id`、`content_type` (`page` or `article`)、`workflow_context` (`page_create`、`page_update`、`article_create`、`article_update`)、page target (`page_name` or `page_key`) or `article_id`，以及 optional SEO / AEO / GEO fields
+- Input: `site_code`、`content_type` (`page` or `article`)、`workflow_context` (`page_create`、`page_update`、`article_create`、`article_update`)、page target (`page_name` or `page_key`) or `article_id`，以及 optional SEO / AEO / GEO fields
 - Output: updated content target、SEO / AEO / GEO metadata、metadata path
 - Side effects: updates custom page `.page.json` SEO metadata or MCP-managed article SEO metadata JSON
 - 是否需要 confirmation: no when it is part of a confirmed create/edit content workflow
@@ -1335,7 +1336,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 權限: asset write
 - Scope: active site
 - 用途: 只有在 AI flow 明確需要登記已上傳圖片或檔案時，才建立 reusable asset reference。
-- Input: `site_id`、`source.media_path`、`target_usage`、`asset_scope`、optional `theme_id`、`suggested_filename`、`alt_text`
+- Input: `site_code`、`source.media_path`、`target_usage`、`asset_scope`、optional `theme_id`、`suggested_filename`、`alt_text`
 - 圖片規則: 圖片 bytes 不進 MCP tool JSON。AI runtime 必須能讀取圖片 bytes 並對外 `PUT`；符合時先使用 `slimweb_uploads_create` 取得 signed upload URL，對 URL 做 raw bytes `PUT`，再用 `slimweb_uploads_commit` 回傳的 `media_path` 登記 asset。若 runtime 是 ChatGPT Remote MCP 且只有對話附件，應告知使用者改用 Codex / Hermes 或提供可下載圖片 URL。
 - Output: storage path、public URL、usage、alt text、mime type
 - Side effects: registers committed Webless media path for later page/theme/product/article use
@@ -1349,7 +1350,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 權限: content read
 - Scope: active site
 - 用途: 檢查頁面標題是否已存在，固定頁除了中文標題，也會比對英文別名與 `home` 相關別名，採用 trim + 大小寫不敏感規則。
-- Input: `site_id`、`title`
+- Input: `site_code`、`title`
 - Output: site summary、original title、normalized title、exists flag、matched pages
 - Side effects: none
 - 是否需要 confirmation: no
@@ -1362,7 +1363,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 權限: content read
 - Scope: active site
 - 用途: 依 `page_name` 讀取單一自訂頁面的內容與中繼資訊；固定頁不在此工具搜尋範圍內。
-- Input: `site_id`、`page_name`
+- Input: `site_code`、`page_name`
 - Output: site summary、page summary、content HTML、storage path、metadata path、public URL、preview URL
 - Side effects: none
 - 是否需要 confirmation: no
@@ -1375,7 +1376,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 權限: content write
 - Scope: active site
 - 用途: 建立新的自訂頁面。AI 應先確認標題不撞名，再依設計摘要與圖片素材建立 HTML/CSS，固定頁不可透過這個工具建立或覆寫；若目前是 ChatGPT Remote MCP 而且沒有可用附圖或可直接下載的圖片 URL，就先終止任務並請使用者貼圖。
-- Input: `site_id`、`title`、`content.html` or `content.body_html`、optional `page_key`、optional `confirmation_token`
+- Input: `site_code`、`title`、`content.html` or `content.body_html`、optional `page_key`、optional `confirmation_token`
 - Output: write summary、site summary、theme summary、page key、title、public URL、preview URL、bytes written
 - Side effects: writes custom page body and metadata to Webless template storage
 - 是否需要 confirmation: yes when creating customer-facing content
@@ -1388,7 +1389,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 權限: content write
 - Scope: active site
 - 用途: 修改既有自訂頁面。流程會先用 `slimweb_pages_get_content` 讀取目前自訂頁內容；若目前是 ChatGPT Remote MCP 而且沒有可用附圖或可直接下載的圖片 URL，就先終止任務並請使用者貼圖。
-- Input: `site_id`、`page_name`、`content.html` or `content.body_html`、optional `title`、optional `confirmation_token`
+- Input: `site_code`、`page_name`、`content.html` or `content.body_html`、optional `title`、optional `confirmation_token`
 - Output: write summary、site summary、theme summary、page key、title、public URL、preview URL、bytes written
 - Side effects: overwrites custom page body and metadata in configured Webless template storage
 - 是否需要 confirmation: yes when replacing customer-facing content
@@ -1401,7 +1402,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 權限: content read
 - Scope: active site
 - 用途: 回傳 AI 可開啟並自行截圖的頁面預覽 URL。`page_key=index` 會回傳站台唯一首頁預覽；可依 theme 檢視該頁的基底樣式。
-- Input: `site_id`、`page_key`、optional `theme_id` for non-home pages、optional `mode`
+- Input: `site_code`、`page_key`、optional `theme_id` for non-home pages、optional `mode`
 - Output: site summary、page key、theme summary、preview URL、mode、theme parameter support hint
 - Side effects: none
 - 是否需要 confirmation: no
@@ -1447,9 +1448,9 @@ AI Client 收到或引用的圖片預設是 reference-only。只有當 tool call
 
 ### 必要執行的通用規則
 
-- 執行任何 MCP 工具前，必須先執行 `SlimWeb.slimweb_sites_list` 取得 `site_id`。
-- 如果超過一個以上的 `site_id`，終止任務，列出 `site_id` 讓用戶選擇。
-- 禁止使用 `SlimWeb.slimweb_sites_list` 結果內不存在的 `site_id`。
+- 執行任何 MCP 工具前，必須先執行 `SlimWeb.slimweb_sites_list` 取得可操作網站的 `site_code` 與站台名稱。
+- 如果超過一個以上的網站，終止任務，列出站台名稱讓用戶選擇。
+- 禁止使用 `SlimWeb.slimweb_sites_list` 結果內不存在的 `site_code`，也不要要求使用者提供 numeric `site_id`。
 
 ### 通用圖片規則
 

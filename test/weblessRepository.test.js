@@ -124,6 +124,46 @@ test('repository exposes only current Webless site status fields', async () => {
   assert.equal(sites[0].client_mcp_url, 'https://client-mcp.example.test/sites/swcb_test101/mcp');
 });
 
+test('repository resolves admin site identity by site code', async () => {
+  const repository = new WeblessAccountRepository({
+    async query(sql, params) {
+      assert.match(sql, /s\.callback_code = \$1/);
+      assert.equal(params[0], 'swcb_test101');
+      assert.equal(params[1], 'google-sub');
+      assert.equal(params[2], 'owner@example.com');
+
+      return {
+        rows: [{
+          id: 101,
+          slug: 'site-1',
+          name: '測試網站',
+          domain: '',
+          callback_code: 'swcb_test101',
+          site_status: 'active',
+          theme_mode: 'light',
+          account_id: 11,
+          site_admin_id: 13,
+          google_email: 'owner@example.com',
+          google_sub: 'google-sub',
+          permissions: JSON.stringify(['backend_ai_assistant']),
+          first_admin_id: 13
+        }]
+      };
+    }
+  });
+
+  const actor = await repository.resolveAdminSiteForIdentity({
+    email: 'owner@example.com',
+    google_id: 'google-sub'
+  }, {
+    site_code: 'swcb_test101'
+  });
+
+  assert.equal(actor.site_id, 101);
+  assert.equal(actor.site.site_code, 'swcb_test101');
+  assert.equal(actor.site.name, '測試網站');
+});
+
 function themeMutationPool() {
   const queries = [];
   let insertedThemeId = 22;

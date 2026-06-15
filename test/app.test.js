@@ -44,6 +44,8 @@ function testAdminSitesFor(profile, permissions = ['backend_ai_assistant', 'syst
     site_id: 101,
     id: 101,
     slug: 'site-1',
+    site_code: 'swcb_test101',
+    callback_code: 'swcb_test101',
     name: '測試網站',
     domain: '',
     permissions,
@@ -359,7 +361,10 @@ test('MCP tools list includes homepage editing contract tools', async () => {
     assert.equal(toolsByName.get('slimweb_themes_create_from_default').inputSchema.required.includes('name'), true);
     assert.equal(toolsByName.get('slimweb_themes_create_from_default').inputSchema.properties.theme_mode, undefined);
     assert.equal(toolsByName.get('slimweb_site_theme_mode_update').inputSchema.properties.theme_mode.enum.includes('dark'), true);
-    assert.equal(toolsByName.get('slimweb_design_context_get').inputSchema.required.includes('site_id'), true);
+    assert.equal(toolsByName.get('slimweb_site_select').inputSchema.required.includes('site_code'), true);
+    assert.equal(toolsByName.get('slimweb_site_select').inputSchema.properties.site_id, undefined);
+    assert.equal(toolsByName.get('slimweb_design_context_get').inputSchema.required.includes('site_code'), true);
+    assert.equal(toolsByName.get('slimweb_design_context_get').inputSchema.properties.site_id, undefined);
     assert.equal(toolsByName.get('slimweb_design_context_get').inputSchema.properties.theme_id, undefined);
     assert.match(toolsByName.get('slimweb_design_context_get').description, /visual design/i);
     assert.match(toolsByName.get('slimweb_design_context_get').description, /Tailwind/);
@@ -444,7 +449,8 @@ test('MCP tools list includes homepage editing contract tools', async () => {
     assert.match(toolsByName.get('slimweb_pages_create').description, /stop the task and ask the user to paste or re-upload the image/i);
     assert.match(toolsByName.get('slimweb_pages_update').description, /stop the task and ask the user to paste or re-upload the image/i);
     assert.equal(toolsByName.get('slimweb_pages_check_title').inputSchema.required.includes('title'), true);
-    assert.equal(toolsByName.get('slimweb_pages_list').inputSchema.required.includes('site_id'), true);
+    assert.equal(toolsByName.get('slimweb_pages_list').inputSchema.required.includes('site_code'), true);
+    assert.equal(toolsByName.get('slimweb_pages_list').inputSchema.properties.site_id, undefined);
     assert.equal(toolsByName.get('slimweb_preview_get_page_url').inputSchema.required.includes('page_key'), true);
     assert.equal(toolsByName.get('slimweb_categories_upsert').inputSchema.properties.icon_svg_base64.type, 'string');
     assert.equal(toolsByName.get('slimweb_categories_upsert').inputSchema.properties.image.properties.media_path.type, 'string');
@@ -494,6 +500,8 @@ test('homepage editing tools call repository implementations', async () => {
         site_admin_id: 13,
         site_id: 101,
         slug: 'site-1',
+        site_code: 'swcb_test101',
+        callback_code: 'swcb_test101',
         name: '測試網站',
         permissions: actorPermissions
       }];
@@ -504,6 +512,8 @@ test('homepage editing tools call repository implementations', async () => {
         site_admin_id: 13,
         site_id: 101,
         slug: 'site-1',
+        site_code: 'swcb_test101',
+        callback_code: 'swcb_test101',
         name: '測試網站',
         permissions: actorPermissions
       }];
@@ -517,7 +527,7 @@ test('homepage editing tools call repository implementations', async () => {
     listSitesForAccount: async () => [],
     selectSiteForAdminIdentity: async (accountId, args) => {
       calls.push(['select', accountId, args]);
-      return { selected_site: { id: args.site_id, slug: 'site-1' } };
+      return { selected_site: { id: 101, site_id: 101, site_code: args.site_code, callback_code: args.site_code, slug: 'site-1', name: '測試網站' } };
     },
     listThemesForAccountSite: async (accountId, args) => {
       calls.push(['themes_list', accountId, args]);
@@ -1064,8 +1074,12 @@ test('homepage editing tools call repository implementations', async () => {
       return response.json();
     };
 
-    assert.equal((await callTool(23, 'slimweb_site_select', { site_id: 101 })).result.structuredContent.selected_site.slug, 'site-1');
-    assert.equal((await callTool(24, 'slimweb_themes_list', { site_id: 101 })).result.structuredContent.themes.length, 1);
+    const selectedSite = (await callTool(23, 'slimweb_site_select', { site_code: 'swcb_test101' })).result.structuredContent.selected_site;
+    assert.equal(selectedSite.site_code, 'swcb_test101');
+    assert.equal(selectedSite.name, '測試網站');
+    assert.equal(selectedSite.site_id, undefined);
+    assert.equal(selectedSite.id, undefined);
+    assert.equal((await callTool(24, 'slimweb_themes_list', { site_code: 'swcb_test101' })).result.structuredContent.themes.length, 1);
     assert.equal((await callTool(241, 'slimweb_site_theme_mode_get', { site_id: 101 })).result.structuredContent.theme_mode, 'light');
     assert.equal((await callTool(2420, 'slimweb_design_context_get', { site_id: 101 })).result.structuredContent.framework, 'Tailwind');
     assert.equal((await callTool(242, 'slimweb_site_theme_mode_update', { site_id: 101, theme_mode: 'dark' })).result.structuredContent.theme_mode, 'dark');
@@ -1523,6 +1537,8 @@ test('authenticated tools can read account status and sites', async () => {
         site_id: 101,
         id: 101,
         slug: 'site-1',
+        site_code: 'swcb_site_login',
+        callback_code: 'swcb_site_login',
         name: '測試網站',
         domain: '',
         permissions: ['backend_ai_assistant', 'page_management'],
@@ -1537,6 +1553,8 @@ test('authenticated tools can read account status and sites', async () => {
           site_id: 101,
           id: 101,
           slug: 'site-1',
+          site_code: 'swcb_site_login',
+          callback_code: 'swcb_site_login',
           name: '測試網站',
           domain: '',
           permissions: ['backend_ai_assistant', 'page_management'],
@@ -1596,11 +1614,17 @@ test('authenticated tools can read account status and sites', async () => {
     const sitesBody = await sitesResponse.json();
 
     assert.equal(sitesBody.result.structuredContent.sites.length, 1);
-    assert.equal(sitesBody.result.structuredContent.sites[0].slug, 'site-1');
-    assert.equal(sitesBody.result.structuredContent.sites[0].site_admin_id, 11);
+    assert.deepEqual(sitesBody.result.structuredContent.sites[0], {
+      site_code: 'swcb_site_login',
+      name: '測試網站'
+    });
+    assert.equal(sitesBody.result.structuredContent.sites[0].site_id, undefined);
+    assert.equal(sitesBody.result.structuredContent.sites[0].id, undefined);
+    assert.equal(sitesBody.result.structuredContent.sites[0].slug, undefined);
+    assert.equal(sitesBody.result.structuredContent.sites[0].site_admin_id, undefined);
     assert.equal(sitesBody.result.structuredContent.sites[0].status, undefined);
-    assert.equal(sitesBody.result.structuredContent.sites[0].site_status, 'active');
-    assert.equal(sitesBody.result.structuredContent.sites[0].site_status_label, '正常運作');
+    assert.equal(sitesBody.result.structuredContent.sites[0].site_status, undefined);
+    assert.equal(sitesBody.result.structuredContent.sites[0].site_status_label, undefined);
   });
 });
 
