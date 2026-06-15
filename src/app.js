@@ -1397,7 +1397,11 @@ const MCP_TOOLS = [
         status: { type: 'string', enum: ['active', 'hidden', 'sold_out'] },
         is_service: { type: 'boolean' },
         gift_coupon_template_id: { type: 'integer' },
-        variant_mode: { type: 'string', enum: ['none', 'same_price', 'different_price'] },
+        variant_mode: {
+          type: 'string',
+          enum: ['none', 'different_price'],
+          description: 'Optional. Defaults to different_price when variants are provided, otherwise none.'
+        },
         replace_image_by_variant: { type: 'boolean' },
         primary_images: {
           type: 'array',
@@ -1423,12 +1427,9 @@ const MCP_TOOLS = [
           type: 'array',
           items: { type: 'string' }
         },
-        same_price_spec_values: {
+        variants: {
           type: 'array',
-          items: { type: 'object' }
-        },
-        different_price_variants: {
-          type: 'array',
+          description: '商品規格. Each row may include name, price or base_price, optional sale_price, and stock.',
           items: { type: 'object' }
         },
         quantity_discounts: {

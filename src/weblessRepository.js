@@ -5080,7 +5080,7 @@ export class WeblessAccountRepository {
     await this.syncProductImages(site, product, 'primary', payload.primary_images, payload.primary_images_mode);
     await this.syncProductImages(site, product, 'content', payload.content_images, payload.content_images_mode);
     await this.syncProductVideos(product.id, payload.videos);
-    await this.syncProductVariants(product.id, payload.variant_mode, payload, product.base_price, product.sale_price);
+    await this.syncProductVariants(product.id, payload.variant_mode, payload);
     await this.syncProductQuantityDiscounts(product.id, payload.variant_mode, payload.quantity_discounts);
   }
 
@@ -5160,15 +5160,13 @@ export class WeblessAccountRepository {
     }
   }
 
-  async syncProductVariants(productId, variantMode, payload, basePrice, salePrice) {
-    if (!['same_price', 'different_price'].includes(variantMode)) {
+  async syncProductVariants(productId, variantMode, payload) {
+    if (variantMode !== 'different_price') {
       return;
     }
 
     await this.pool.query('delete from product_variants where product_id = $1', [productId]);
-    const rows = variantMode === 'same_price'
-      ? normalizeSamePriceVariants(payload.same_price_spec_values, basePrice, salePrice)
-      : normalizeDifferentPriceVariants(payload.different_price_variants);
+    const rows = normalizeDifferentPriceVariants(payload.variants);
 
     for (let index = 0; index < rows.length; index += 1) {
       await this.pool.query(
@@ -8217,7 +8215,9 @@ function formatNavItem(item) {
 
 function normalizeProductPayload(args, existing = null) {
   const name = requireProductName(args.name ?? existing?.name);
-  const variantMode = normalizeVariantMode(args.variant_mode ?? existing?.variant_mode ?? 'none');
+  const variantsInput = productVariantRowsInput(args);
+  const existingVariantMode = existing?.variant_mode === 'same_price' ? 'different_price' : existing?.variant_mode;
+  const variantMode = normalizeVariantMode(args.variant_mode ?? (variantsInput.length > 0 ? 'different_price' : existingVariantMode) ?? 'none');
   const payload = {
     site_category_id: requireInteger(args.site_category_id ?? existing?.site_category_id, 'site_category_id'),
     variant_mode: variantMode,
@@ -8240,8 +8240,7 @@ function normalizeProductPayload(args, existing = null) {
     content_images: normalizeProductImageInputs(args.content_images),
     content_images_mode: normalizeProductImagesMode(args.content_images_mode, existing),
     videos: normalizeStringArray(args.videos),
-    same_price_spec_values: Array.isArray(args.same_price_spec_values) ? args.same_price_spec_values : [],
-    different_price_variants: Array.isArray(args.different_price_variants) ? args.different_price_variants : [],
+    variants: variantsInput,
     quantity_discounts: Array.isArray(args.quantity_discounts) ? args.quantity_discounts : []
   };
 
@@ -8292,11 +8291,23 @@ function normalizeProductSku(value) {
 function normalizeVariantMode(value) {
   const mode = String(value ?? 'none').trim();
 
-  if (!['none', 'same_price', 'different_price'].includes(mode)) {
-    throw codedError('VALIDATION_FAILED', 'variant_mode must be none, same_price, or different_price.');
+  if (!['none', 'different_price'].includes(mode)) {
+    throw codedError('VALIDATION_FAILED', 'variant_mode must be none or different_price.');
   }
 
   return mode;
+}
+
+function productVariantRowsInput(args) {
+  if (Array.isArray(args.variants)) {
+    return args.variants;
+  }
+
+  if (Array.isArray(args.different_price_variants)) {
+    return args.different_price_variants;
+  }
+
+  return [];
 }
 
 function normalizeProductStatus(value) {
@@ -8369,21 +8380,6 @@ function normalizeYoutubeUrl(url) {
   return `https://www.youtube.com/watch?v=${match[1]}`;
 }
 
-function normalizeSamePriceVariants(value, basePrice, salePrice) {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value
-    .map((row) => ({
-      name: String(row?.name ?? '').trim(),
-      price: basePrice,
-      sale_price: salePrice,
-      stock: requireNonNegativeAmount(row?.stock ?? 0, 'same_price_spec_values.stock')
-    }))
-    .filter((row) => row.name !== '');
-}
-
 function normalizeDifferentPriceVariants(value) {
   if (!Array.isArray(value)) {
     return [];
@@ -8392,9 +8388,9 @@ function normalizeDifferentPriceVariants(value) {
   return value
     .map((row) => ({
       name: String(row?.name ?? '').trim(),
-      price: requireNonNegativeAmount(row?.base_price ?? row?.price, 'different_price_variants.base_price'),
-      sale_price: nullableNonNegativeAmount(row?.sale_price, 'different_price_variants.sale_price'),
-      stock: requireNonNegativeAmount(row?.stock ?? 0, 'different_price_variants.stock')
+      price: requireNonNegativeAmount(row?.base_price ?? row?.price, 'variants.base_price'),
+      sale_price: nullableNonNegativeAmount(row?.sale_price, 'variants.sale_price'),
+      stock: requireNonNegativeAmount(row?.stock ?? 0, 'variants.stock')
     }))
     .filter((row) => row.name !== '');
 }

@@ -1564,6 +1564,21 @@ function productCatalogPool() {
         return { rows: [] };
       }
 
+      if (sql.includes('insert into product_variants')) {
+        state.variants.push({
+          id: state.nextVariantId++,
+          product_id: params[0],
+          sku: null,
+          name: params[1],
+          price: params[2],
+          sale_price: params[3],
+          stock: params[4],
+          sort_order: params[5],
+          is_default: params[6]
+        });
+        return { rows: [] };
+      }
+
       if (sql.includes('select id, product_id, image_type')) {
         return { rows: state.images.filter((image) => image.product_id === params[0]) };
       }
@@ -2415,6 +2430,56 @@ test('repository creates categories and products with required primary images', 
     }),
     /At least one primary image/
   );
+});
+
+test('repository maps product variants to the remaining different-price spec storage', async () => {
+  const pool = productCatalogPool();
+  const repository = new WeblessAccountRepository(pool, {
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+
+  const product = await repository.upsertProduct(11, {
+    site_id: 101,
+    site_category_id: 6,
+    name: '規格測試商品',
+    base_price: 1200,
+    variants: [{
+      name: 'S',
+      price: 1200,
+      sale_price: 1000,
+      stock: 3
+    }, {
+      name: 'M',
+      base_price: 1400,
+      stock: 5
+    }],
+    primary_images: [{
+      source: {
+        media_path: 'sites/101/mcp-uploads/committed/spec-product.png'
+      }
+    }]
+  });
+
+  assert.equal(product.product.variant_mode, 'different_price');
+  assert.deepEqual(product.product.variants.map((variant) => ({
+    name: variant.name,
+    price: variant.price,
+    sale_price: variant.sale_price,
+    stock: variant.stock,
+    is_default: variant.is_default
+  })), [{
+    name: 'S',
+    price: 1200,
+    sale_price: 1000,
+    stock: 3,
+    is_default: true
+  }, {
+    name: 'M',
+    price: 1400,
+    sale_price: null,
+    stock: 5,
+    is_default: false
+  }]);
 });
 
 test('repository manages nav items with root default and base64 svg icons', async () => {

@@ -397,6 +397,11 @@ test('MCP tools list includes homepage editing contract tools', async () => {
     assert.deepEqual(toolsByName.get('slimweb_products_upsert').inputSchema.properties.content_images_mode.enum, ['append', 'replace']);
     assert.match(toolsByName.get('slimweb_products_upsert').inputSchema.properties.primary_images.description, /runtime/);
     assert.match(toolsByName.get('slimweb_products_upsert').inputSchema.properties.primary_images.description, /ChatGPT Remote MCP/);
+    assert.equal(toolsByName.get('slimweb_products_upsert').inputSchema.properties.same_price_spec_values, undefined);
+    assert.equal(toolsByName.get('slimweb_products_upsert').inputSchema.properties.different_price_variants, undefined);
+    assert.deepEqual(toolsByName.get('slimweb_products_upsert').inputSchema.properties.variant_mode.enum, ['none', 'different_price']);
+    assert.equal(toolsByName.get('slimweb_products_upsert').inputSchema.properties.variants.type, 'array');
+    assert.match(toolsByName.get('slimweb_products_upsert').inputSchema.properties.variants.description, /規格/);
     assert.equal(toolsByName.get('slimweb_orders_pending_list'), undefined);
     assert.ok(toolsByName.get('slimweb_orders_list').inputSchema.properties.search_field.enum.includes('buyer_name'));
     assert.ok(toolsByName.get('slimweb_orders_list').inputSchema.properties.search_field.enum.includes('payment_incomplete'));
