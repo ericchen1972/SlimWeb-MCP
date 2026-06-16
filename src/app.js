@@ -145,21 +145,17 @@ const POSTER_PREVIEW_WIDGET_HTML = `<!doctype html>
     }
     const info = document.getElementById('info');
     const poster = document.getElementById('poster');
-    let rendered = false;
-    let attempts = 0;
     function readPayload(payload) {
       return posterPayload(payload) || posterPayload(window.openai) || posterPayload(window.openai?.toolOutput) || posterPayload(window.openai?.structuredContent) || posterPayload(window.openai?.toolResponseMetadata);
     }
     function render(payload) {
-      if (rendered) return true;
       const data = readPayload(payload);
       if (!data?.image_url) {
-        poster.innerHTML = '<div class="empty">等待海報資料...</div>';
+        poster.innerHTML = '<div class="empty">尚無海報資料。</div>';
         window.openai?.notifyIntrinsicHeight?.();
         return false;
       }
 
-      rendered = true;
       const products = Array.isArray(data.products) ? data.products.map((item) => item.name).filter(Boolean).join('、') : '';
       info.textContent = [data.aspect_ratio ? '比例：' + data.aspect_ratio : '', products ? '商品：' + products : ''].filter(Boolean).join('　');
       poster.replaceChildren();
@@ -170,25 +166,7 @@ const POSTER_PREVIEW_WIDGET_HTML = `<!doctype html>
       window.openai?.notifyIntrinsicHeight?.();
       return true;
     }
-    function retryRender() {
-      if (rendered) return;
-      attempts += 1;
-      if (render()) return;
-      if (attempts < 80) {
-        setTimeout(retryRender, 250);
-      } else {
-        poster.innerHTML = '<div class="empty">尚無海報。</div>';
-        window.openai?.notifyIntrinsicHeight?.();
-      }
-    }
     render();
-    setTimeout(retryRender, 100);
-    window.addEventListener('openai:set_globals', (event) => render(event.detail), { passive: true });
-    window.addEventListener('message', (event) => {
-      const message = event.data;
-      if (!message || message.jsonrpc !== '2.0' || message.method !== 'ui/notifications/tool-result') return;
-      render(message.params);
-    }, { passive: true });
   </script>
 </body>
 </html>`;
