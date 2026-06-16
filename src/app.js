@@ -80,6 +80,7 @@ const MEMBER_EMAIL_PREVIEW_WIDGET_HTML = `<!doctype html>
 </body>
 </html>`;
 const POSTER_PREVIEW_WIDGET_URI = 'ui://slimweb/poster-preview.html';
+const MCP_APP_HTML_MIME_TYPE = 'text/html;profile=mcp-app';
 const POSTER_PREVIEW_WIDGET_HTML = `<!doctype html>
 <html lang="zh-Hant">
 <head>
@@ -93,6 +94,10 @@ const POSTER_PREVIEW_WIDGET_HTML = `<!doctype html>
     .poster{display:grid;place-items:center;background:#020617;border:1px solid #334155;border-radius:8px;overflow:hidden;min-height:360px}
     img{display:block;max-width:100%;max-height:78vh;object-fit:contain}
     .empty{padding:24px;color:#94a3b8}
+    .diagnostics{padding:12px 16px;border:1px dashed #334155;border-radius:8px;color:#94a3b8;font-size:12px;line-height:1.45}
+    .diagnostics-title{margin:0 0 8px;color:#e5e7eb;font-size:12px;font-weight:700}
+    .diagnostics-row{display:flex;justify-content:space-between;gap:12px;border-top:1px solid #1f2937;padding-top:5px;margin-top:5px}
+    .diagnostics-row span:last-child{overflow-wrap:anywhere;text-align:right}
   </style>
 </head>
 <body>
@@ -104,6 +109,9 @@ const POSTER_PREVIEW_WIDGET_HTML = `<!doctype html>
     <div id="poster" class="poster"></div>
   </div>
   <script>
+    let rendered = false;
+    const lastEvents = [];
+
     function objectValue(value) {
       return value && typeof value === 'object' ? value : null;
     }
@@ -143,19 +151,57 @@ const POSTER_PREVIEW_WIDGET_HTML = `<!doctype html>
 
       return null;
     }
+    function rememberEvent(name, detail) {
+      const keys = objectValue(detail) ? Object.keys(detail).slice(0, 8).join(',') : typeof detail;
+      lastEvents.push(keys ? name + '(' + keys + ')' : name);
+      if (lastEvents.length > 6) lastEvents.shift();
+    }
+    function yesNo(value) {
+      return value ? 'yes' : 'no';
+    }
+    function keysOf(value) {
+      return objectValue(value) ? Object.keys(value).slice(0, 10).join(',') || 'object-no-keys' : typeof value;
+    }
+    function diagnosticsHtml() {
+      const openai = objectValue(window.openai);
+      const rows = [
+        ['window.openai', yesNo(openai)],
+        ['toolOutput', yesNo(window.openai?.toolOutput)],
+        ['toolOutputKeys', keysOf(window.openai?.toolOutput)],
+        ['structuredContent', yesNo(window.openai?.structuredContent)],
+        ['toolResponseMetadata', yesNo(window.openai?.toolResponseMetadata)],
+        ['toolResponseMetadataKeys', keysOf(window.openai?.toolResponseMetadata)],
+        ['lastEvents', lastEvents.length ? lastEvents.join(' | ') : 'none']
+      ];
+
+      return '<div class="diagnostics" data-slimweb-bridge-diagnostics="true">' +
+        '<p class="diagnostics-title">Bridge diagnostics</p>' +
+        rows.map(([label, value]) =>
+          '<div class="diagnostics-row"><span>' + label + '</span><span>' + value + '</span></div>'
+        ).join('') +
+        '</div>';
+    }
     const info = document.getElementById('info');
     const poster = document.getElementById('poster');
+    function readOpenAiPayload() {
+      return posterPayload({
+        toolOutput: window.openai?.toolOutput,
+        structuredContent: window.openai?.structuredContent,
+        toolResponseMetadata: window.openai?.toolResponseMetadata
+      });
+    }
     function readPayload(payload) {
-      return posterPayload(payload) || posterPayload(window.openai) || posterPayload(window.openai?.toolOutput) || posterPayload(window.openai?.structuredContent) || posterPayload(window.openai?.toolResponseMetadata);
+      return posterPayload(payload) || readOpenAiPayload() || posterPayload(window.openai);
     }
     function render(payload) {
       const data = readPayload(payload);
       if (!data?.image_url) {
-        poster.innerHTML = '<div class="empty">尚無海報資料。</div>';
+        poster.innerHTML = '<div class="empty">Waiting for poster data...</div>' + diagnosticsHtml();
         window.openai?.notifyIntrinsicHeight?.();
         return false;
       }
 
+      rendered = true;
       const products = Array.isArray(data.products) ? data.products.map((item) => item.name).filter(Boolean).join('、') : '';
       info.textContent = [data.aspect_ratio ? '比例：' + data.aspect_ratio : '', products ? '商品：' + products : ''].filter(Boolean).join('　');
       poster.replaceChildren();
@@ -166,7 +212,32 @@ const POSTER_PREVIEW_WIDGET_HTML = `<!doctype html>
       window.openai?.notifyIntrinsicHeight?.();
       return true;
     }
-    render();
+    rememberEvent('initial', window.openai);
+    render(readOpenAiPayload());
+
+    let pollCount = 0;
+    const pollForGlobals = window.setInterval(() => {
+      if (rendered || pollCount >= 20) {
+        window.clearInterval(pollForGlobals);
+        return;
+      }
+
+      pollCount += 1;
+      render(readOpenAiPayload());
+    }, 100);
+
+    window.addEventListener('openai:set_globals', (event) => {
+      rememberEvent('openai:set_globals', event.detail);
+      render(event.detail);
+    }, { passive: true });
+
+    window.addEventListener('message', (event) => {
+      const message = event.data;
+      if (!message || message.jsonrpc !== '2.0') return;
+      rememberEvent(message.method || 'message', message.params);
+      if (message.method !== 'ui/notifications/tool-result') return;
+      render(message.params);
+    }, { passive: true });
   </script>
 </body>
 </html>`;
@@ -3990,7 +4061,7 @@ async function handleMcpMessage(message, request, context) {
           {
             uri: POSTER_PREVIEW_WIDGET_URI,
             name: 'SlimWeb poster preview',
-            mimeType: 'text/html'
+            mimeType: MCP_APP_HTML_MIME_TYPE
           }
         ]
       });
@@ -4004,7 +4075,7 @@ async function handleMcpMessage(message, request, context) {
         return mcpResult(id, {
           contents: [{
             uri: POSTER_PREVIEW_WIDGET_URI,
-            mimeType: 'text/html',
+            mimeType: MCP_APP_HTML_MIME_TYPE,
             text: POSTER_PREVIEW_WIDGET_HTML,
             _meta: {
               'openai/widgetDescription': 'Display the generated SlimWeb poster.',

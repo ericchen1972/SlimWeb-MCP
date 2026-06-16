@@ -250,15 +250,18 @@ test('MCP resources expose poster preview widget', async () => {
     });
     const readBody = await readResponse.json();
 
-    assert.equal(readBody.result.contents[0].mimeType, 'text/html');
+    assert.equal(readBody.result.contents[0].mimeType, 'text/html;profile=mcp-app');
     assert.match(readBody.result.contents[0].text, /海報預覽/);
     assert.match(readBody.result.contents[0].text, /posterPayload/);
     assert.match(readBody.result.contents[0].text, /mcp_tool_result/);
     assert.match(readBody.result.contents[0].text, /structuredContent/);
-    assert.match(readBody.result.contents[0].text, /尚無海報資料/);
+    assert.match(readBody.result.contents[0].text, /Waiting for poster data/);
+    assert.match(readBody.result.contents[0].text, /Bridge diagnostics/);
+    assert.match(readBody.result.contents[0].text, /toolOutputKeys/);
+    assert.match(readBody.result.contents[0].text, /lastEvents/);
     assert.doesNotMatch(readBody.result.contents[0].text, /setTimeout\(retryRender/);
-    assert.doesNotMatch(readBody.result.contents[0].text, /openai:set_globals/);
-    assert.doesNotMatch(readBody.result.contents[0].text, /ui\/notifications\/tool-result/);
+    assert.match(readBody.result.contents[0].text, /openai:set_globals/);
+    assert.match(readBody.result.contents[0].text, /ui\/notifications\/tool-result/);
   });
 });
 
