@@ -104,7 +104,46 @@ const POSTER_PREVIEW_WIDGET_HTML = `<!doctype html>
     <div id="poster" class="poster"></div>
   </div>
   <script>
-    const data = window.openai?.toolOutput || window.openai?.structuredContent || {};
+    function objectValue(value) {
+      return value && typeof value === 'object' ? value : null;
+    }
+    function enqueueObjectValues(queue, candidate) {
+      for (const value of Object.values(candidate)) {
+        if (objectValue(value)) {
+          queue.push(value);
+        }
+      }
+    }
+    function posterPayload(value) {
+      const seen = new Set();
+      const queue = [value];
+
+      while (queue.length > 0) {
+        const candidate = objectValue(queue.shift());
+        if (!candidate || seen.has(candidate)) continue;
+        seen.add(candidate);
+
+        if (typeof candidate.image_url === 'string' && candidate.image_url !== '') {
+          return candidate;
+        }
+
+        queue.push(
+          candidate.structuredContent,
+          candidate.toolOutput,
+          candidate.toolResponse,
+          candidate.toolResponseMetadata,
+          candidate.call_tool_result,
+          candidate.mcp_tool_result,
+          candidate.result,
+          candidate.params,
+          candidate.globals
+        );
+        enqueueObjectValues(queue, candidate);
+      }
+
+      return null;
+    }
+    const data = posterPayload(window.openai) || posterPayload(window.openai?.toolOutput) || posterPayload(window.openai?.structuredContent) || {};
     const info = document.getElementById('info');
     const poster = document.getElementById('poster');
     const products = Array.isArray(data.products) ? data.products.map((item) => item.name).filter(Boolean).join('、') : '';

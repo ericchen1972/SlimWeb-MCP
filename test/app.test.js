@@ -252,6 +252,9 @@ test('MCP resources expose poster preview widget', async () => {
 
     assert.equal(readBody.result.contents[0].mimeType, 'text/html');
     assert.match(readBody.result.contents[0].text, /海報預覽/);
+    assert.match(readBody.result.contents[0].text, /posterPayload/);
+    assert.match(readBody.result.contents[0].text, /mcp_tool_result/);
+    assert.match(readBody.result.contents[0].text, /structuredContent/);
   });
 });
 
