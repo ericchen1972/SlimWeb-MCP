@@ -255,6 +255,10 @@ test('MCP resources expose poster preview widget', async () => {
     assert.match(readBody.result.contents[0].text, /posterPayload/);
     assert.match(readBody.result.contents[0].text, /mcp_tool_result/);
     assert.match(readBody.result.contents[0].text, /structuredContent/);
+    assert.match(readBody.result.contents[0].text, /等待海報資料/);
+    assert.match(readBody.result.contents[0].text, /setTimeout\(retryRender/);
+    assert.match(readBody.result.contents[0].text, /openai:set_globals/);
+    assert.match(readBody.result.contents[0].text, /ui\/notifications\/tool-result/);
   });
 });
 
