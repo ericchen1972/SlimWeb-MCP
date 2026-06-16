@@ -510,6 +510,8 @@ assert.equal(toolsByName.get('slimweb_orders_profit_statistics').inputSchema.pro
     assert.equal(toolsByName.get('slimweb_pages_create').inputSchema.properties.page_key.type, 'string');
     assert.equal(toolsByName.get('slimweb_pages_update').inputSchema.required.includes('page_name'), true);
     assert.equal(toolsByName.get('slimweb_pages_update').inputSchema.properties.title.type, 'string');
+    assert.match(toolsByName.get('slimweb_pages_get_content').description, /homepage index/);
+    assert.match(toolsByName.get('slimweb_pages_update').description, /homepage index/);
     assert.match(toolsByName.get('slimweb_pages_create').description, /stop the task and ask the user to paste or re-upload the image/i);
     assert.match(toolsByName.get('slimweb_pages_update').description, /stop the task and ask the user to paste or re-upload the image/i);
     assert.equal(toolsByName.get('slimweb_pages_check_title').inputSchema.required.includes('title'), true);
@@ -1027,7 +1029,7 @@ test('homepage editing tools call repository implementations', async () => {
           title: '首頁',
           type: 'fixed',
           is_fixed: true,
-          can_edit: false,
+          can_edit: true,
           can_delete: false,
           public_url: 'https://slimweb.tw/sites/site-1/default-preview?preview_page=index&preview_style_scheme=default',
           preview_url: 'https://slimweb.tw/sites/site-1/default-preview?preview_page=index&preview_style_scheme=default',
@@ -1079,7 +1081,7 @@ test('homepage editing tools call repository implementations', async () => {
     listPages: async (accountId, args) => {
       calls.push(['pages_list', accountId, args]);
       return { pages: [
-        { page_key: 'index', title: '首頁', type: 'fixed', is_fixed: true, can_edit: false, can_delete: false, public_url: 'https://slimweb.tw/sites/site-1/default-preview?preview_page=index&preview_style_scheme=default', preview_url: 'https://slimweb.tw/sites/site-1/default-preview?preview_page=index&preview_style_scheme=default' },
+        { page_key: 'index', title: '首頁', type: 'fixed', is_fixed: true, can_edit: true, can_delete: false, public_url: 'https://slimweb.tw/sites/site-1/default-preview?preview_page=index&preview_style_scheme=default', preview_url: 'https://slimweb.tw/sites/site-1/default-preview?preview_page=index&preview_style_scheme=default' },
         { page_key: 'about-us', title: '關於我們', type: 'custom', is_fixed: false, can_edit: true, can_delete: true, public_url: 'https://slimweb.tw/sites/site-1/default-preview/pages/about-us', preview_url: 'https://slimweb.tw/sites/site-1/default-preview/pages/about-us' },
         { page_key: 'furong', title: '芙蓉', type: 'custom', is_fixed: false, can_edit: true, can_delete: true, public_url: 'https://slimweb.tw/sites/site-1/default-preview/pages/furong', preview_url: 'https://slimweb.tw/sites/site-1/default-preview/pages/furong' }
       ] };

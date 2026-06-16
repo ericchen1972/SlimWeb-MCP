@@ -4302,7 +4302,7 @@ export class WeblessAccountRepository {
       ...page,
       type: 'fixed',
       is_fixed: true,
-      can_edit: false,
+      can_edit: isEditableFixedPageKey(page.page_key),
       can_delete: false,
       public_url: this.previewUrlFor(site, page.page_key, previewThemeId),
       preview_url: this.previewUrlFor(site, page.page_key, previewThemeId)
@@ -4320,17 +4320,8 @@ export class WeblessAccountRepository {
   async getPageContent(accountId, args) {
     const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
     const pageName = requireNonEmptyString(args.page_name, 'page_name');
-    const lookup = normalizeTitleMatch(pageName);
-    const customPages = await this.listCustomPagesForSite(site, { includeHtml: true });
-    const customMatch = customPages.find((page) => pageLookupCandidates(page).some((candidate) => normalizeTitleMatch(candidate) === lookup));
-    const pageRecord = customMatch
-      ? {
-        ...customMatch,
-        exists: true,
-        content: { html: customMatch.html ?? '' }
-      }
-      : null;
-    if (!pageRecord) {
+    const pageRecord = await this.findPageForSite(site, pageName, { includeHtml: true });
+    if (!pageRecord || (pageRecord.is_fixed && !isEditableFixedPageKey(pageRecord.page_key))) {
       throw codedError('NOT_FOUND', `Page not found or not accessible: ${pageName}`);
     }
 
@@ -4409,8 +4400,28 @@ export class WeblessAccountRepository {
       throw codedError('NOT_FOUND', `Page not found or not accessible: ${pageName}`);
     }
 
-    if (pageRecord.is_fixed) {
+    if (pageRecord.is_fixed && !isEditableFixedPageKey(pageRecord.page_key)) {
       throw codedError('VALIDATION_FAILED', 'Fixed template pages cannot be modified.');
+    }
+
+    if (isEditableFixedPageKey(pageRecord.page_key)) {
+      const theme = siteLevelHomepageTheme(site);
+      const storagePath = homeContentStoragePath(site.id);
+
+      await this.storage.write(storagePath, Buffer.from(html.trim() + '\n', 'utf8'), 'text/x-php; charset=utf-8');
+
+      return {
+        ok: true,
+        site,
+        page_key: pageRecord.page_key,
+        title: pageRecord.title,
+        theme,
+        storage_path: storagePath,
+        metadata_path: null,
+        public_url: pageRecord.public_url,
+        preview_url: pageRecord.preview_url,
+        bytes_written: Buffer.byteLength(html.trim() + '\n')
+      };
     }
 
     const currentTitle = pageRecord.title;
@@ -4559,7 +4570,7 @@ export class WeblessAccountRepository {
       ...page,
       type: 'fixed',
       is_fixed: true,
-      can_edit: false,
+      can_edit: isEditableFixedPageKey(page.page_key),
       can_delete: false,
       public_url: this.previewUrlFor(site, page.page_key, 'default'),
       preview_url: this.previewUrlFor(site, page.page_key, 'default'),
@@ -4576,7 +4587,7 @@ export class WeblessAccountRepository {
         return {
           ...fixedMatch,
           storage_path: storagePath,
-          content: html === null ? null : { html },
+          content: { html: html ?? '' },
           exists: true
         };
       }
@@ -4615,7 +4626,7 @@ export class WeblessAccountRepository {
           matched_title: matchedTitle,
           type: 'fixed',
           is_fixed: true,
-          can_edit: false,
+          can_edit: isEditableFixedPageKey(page.page_key),
           can_delete: false,
           public_url: this.previewUrlFor(site, page.page_key, 'default')
         });
@@ -10743,6 +10754,10 @@ function fixedTemplatePages() {
     ['article_view', '文章頁面'],
     ['ai_support', 'AI 客服頁面']
   ].map(([pageKey, title]) => ({ page_key: pageKey, title }));
+}
+
+function isEditableFixedPageKey(pageKey) {
+  return pageKey === 'index';
 }
 
 function headlineFromPageKey(pageKey) {

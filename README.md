@@ -273,9 +273,9 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 | `slimweb_assets_upload` | Available | asset write | 只有當 AI flow 明確需要保存可重用素材時才寫入 asset。 |
 | `slimweb_pages_check_title` | Available | content read | 檢查指定頁面標題是否已存在，固定頁會同時比對英文別名，採用 trim + 大小寫不敏感規則。 |
 | `slimweb_pages_list` | Available | content read | 列出站台所有固定頁與自訂頁；可選填 `theme_id` 讓回傳連結使用指定版型預覽。 |
-| `slimweb_pages_get_content` | Available | content read | 依頁面名稱讀取單一自訂頁面的內容與中繼資訊；不搜尋固定頁。 |
+| `slimweb_pages_get_content` | Available | content read | 依頁面名稱讀取單一可編輯頁面的內容與中繼資訊；包含自訂頁與首頁 `index`，其他固定頁不可編輯。 |
 | `slimweb_pages_create` | Available | content write | 建立新的自訂頁面；頁面標題需先過 `slimweb_pages_check_title`。若 ChatGPT Remote MCP 的頁面需求需要圖片但沒有可用附圖或可直接下載的圖片 URL，先停止並請使用者貼圖。 |
-| `slimweb_pages_update` | Available | content write | 修改既有自訂頁面。若 ChatGPT Remote MCP 的頁面需求需要圖片但沒有可用附圖或可直接下載的圖片 URL，先停止並請使用者貼圖。 |
+| `slimweb_pages_update` | Available | content write | 修改既有可編輯頁面，包含自訂頁與首頁 `index`；其他固定頁不可編輯。若 ChatGPT Remote MCP 的頁面需求需要圖片但沒有可用附圖或可直接下載的圖片 URL，先停止並請使用者貼圖。 |
 | `slimweb_preview_get_page_url` | Available | content read | 回傳指定 site、page、theme 的預覽 URL，供 AI 自行截圖與檢查。 |
 | `slimweb_audit_list` | Available | audit read | 列出近期 MCP tool execution 紀錄。 |
 
@@ -1377,7 +1377,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 狀態: Available
 - 權限: content read
 - Scope: active site
-- 用途: 依 `page_name` 讀取單一自訂頁面的內容與中繼資訊；固定頁不在此工具搜尋範圍內。
+- 用途: 依 `page_name` 讀取單一可編輯頁面的內容與中繼資訊；包含自訂頁與首頁 `index`，其他固定頁不可編輯。
 - Input: `site_code`、`page_name`
 - Output: site summary、page summary、content HTML、storage path、metadata path、public URL、preview URL
 - Side effects: none
@@ -1403,10 +1403,10 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 狀態: Available
 - 權限: content write
 - Scope: active site
-- 用途: 修改既有自訂頁面。流程會先用 `slimweb_pages_get_content` 讀取目前自訂頁內容；若目前是 ChatGPT Remote MCP 而且沒有可用附圖或可直接下載的圖片 URL，就先終止任務並請使用者貼圖。
+- 用途: 修改既有可編輯頁面，包含自訂頁與首頁 `index`。流程會先用 `slimweb_pages_get_content` 讀取目前頁面內容；其他固定系統頁不可編輯。若目前是 ChatGPT Remote MCP 而且沒有可用附圖或可直接下載的圖片 URL，就先終止任務並請使用者貼圖。
 - Input: `site_code`、`page_name`、`content.html` or `content.body_html`、optional `title`、optional `confirmation_token`
 - Output: write summary、site summary、theme summary、page key、title、public URL、preview URL、bytes written
-- Side effects: overwrites custom page body and metadata in configured Webless template storage
+- Side effects: overwrites page body in configured Webless template storage; custom pages also update metadata, while homepage `index` keeps fixed-page metadata
 - 是否需要 confirmation: yes when replacing customer-facing content
 - 錯誤情境: page not found、unsafe content、site not found、storage adapter not configured
 - Audit fields: request ID、user ID、account ID、site ID、page key、title

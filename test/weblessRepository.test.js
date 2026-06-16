@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { generateKeyPairSync } from 'node:crypto';
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
@@ -2769,7 +2769,59 @@ test('repository rejects standalone content SEO updates without workflow context
   );
 });
 
-test('repository getPageContent only searches custom pages', async () => {
+test('repository reads and updates editable homepage content through page tools', async () => {
+  const storageRoot = await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-'));
+  const repository = new WeblessAccountRepository(fakePool(), {
+    storageRoot,
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+
+  const homepagePath = path.join(storageRoot, 'sites/101/templates/default/pages/index/content.blade.php');
+  await mkdir(path.dirname(homepagePath), { recursive: true });
+  await writeFile(
+    homepagePath,
+    '<section>Original homepage</section>\n',
+    'utf8'
+  );
+
+  const pages = await repository.listPages(11, { site_id: 101 });
+  const indexPage = pages.pages.find((page) => page.page_key === 'index');
+
+  assert.equal(indexPage?.is_fixed, true);
+  assert.equal(indexPage?.can_edit, true);
+  assert.equal(indexPage?.can_delete, false);
+
+  const read = await repository.getPageContent(11, {
+    site_id: 101,
+    page_name: 'index'
+  });
+
+  assert.equal(read.exists, true);
+  assert.equal(read.page_key, 'index');
+  assert.equal(read.is_fixed, true);
+  assert.equal(read.can_edit, true);
+  assert.equal(read.content.html, '<section>Original homepage</section>\n');
+
+  const updated = await repository.updatePage(11, {
+    site_id: 101,
+    page_name: 'index',
+    content: {
+      html: '<section>Original homepage</section><section>Poster</section>'
+    }
+  });
+
+  assert.equal(updated.ok, true);
+  assert.equal(updated.page_key, 'index');
+  assert.equal(updated.title, '首頁');
+  assert.equal(updated.storage_path, 'sites/101/templates/default/pages/index/content.blade.php');
+  assert.equal(updated.metadata_path, null);
+  assert.equal(
+    await readFile(path.join(storageRoot, updated.storage_path), 'utf8'),
+    '<section>Original homepage</section><section>Poster</section>\n'
+  );
+});
+
+test('repository still rejects non-home fixed page updates', async () => {
   const storageRoot = await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-'));
   const repository = new WeblessAccountRepository(fakePool(), {
     storageRoot,
@@ -2777,11 +2829,14 @@ test('repository getPageContent only searches custom pages', async () => {
   });
 
   await assert.rejects(
-    () => repository.getPageContent(11, {
+    () => repository.updatePage(11, {
       site_id: 101,
-      page_name: 'index'
+      page_name: 'cart',
+      content: {
+        html: '<section>Cart override</section>'
+      }
     }),
-    /Page not found or not accessible: index/
+    /Fixed template pages cannot be modified/
   );
 });
 
