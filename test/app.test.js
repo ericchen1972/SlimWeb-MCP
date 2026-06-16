@@ -89,6 +89,9 @@ test('health endpoint reports service metadata', async () => {
     assert.equal(response.status, 200);
     assert.equal(body.ok, true);
     assert.equal(body.service, 'slimweb-mcp');
+    assert.match(body.instructions, /site logo/);
+    assert.match(body.instructions, /product summary\/description/);
+    assert.match(body.instructions, /Do not invent discounts/);
   });
 });
 
