@@ -3447,23 +3447,82 @@ export class WeblessAccountRepository {
   async createNewsletter(accountId, args) {
     const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
     const recipientScope = normalizeNewsletterRecipientScope(args.recipient_scope);
-    const memberIds = normalizeIntegerListWithAlias(args.member_ids, args.member_id, 'member_ids', 'member_id');
+    const memberNames = Array.isArray(args.member_names)
+      ? Array.from(new Set(args.member_names.map((value) => String(value ?? '').trim()).filter(Boolean)))
+      : [];
+    const memberEmails = Array.isArray(args.member_emails)
+      ? Array.from(new Set(args.member_emails.map((value, index) => {
+          const email = normalizeEmailAddress(value);
+          if (!email) {
+            throw codedError('VALIDATION_FAILED', `member_emails[${index}] must be a valid email address.`);
+          }
+          return email;
+        })))
+      : [];
     const title = normalizeNewsletterTitle(args.title);
     const htmlContent = sanitizeEmailHtml(args.html_content);
     const scheduledAt = normalizeNewsletterScheduledAt(args.scheduled_at);
 
-    if (recipientScope === 'members' && memberIds.length === 0) {
-      throw codedError('VALIDATION_FAILED', 'member_ids is required when recipient_scope is members.');
+    if (recipientScope === 'members' && memberNames.length === 0 && memberEmails.length === 0) {
+      throw codedError('VALIDATION_FAILED', 'member_names is required when recipient_scope is members unless member_emails are also provided.');
     }
-    if (recipientScope === 'all' && memberIds.length > 0) {
-      throw codedError('VALIDATION_FAILED', 'member_ids must be omitted when recipient_scope is all_members.');
+    if (recipientScope === 'members' && memberEmails.length > 0 && memberNames.length === 0) {
+      throw codedError('VALIDATION_FAILED', 'member_names is required when member_emails are provided.');
+    }
+    if (recipientScope === 'all' && (memberNames.length > 0 || memberEmails.length > 0)) {
+      throw codedError('VALIDATION_FAILED', 'member_names and member_emails must be omitted when recipient_scope is all_members.');
     }
 
-    const members = recipientScope === 'members'
-      ? await this.findMembersForEmail(site.id, memberIds)
-      : [];
-    if (recipientScope === 'members' && members.length !== memberIds.length) {
-      throw codedError('VALIDATION_FAILED', 'One or more selected members are invalid.');
+    if (recipientScope === 'members' && memberNames.length > 0 && memberEmails.length > 0 && memberNames.length !== memberEmails.length) {
+      throw codedError('VALIDATION_FAILED', 'member_names and member_emails must have the same number of entries.');
+    }
+
+    let recipients = [];
+    let resolvedMembers = [];
+
+    if (recipientScope === 'members') {
+      if (memberNames.length > 0 && memberEmails.length > 0) {
+        recipients = memberNames.map((memberName, index) => ({
+          member_id: null,
+          member_name: memberName,
+          member_email: memberEmails[index]
+        }));
+      } else {
+        for (const memberName of memberNames) {
+          const result = await this.pool.query(
+            `
+              select id, site_id, email, name, birthday, gender, mobile, status, country, zip, address,
+                     total_spent_amount, last_login_at, created_at, updated_at
+              from members
+              where site_id = $1 and lower(name) = lower($2)
+              order by id asc
+            `,
+            [site.id, memberName]
+          );
+
+          if (result.rows.length === 0) {
+            throw codedError('VALIDATION_FAILED', `Member not found: ${memberName}`);
+          }
+
+          if (result.rows.length > 1) {
+            return {
+              requiresRecipientSelection: true,
+              message: `Multiple members matched "${memberName}". Please choose one of the candidate email addresses.`,
+              recipientName: memberName,
+              candidateEmails: result.rows.map((member) => member.email).filter(Boolean),
+              candidates: result.rows.map((member) => formatMemberSummary(member))
+            };
+          }
+
+          const member = result.rows[0];
+          resolvedMembers.push(member);
+          recipients.push({
+            member_id: member.id,
+            member_name: member.name,
+            member_email: member.email
+          });
+        }
+      }
     }
 
     const now = new Date();
@@ -3477,15 +3536,16 @@ export class WeblessAccountRepository {
     );
     const newsletter = result.rows[0];
 
-    if (recipientScope === 'members') {
-      await this.pool.query(
-        `
-          insert into site_newsletter_recipients (site_newsletter_id, member_id, created_at, updated_at)
-          select $1, unnest($2::int[]), now(), now()
-          on conflict (site_newsletter_id, member_id) do nothing
-        `,
-        [newsletter.id, memberIds]
-      );
+    if (recipientScope === 'members' && recipients.length > 0) {
+      for (const recipient of recipients) {
+        await this.pool.query(
+          `
+            insert into site_newsletter_recipients (site_newsletter_id, member_id, member_name, member_email, created_at, updated_at)
+            values ($1, $2, $3, $4, now(), now())
+          `,
+          [newsletter.id, recipient.member_id, recipient.member_name, recipient.member_email]
+        );
+      }
     }
 
     return {
@@ -3494,9 +3554,10 @@ export class WeblessAccountRepository {
       newsletter: formatNewsletter(newsletter),
       recipient_summary: {
         scope: recipientScope,
-        count: recipientScope === 'members' ? members.length : null,
-        member_ids: memberIds,
-        members: members.map((member) => formatMemberSummary(member)),
+        count: recipientScope === 'members' ? recipients.length : null,
+        member_names: recipients.map((recipient) => recipient.member_name),
+        member_emails: recipients.map((recipient) => recipient.member_email),
+        members: resolvedMembers.map((member) => formatMemberSummary(member)),
         all_members: recipientScope === 'all'
       },
       delivery: {
@@ -3505,6 +3566,85 @@ export class WeblessAccountRepository {
         scheduled_at: dateString(newsletter.scheduled_at)
       }
     };
+  }
+
+  async createPoster(accountId, args) {
+    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
+    const productNames = normalizePosterProductNames(args.product_names);
+    const aspectRatio = normalizePosterAspectRatio(args.aspect_ratio);
+    const drawingPrompt = requireNonEmptyString(args.drawing_prompt, 'drawing_prompt');
+    const products = [];
+
+    for (const productName of productNames) {
+      const matches = await this.findProductsForPoster(site, productName);
+      if (matches.length === 0) {
+        throw codedError('NOT_FOUND', `Product not found: ${productName}`);
+      }
+      if (matches.length > 1) {
+        return {
+          requiresProductSelection: true,
+          message: `Multiple products matched "${productName}". Please choose the intended product.`,
+          productName,
+          matches
+        };
+      }
+
+      products.push(matches[0]);
+    }
+
+    const response = await this.fetch(`${this.weblessAppBaseUrl}/sites/${encodeURIComponent(site.slug)}/mcp-posters`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-slimweb-mcp-secret': this.requireWeblessMcpSecret()
+      },
+      body: JSON.stringify({
+        site_admin_id: accountId && typeof accountId === 'object' ? accountId.site_admin_id ?? site.site_admin_id ?? null : null,
+        aspect_ratio: aspectRatio,
+        drawing_prompt: drawingPrompt,
+        products
+      })
+    });
+    const payload = await parseJsonResponse(response, 'Unable to create Webless poster');
+
+    return {
+      ok: true,
+      site,
+      aspect_ratio: aspectRatio,
+      drawing_prompt: drawingPrompt,
+      products,
+      ...payload
+    };
+  }
+
+  async findProductsForPoster(site, productName) {
+    const result = await this.pool.query(
+      `
+        select p.id, p.site_id, p.name, p.status,
+               (
+                 select path
+                 from product_images
+                 where product_id = p.id and image_type = 'primary'
+                 order by sort_order asc, id asc
+                 limit 1
+               ) as primary_image_path
+        from products p
+        where p.site_id = $1
+          and lower(p.name) like lower($2) escape '\\'
+        order by
+          case when lower(p.name) = lower($3) then 0 else 1 end,
+          p.id asc
+        limit 10
+      `,
+      [site.id, `%${escapeLikePattern(productName)}%`, productName]
+    );
+
+    return result.rows.map((product) => ({
+      id: product.id,
+      name: product.name,
+      status: product.status ?? null,
+      primary_image_url: product.primary_image_path ? mediaUrlFor(this.publicSiteBaseUrl, product.primary_image_path) : null
+    }));
   }
 
   async previewMemberEmail(accountId, args) {
@@ -9553,6 +9693,38 @@ function normalizeNewsletterRecipientScope(value) {
     return 'members';
   }
   throw codedError('VALIDATION_FAILED', 'recipient_scope must be members or all_members.');
+}
+
+function normalizePosterProductNames(value) {
+  if (!Array.isArray(value)) {
+    throw codedError('VALIDATION_FAILED', 'product_names must be an array.');
+  }
+
+  const names = value
+    .map((item) => String(item ?? '').trim())
+    .filter(Boolean);
+
+  if (names.length < 1) {
+    throw codedError('VALIDATION_FAILED', 'product_names must include at least one product name.');
+  }
+  if (names.length > 5) {
+    throw codedError('VALIDATION_FAILED', 'product_names accepts at most 5 products.');
+  }
+
+  return names;
+}
+
+function normalizePosterAspectRatio(value) {
+  const ratio = String(value ?? '9:16').trim() || '9:16';
+  if (!['16:9', '1:1', '9:16'].includes(ratio)) {
+    throw codedError('VALIDATION_FAILED', 'aspect_ratio must be 16:9, 1:1, or 9:16.');
+  }
+
+  return ratio;
+}
+
+function escapeLikePattern(value) {
+  return String(value).replace(/[\\%_]/g, (character) => `\\${character}`);
 }
 
 function normalizeNewsletterTitle(value) {

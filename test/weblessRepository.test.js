@@ -3992,6 +3992,12 @@ function newsletterPool() {
     domain: '',
     site_status: 'active'
   };
+  const members = [
+    { id: 7, site_id: 101, email: 'eric-1@example.com', name: 'Eric', status: 'active' },
+    { id: 8, site_id: 101, email: 'eric-2@example.com', name: 'Eric', status: 'active' },
+    { id: 9, site_id: 101, email: 'judy@example.com', name: 'Judy', status: 'active' },
+    { id: 10, site_id: 101, email: 'member-10@example.com', name: '會員 10', status: 'active' }
+  ];
   const state = {
     newsletters: [],
     recipients: []
@@ -4006,13 +4012,20 @@ function newsletterPool() {
 
       if (sql.includes('from members') && sql.includes('where site_id = $1 and id = any')) {
         return {
-          rows: (params[1] ?? []).map((id) => ({
+          rows: (params[1] ?? []).map((id) => members.find((member) => member.id === id) ?? ({
             id,
             site_id: 101,
             email: `member-${id}@example.com`,
             name: `會員 ${id}`,
             status: 'active'
           }))
+        };
+      }
+
+      if (sql.includes('from members') && sql.includes('lower(name) = lower($2)')) {
+        const name = String(params[1] ?? '').trim().toLowerCase();
+        return {
+          rows: members.filter((member) => member.name.toLowerCase() === name)
         };
       }
 
@@ -4033,12 +4046,12 @@ function newsletterPool() {
       }
 
       if (sql.includes('insert into site_newsletter_recipients')) {
-        for (const memberId of params[1] ?? []) {
-          state.recipients.push({
-            site_newsletter_id: params[0],
-            member_id: memberId
-          });
-        }
+        state.recipients.push({
+          site_newsletter_id: params[0],
+          member_id: params[1],
+          member_name: params[2],
+          member_email: params[3]
+        });
         return { rows: [] };
       }
 
@@ -4084,15 +4097,17 @@ test('repository creates newsletter for selected members only when member ids ar
   const result = await repository.createNewsletter(11, {
     site_id: 101,
     recipient_scope: 'members',
-    member_ids: [7, 8],
+    member_names: ['Eric', 'Judy'],
+    member_emails: ['eric@example.test', 'judy@example.test'],
     title: '指定會員通知',
     html_content: '<p>VIP 活動</p>',
     scheduled_at: scheduledAt
   });
 
   assert.equal(result.newsletter.recipient_scope, 'members');
-  assert.deepEqual(result.recipient_summary.member_ids, [7, 8]);
-  assert.deepEqual(pool.state.recipients.map((row) => row.member_id), [7, 8]);
+  assert.deepEqual(result.recipient_summary.member_names, ['Eric', 'Judy']);
+  assert.deepEqual(result.recipient_summary.member_emails, ['eric@example.test', 'judy@example.test']);
+  assert.deepEqual(pool.state.recipients.map((row) => row.member_name), ['Eric', 'Judy']);
   assert.equal(result.newsletter.scheduled_at, scheduledAt);
 
   await assert.rejects(
@@ -4102,8 +4117,135 @@ test('repository creates newsletter for selected members only when member ids ar
       title: '缺少會員',
       html_content: '<p>內容</p>'
     }),
-    /member_ids is required/
+    /member_names/
   );
+});
+
+function posterPool() {
+  const site = {
+    id: 101,
+    slug: 'site-1',
+    name: '測試網站',
+    domain: '',
+    callback_code: 'swcb_test',
+    icon_path: 'sites/101/settings/logo.webp',
+    site_status: 'active',
+    site_admin_id: 501
+  };
+  const products = [
+    { id: 7, site_id: 101, name: 'Aurora 鋼琴', status: 'active', primary_image_path: 'sites/101/products/aurora.webp' },
+    { id: 8, site_id: 101, name: 'Aurora 鋼琴 Pro', status: 'active', primary_image_path: 'sites/101/products/aurora-pro.webp' },
+    { id: 9, site_id: 101, name: 'Judy 香氛', status: 'active', primary_image_path: 'sites/101/products/judy.webp' }
+  ];
+
+  return {
+    async query(sql, params) {
+      if (sql.includes('from site_admins a') && sql.includes('inner join sites s')) {
+        return {
+          rows: [{
+            ...site,
+            account_id: 11,
+            google_email: 'owner@example.com',
+            google_sub: 'google-sub-1',
+            permissions: ['backend_ai_assistant', 'product_management'],
+            first_admin_id: 501
+          }]
+        };
+      }
+
+      if (sql.includes('from products p') && sql.includes('lower(p.name) like lower($2)')) {
+        const keyword = String(params[1] ?? '').replaceAll('%', '').toLowerCase();
+        return {
+          rows: products.filter((product) => product.name.toLowerCase().includes(keyword))
+        };
+      }
+
+      throw new Error(`Unexpected query: ${sql}`);
+    }
+  };
+}
+
+test('repository stops poster creation when product fuzzy search is ambiguous', async () => {
+  const repository = new WeblessAccountRepository(posterPool(), {
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+
+  const result = await repository.createPoster({
+    email: 'owner@example.com',
+    google_id: 'google-sub-1'
+  }, {
+    site_id: 101,
+    product_names: ['Aurora'],
+    drawing_prompt: '母親節促銷7折優惠'
+  });
+
+  assert.equal(result.requiresProductSelection, true);
+  assert.equal(result.productName, 'Aurora');
+  assert.deepEqual(result.matches.map((product) => product.name), ['Aurora 鋼琴', 'Aurora 鋼琴 Pro']);
+});
+
+test('repository creates poster through Webless backend when products resolve uniquely', async () => {
+  const requests = [];
+  const fetchImpl = async (url, options = {}) => {
+    requests.push({ url: String(url), options });
+    assert.equal(String(url), 'https://webless.test/sites/site-1/mcp-posters');
+    assert.equal(options.method, 'POST');
+    assert.equal(options.headers['x-slimweb-mcp-secret'], 'secret-for-tests');
+
+    const body = JSON.parse(options.body);
+    assert.equal(body.site_admin_id, 501);
+    assert.equal(body.aspect_ratio, '1:1');
+    assert.equal(body.products[0].name, 'Judy 香氛');
+    assert.equal(body.products[0].primary_image_url, 'https://slimweb.tw/media/sites/101/products/judy.webp');
+
+    return new Response(JSON.stringify({
+      ok: true,
+      image_url: 'https://tmp.example.test/poster.webp',
+      aspect_ratio: '1:1',
+      usage: { monthlyUsedUsd: 0.01 }
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+  const repository = new WeblessAccountRepository(posterPool(), {
+    fetchImpl,
+    publicSiteBaseUrl: 'https://slimweb.tw',
+    weblessAppBaseUrl: 'https://webless.test',
+    weblessMcpSecret: 'secret-for-tests'
+  });
+
+  const result = await repository.createPoster({
+    email: 'owner@example.com',
+    google_id: 'google-sub-1'
+  }, {
+    site_id: 101,
+    product_names: ['Judy'],
+    aspect_ratio: '1:1',
+    drawing_prompt: '母親節促銷7折優惠'
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.image_url, 'https://tmp.example.test/poster.webp');
+  assert.equal(result.products[0].primary_image_url, 'https://slimweb.tw/media/sites/101/products/judy.webp');
+  assert.equal(requests.length, 1);
+});
+
+test('repository returns candidate emails when a newsletter recipient name is ambiguous', async () => {
+  const pool = newsletterPool();
+  const repository = new WeblessAccountRepository(pool, {
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+
+  const result = await repository.createNewsletter(11, {
+    site_id: 101,
+    recipient_scope: 'members',
+    member_names: ['Eric'],
+    title: '歧義名單',
+    html_content: '<p>內容</p>'
+  });
+
+  assert.equal(result.requiresRecipientSelection, true);
+  assert.deepEqual(result.candidateEmails, ['eric-1@example.com', 'eric-2@example.com']);
+  assert.equal(pool.state.newsletters.length, 0);
+  assert.equal(pool.state.recipients.length, 0);
 });
 
 test('repository previews member email with sanitized html and signed draft token', async () => {

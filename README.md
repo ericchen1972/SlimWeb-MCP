@@ -246,7 +246,8 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 | `slimweb_members_list` | Available | member read | 列出會員與篩選會員資料。 |
 | `slimweb_members_get` | Available | member read | 讀取單一會員摘要、訂單摘要、優惠券與等級。 |
 | `slimweb_members_coupons_issue` | Available | member write + promotion write | 手動發券給指定會員，只接受 active manual coupon template。 |
-| `slimweb_newsletters_create` | Available | member write | 建立電子報資料，支援全部會員或指定會員；不直接寄送，未指定發送時間時預設為當下時間 + 5 分鐘。 |
+| `slimweb_newsletters_create` | Available | member write | 建立電子報資料，支援全部會員或指定名單；不直接寄送，未指定發送時間時預設為當下時間 + 5 分鐘。 |
+| `slimweb_posters_create` | Available | product read | 依商品名稱與繪圖需求產生暫時性 AI 商品海報；商品名稱模糊搜尋若有多筆結果會先返回候選讓使用者確認。 |
 | `slimweb_coupon_templates_list` | Available | promotion read | 列出優惠券模板，含 manual、all_members、order_threshold、birthday、product_bundle。 |
 | `slimweb_coupon_templates_upsert` | Available | promotion write | 新增或更新優惠券模板，套用與後台優惠券表單一致的發放規則。 |
 | `slimweb_discount_codes_list` | Available | promotion read | 列出折扣碼。 |
@@ -310,7 +311,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 ### 共通 Tool Rules
 
 - 所有 tools 預設都需要有效 Google 登入與 MCP session。
-- 除 `slimweb_auth_status`、`slimweb_sites_list`、`slimweb_site_select` 之外，tools 都需要明確 `site_id`。
+- 除 `slimweb_auth_status`、`slimweb_sites_list`、`slimweb_site_select` 之外，tools 都需要明確 `site_code`。
 - MCP 只接受有 `backend_ai_assistant` 權限的 Web admin 身份。各 tool 仍會再檢查該模組權限。
 - 若 active site 無法從使用者語意唯一判斷，AI 必須先問使用者，不可猜測。
 - Read tools 應回傳 stable IDs，讓 AI 後續 write tools 能精準指定目標。
@@ -352,11 +353,11 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 
 - 狀態: Available
 - 權限: authenticated Web admin with `backend_ai_assistant`
-- Scope: selected `site_id`
+- Scope: selected `site_code`
 - 用途: 驗證使用者可操作指定 site，並回傳 site summary 與可用 theme/page scheme。AI Client 不可在多站台歧義時自行猜測。
 - Input: `site_code`
 - Output: selected site summary、themes、mutation scope hints
-- Side effects: none；目前不把 active site 寫入 session，write tools 仍必須明確帶 `site_id`
+- Side effects: none；目前不把 active site 寫入 session，write tools 仍必須明確帶 `site_code`
 - 是否需要 confirmation: no
 - 錯誤情境: site not found、site not accessible
 - Audit fields: request ID、user ID、account ID、site ID
@@ -672,7 +673,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 狀態: Available
 - 權限: mail settings write
 - Scope: active site
-- 用途: 更新站台唯一共用郵件版型。預設版型為網站 logo + 網站名稱、分隔線、內容、分隔線、footer 網站網址。呼叫本工具前必須先用 `slimweb_mail_layout_get` 讀取同一個 `site_id` 的目前版型，再以回傳的 current/default HTML 為基礎修改；不要憑空重寫整份 HTML，以免遺失 logo、站名、footer、placeholder 或既有結構。
+- 用途: 更新站台唯一共用郵件版型。預設版型為網站 logo + 網站名稱、分隔線、內容、分隔線、footer 網站網址。呼叫本工具前必須先用 `slimweb_mail_layout_get` 讀取同一個 `site_code` 對應站台的目前版型，再以回傳的 current/default HTML 為基礎修改；不要憑空重寫整份 HTML，以免遺失 logo、站名、footer、placeholder 或既有結構。
 - Input: `site_code`、`html`、`is_active`
 - Output: updated layout、default layout HTML
 - Side effects: upserts `site_mail_layouts`
@@ -943,12 +944,12 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 權限: product read
 - Scope: active site
 - 用途: 解析使用者提供的 CSV/XLSX/SQL 商品資料，回傳欄位、樣本列、目前分類與 target schema，讓 AI Client 自行產生 mapping。
-- Input: site ID、source(data_base64 或 file_url、filename/original_name)
+- Input: `site_code`、`source`(data_base64 或 file_url、filename/original_name)
 - Output: dataset summary、available categories、target schema、`ai_mapping_prompt`、AI guidance
 - Side effects: none
 - 是否需要 confirmation: no
 - 錯誤情境: unsupported file type、download failed、parse failed、permission denied
-- AI mapping prompt: 對齊 Web 後台原本 `ProductImportService::requestMapping()` 的規則，要求 AI Client 回傳 JSON only，包含 `field_mapping`、`category_mapping`、`image_mapping`、`warnings`、`confidence`，並沿用忽略來源 id、使用目前 site_id、分類不準視為 warning 的 import policy。
+- AI mapping prompt: 對齊 Web 後台原本 `ProductImportService::requestMapping()` 的規則，要求 AI Client 回傳 JSON only，包含 `field_mapping`、`category_mapping`、`image_mapping`、`warnings`、`confidence`，並沿用忽略來源 id、使用目前 `site_code` 對應的站台、分類不準視為 warning 的 import policy。
 - Audit fields: request ID、user ID、account ID、site ID
 
 ### `slimweb_products_import_validate`
@@ -1054,15 +1055,29 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - Scope: active site
 - 用途: 建立 Webless 後台電子報資料；此工具只儲存電子報與排程，不直接寄送 email。
 - 收件範圍:
-  - `recipient_scope=all_members`: 建立給全部會員的電子報，不傳 `member_ids`。
-  - `recipient_scope=members`: 建立給指定會員的電子報，必須先用 `slimweb_members_list` / `slimweb_members_get` 確認會員並傳 `member_ids`。
-- Input: `site_code`、`recipient_scope=members|all_members`、`member_ids`、`title`、`html_content`、optional `scheduled_at`
+  - `recipient_scope=all_members`: 建立給全部會員的電子報，不傳 `member_names` / `member_emails`。
+  - `recipient_scope=members`: 可傳 `member_names` 讓 MCP 逐一查找會員；若同名會員超過一個，工具會回傳候選 email 讓 AI 讓使用者選擇。
+  - `recipient_scope=members`: 若同時提供 `member_names` 與 `member_emails`，且兩邊數量相同，工具不做會員查找，直接建立收件者資料。
+- Input: `site_code`、`recipient_scope=members|all_members`、`member_names`、`member_emails`、`title`、`html_content`、optional `scheduled_at`
 - Output: site summary、newsletter summary、recipient summary、delivery guidance
-- Side effects: creates `site_newsletters` and, for selected members, `site_newsletter_recipients`; does not send or queue email directly.
+- Side effects: creates `site_newsletters` and `site_newsletter_recipients`; does not send or queue email directly.
 - 發送時間: 如果使用者沒有指定 `scheduled_at`，AI 應省略欄位，由 MCP 端自動填入「當下時間 + 5 分鐘」。
 - 安全規則: 移除 `<script>`、`<iframe>` 與 inline event handler；內容為電子報 HTML，之後由 Webless 後台寄送流程處理。
-- 錯誤情境: member not found、empty title/content、invalid recipient scope、past scheduled time、permission denied
-- Audit fields: request ID、user ID、account ID、site ID、member IDs、recipient scope、newsletter ID
+- 錯誤情境: member not found、ambiguous recipient name、empty title/content、invalid recipient scope、past scheduled time、permission denied
+- Audit fields: request ID、user ID、account ID、site ID、member names、member emails、recipient scope、newsletter ID
+
+### `slimweb_posters_create`
+
+- 狀態: Available
+- 權限: product read
+- Scope: active site
+- 用途: 產生商品海報預覽；Webless 後端使用 `gpt-image-2` 繪圖並記入 AI 用量，圖片以 AI 回傳的暫時性 URL 顯示，不存入 bucket。
+- Input: `site_code`、`product_names`（1-5 個）、optional `aspect_ratio=9:16|1:1|16:9`、`drawing_prompt`
+- 流程: MCP 先依每個 `product_names` 做商品名稱模糊搜尋；若任一名稱查到多筆商品，工具會停止並回傳候選商品讓使用者確認。
+- 繪圖資料: 後端使用網站名稱、網站 logo、商品名稱、各商品第一張主圖與 `drawing_prompt` 組成海報 prompt；logo 與商品圖只作參考圖，不建立媒體資產。
+- Output: site summary、product summaries、aspect ratio、temporary `image_url`、AI usage
+- 錯誤情境: product not found、ambiguous product name、too many products、missing drawing prompt、AI generation failed、permission denied
+- Audit fields: request ID、user ID、account ID、site ID、product names、aspect ratio
 
 ### `slimweb_coupon_templates_list`
 
@@ -1681,7 +1696,7 @@ MCP service 使用與 webless 相同的 Google Client ID 驗證 Google Identity 
 - MCP session 使用 `MCP_SESSION_SECRET` 簽章
 - session 可透過 HttpOnly cookie 或 `Authorization: Bearer <token>` 使用
 - `slimweb_sites_list` 透過 `site_admins` + `sites` 列出該 Google 帳號可用 MCP 操作的網站
-- 每個 site-scoped tool call 會重新驗證該 Google 帳號在指定 `site_id` 的 Web admin 權限
+- 每個 site-scoped tool call 會重新驗證該 Google 帳號在指定 `site_code` 對應站台的 Web admin 權限
 - ChatGPT / Claude remote MCP 使用同一套 OAuth 驗證流程。未授權 `tools/call` 會回 HTTP 401 與 `WWW-Authenticate: Bearer resource_metadata="..."`，讓 client 透過 discovery / dynamic client registration / authorization code + PKCE 取得 bearer token；使用者不需要手動複製 MCP token。
 
 Cloud Run 入口是 public HTTPS，但 MCP tools 需要有效 MCP session。未登入呼叫 protected tools 會回 `AUTH_REQUIRED`。

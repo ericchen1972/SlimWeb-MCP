@@ -219,6 +219,39 @@ test('MCP resources expose member email preview widget', async () => {
   });
 });
 
+test('MCP resources expose poster preview widget', async () => {
+  await withServer(async (baseUrl) => {
+    const listResponse = await fetch(`${baseUrl}/mcp`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 25,
+        method: 'resources/list'
+      })
+    });
+    const listBody = await listResponse.json();
+    const resource = listBody.result.resources.find((item) => item.uri === 'ui://slimweb/poster-preview.html');
+
+    assert.ok(resource);
+
+    const readResponse = await fetch(`${baseUrl}/mcp`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 26,
+        method: 'resources/read',
+        params: { uri: resource.uri }
+      })
+    });
+    const readBody = await readResponse.json();
+
+    assert.equal(readBody.result.contents[0].mimeType, 'text/html');
+    assert.match(readBody.result.contents[0].text, /海報預覽/);
+  });
+});
+
 test('README main tool table lists every discoverable tool as available', async () => {
   await withServer(async (baseUrl) => {
     const response = await fetch(`${baseUrl}/mcp`, {
@@ -406,10 +439,17 @@ test('MCP tools list includes homepage editing contract tools', async () => {
     assert.ok(toolsByName.get('slimweb_orders_list').inputSchema.properties.search_field.enum.includes('buyer_name'));
     assert.ok(toolsByName.get('slimweb_orders_list').inputSchema.properties.search_field.enum.includes('payment_incomplete'));
     assert.match(toolsByName.get('slimweb_orders_list').inputSchema.properties.logistics_status.description, /payment is completed/);
-    assert.deepEqual(toolsByName.get('slimweb_newsletters_create').inputSchema.properties.recipient_scope.enum, ['members', 'all_members']);
-    assert.match(toolsByName.get('slimweb_newsletters_create').description, /Create/);
-    assert.match(toolsByName.get('slimweb_newsletters_create').description, /does not send/);
-    assert.equal(toolsByName.get('slimweb_orders_profit_statistics').inputSchema.properties.date_from.description.includes('optional'), true);
+assert.deepEqual(toolsByName.get('slimweb_newsletters_create').inputSchema.properties.recipient_scope.enum, ['members', 'all_members']);
+assert.equal(toolsByName.get('slimweb_newsletters_create').inputSchema.properties.member_ids, undefined);
+assert.equal(toolsByName.get('slimweb_newsletters_create').inputSchema.properties.member_id, undefined);
+assert.equal(toolsByName.get('slimweb_newsletters_create').inputSchema.properties.member_names.type, 'array');
+assert.equal(toolsByName.get('slimweb_newsletters_create').inputSchema.properties.member_emails.type, 'array');
+assert.match(toolsByName.get('slimweb_newsletters_create').description, /Create/);
+assert.match(toolsByName.get('slimweb_newsletters_create').description, /does not send/);
+assert.equal(toolsByName.get('slimweb_posters_create').inputSchema.properties.product_names.maxItems, 5);
+assert.deepEqual(toolsByName.get('slimweb_posters_create').inputSchema.properties.aspect_ratio.enum, ['9:16', '1:1', '16:9']);
+assert.match(toolsByName.get('slimweb_posters_create').description, /poster/i);
+assert.equal(toolsByName.get('slimweb_orders_profit_statistics').inputSchema.properties.date_from.description.includes('optional'), true);
     assert.match(toolsByName.get('slimweb_articles_check_title').description, /title already exists/i);
     assert.equal(toolsByName.get('slimweb_articles_get_content').inputSchema.required.includes('article_id'), true);
     assert.match(toolsByName.get('slimweb_articles_create').description, /16:9 cover image/i);
@@ -874,6 +914,10 @@ test('homepage editing tools call repository implementations', async () => {
       calls.push(['newsletter_create', accountId, args]);
       return { ok: true, newsletter: { id: 9, title: args.title, recipient_scope: args.recipient_scope, scheduled_at: args.scheduled_at ?? '2026-06-10T10:05:00+08:00' } };
     },
+    createPoster: async (accountId, args) => {
+      calls.push(['poster_create', accountId, args]);
+      return { ok: true, image_url: 'https://tmp.example.test/poster.webp', aspect_ratio: args.aspect_ratio ?? '9:16' };
+    },
 	    listDiscountCodes: async (accountId, args) => {
 	      calls.push(['discount_codes_list', accountId, args]);
 	      return { discount_codes: [{ id: 4, code: 'VIP200' }], pagination: { page: 1, last_page: 1, total: 1 } };
@@ -1212,8 +1256,9 @@ test('homepage editing tools call repository implementations', async () => {
 	    assert.equal((await callTool(60, 'slimweb_members_coupons_issue', { site_id: 101, member_id: 88, coupon_template_id: 3 })).result.structuredContent.member_coupon.member_id, 88);
 	    assert.equal((await callTool(61, 'slimweb_members_list', { site_id: 101, keyword: 'member@example.com' })).result.structuredContent.members[0].email, 'member@example.com');
 	    assert.equal((await callTool(62, 'slimweb_members_get', { site_id: 101, member_id: 88 })).result.structuredContent.member.id, 88);
-    assert.equal((await callTool(621, 'slimweb_newsletters_create', { site_id: 101, recipient_scope: 'members', member_ids: [88], title: '到貨通知', html_content: '<p>到貨了</p>' })).result.structuredContent.newsletter.id, 9);
-	    assert.equal((await callTool(63, 'slimweb_discount_codes_list', { site_id: 101 })).result.structuredContent.discount_codes[0].code, 'VIP200');
+assert.equal((await callTool(621, 'slimweb_newsletters_create', { site_id: 101, recipient_scope: 'members', member_names: ['Eric'], member_emails: ['eric@example.test'], title: '到貨通知', html_content: '<p>到貨了</p>' })).result.structuredContent.newsletter.id, 9);
+assert.equal((await callTool(622, 'slimweb_posters_create', { site_id: 101, product_names: ['商品A'], drawing_prompt: '母親節促銷7折優惠' })).result.structuredContent.image_url, 'https://tmp.example.test/poster.webp');
+assert.equal((await callTool(63, 'slimweb_discount_codes_list', { site_id: 101 })).result.structuredContent.discount_codes[0].code, 'VIP200');
 	    assert.equal((await callTool(64, 'slimweb_discount_codes_upsert', { site_id: 101, code: 'VIP200', discount_amount: 200 })).result.structuredContent.discount_code.code, 'VIP200');
 	    assert.equal((await callTool(65, 'slimweb_member_tiers_list', { site_id: 101 })).result.structuredContent.member_tiers[0].name, 'VIP');
 	    assert.equal((await callTool(66, 'slimweb_member_tiers_upsert', { site_id: 101, name: 'VIP', threshold_amount: 10000 })).result.structuredContent.member_tier.name, 'VIP');
@@ -1246,7 +1291,7 @@ test('homepage editing tools call repository implementations', async () => {
     })).result.structuredContent.public_url, /hero\.png/);
     assert.equal((await callTool(69, 'slimweb_themes_delete', { site_id: 101, theme_id: 22 })).result.structuredContent.deleted_theme_id, 22);
 
-    assert.deepEqual(calls.map((call) => call[0]), ['select', 'themes_list', 'theme_mode_get', 'design_context_get', 'theme_mode_update', 'themes_create', 'themes_activate', 'shell_context', 'profile_get', 'profile_upsert', 'profile_append', 'site_readiness_get', 'seo_get', 'seo_update', 'facebook_settings_get', 'facebook_settings_update', 'notion_settings_get', 'notion_settings_update', 'mail_delivery_settings_get', 'mail_delivery_settings_update', 'payment_logistics_get', 'payment_logistics_update', 'orders_list', 'orders_profit_statistics', 'orders_get', 'orders_create_logistics', 'orders_mark_shipped', 'returns_pending_list', 'returns_create_logistics', 'returns_cancel', 'returns_complete', 'refunds_complete', 'refunds_create', 'dashboard_summary', 'settings_get', 'settings_update', 'admins_list', 'admin_upsert', 'admin_delete', 'articles_list', 'articles_check_title', 'articles_get_content', 'article_create', 'article_update', 'content_seo_update', 'categories_list', 'category_upsert', 'category_delete', 'nav_items_list', 'nav_item_upsert', 'nav_item_delete', 'products_list', 'product_get', 'upload_create', 'upload_commit', 'chatgpt_attachment_import', 'product_upsert', 'product_delete', 'product_import_inspect', 'product_import_validate', 'product_import_commit', 'coupon_templates_list', 'coupon_template_upsert', 'member_coupon_issue', 'members_list', 'member_get', 'newsletter_create', 'discount_codes_list', 'discount_code_upsert', 'member_tiers_list', 'member_tier_upsert', 'threshold_gifts_list', 'threshold_gift_upsert', 'product_add_ons_list', 'product_add_on_upsert', 'customer_service_logs_list', 'customer_service_settings_get', 'customer_service_settings_update', 'export_create', 'audit_list', 'themes_root', 'preview', 'pages_check_title', 'pages_check_title', 'pages_check_title', 'pages_check_title', 'pages_list', 'get_content', 'get_content', 'page_create', 'page_update', 'page_delete', 'upload', 'themes_delete']);
+    assert.deepEqual(calls.map((call) => call[0]), ['select', 'themes_list', 'theme_mode_get', 'design_context_get', 'theme_mode_update', 'themes_create', 'themes_activate', 'shell_context', 'profile_get', 'profile_upsert', 'profile_append', 'site_readiness_get', 'seo_get', 'seo_update', 'facebook_settings_get', 'facebook_settings_update', 'notion_settings_get', 'notion_settings_update', 'mail_delivery_settings_get', 'mail_delivery_settings_update', 'payment_logistics_get', 'payment_logistics_update', 'orders_list', 'orders_profit_statistics', 'orders_get', 'orders_create_logistics', 'orders_mark_shipped', 'returns_pending_list', 'returns_create_logistics', 'returns_cancel', 'returns_complete', 'refunds_complete', 'refunds_create', 'dashboard_summary', 'settings_get', 'settings_update', 'admins_list', 'admin_upsert', 'admin_delete', 'articles_list', 'articles_check_title', 'articles_get_content', 'article_create', 'article_update', 'content_seo_update', 'categories_list', 'category_upsert', 'category_delete', 'nav_items_list', 'nav_item_upsert', 'nav_item_delete', 'products_list', 'product_get', 'upload_create', 'upload_commit', 'chatgpt_attachment_import', 'product_upsert', 'product_delete', 'product_import_inspect', 'product_import_validate', 'product_import_commit', 'coupon_templates_list', 'coupon_template_upsert', 'member_coupon_issue', 'members_list', 'member_get', 'newsletter_create', 'poster_create', 'discount_codes_list', 'discount_code_upsert', 'member_tiers_list', 'member_tier_upsert', 'threshold_gifts_list', 'threshold_gift_upsert', 'product_add_ons_list', 'product_add_on_upsert', 'customer_service_logs_list', 'customer_service_settings_get', 'customer_service_settings_update', 'export_create', 'audit_list', 'themes_root', 'preview', 'pages_check_title', 'pages_check_title', 'pages_check_title', 'pages_check_title', 'pages_list', 'get_content', 'get_content', 'page_create', 'page_update', 'page_delete', 'upload', 'themes_delete']);
 		    assert.deepEqual(calls.map((call) => call[1].email), Array.from({ length: calls.length }, () => 'owner@example.com'));
   });
 });
