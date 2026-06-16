@@ -247,7 +247,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 | `slimweb_members_get` | Available | member read | 讀取單一會員摘要、訂單摘要、優惠券與等級。 |
 | `slimweb_members_coupons_issue` | Available | member write + promotion write | 手動發券給指定會員，只接受 active manual coupon template。 |
 | `slimweb_newsletters_create` | Available | member write | 建立電子報資料，支援全部會員或指定名單；不直接寄送，未指定發送時間時預設為當下時間 + 5 分鐘。 |
-| `slimweb_posters_create` | Available | product read | 依商品名稱與繪圖需求產生暫時性 AI 商品海報；商品名稱模糊搜尋若有多筆結果會先返回候選讓使用者確認。 |
+| `slimweb_posters_create` | Available | product read | 依商品名稱與繪圖需求產生 AI 商品海報，後端以商品主圖作為 image edit 參考並存成素材庫媒體；商品名稱模糊搜尋若有多筆結果會先返回候選讓使用者確認。 |
 | `slimweb_coupon_templates_list` | Available | promotion read | 列出優惠券模板，含 manual、all_members、order_threshold、birthday、product_bundle。 |
 | `slimweb_coupon_templates_upsert` | Available | promotion write | 新增或更新優惠券模板，套用與後台優惠券表單一致的發放規則。 |
 | `slimweb_discount_codes_list` | Available | promotion read | 列出折扣碼。 |
@@ -1071,11 +1071,11 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 狀態: Available
 - 權限: product read
 - Scope: active site
-- 用途: 產生商品海報預覽；Webless 後端使用 `gpt-image-2` 繪圖並記入 AI 用量，圖片以 AI 回傳的暫時性 URL 顯示，不存入 bucket。
+- 用途: 產生商品海報預覽；Webless 後端使用 `gpt-image-2` 圖片編輯/生成並記入 AI 用量，圖片會存成素材庫媒體並回傳可重用的 `image_url` 與 `asset.media_path`。
 - Input: `site_code`、`product_names`（1-5 個）、optional `aspect_ratio=9:16|1:1|16:9`、`drawing_prompt`
 - 流程: MCP 先依每個 `product_names` 做商品名稱模糊搜尋；若任一名稱查到多筆商品，工具會停止並回傳候選商品讓使用者確認。
-- 繪圖資料: 後端使用網站名稱、網站 logo、商品名稱、各商品第一張主圖與 `drawing_prompt` 組成海報 prompt；logo 與商品圖只作參考圖，不建立媒體資產。
-- Output: site summary、product summaries、aspect ratio、temporary `image_url`、AI usage
+- 繪圖資料: 後端使用網站名稱、網站 logo、商品名稱、各商品第一張主圖與 `drawing_prompt` 組成海報 prompt；若商品主圖可下載，會以商品圖作為 image edit 參考以維持商品外觀一致性。
+- Output: site summary、product summaries、aspect ratio、durable `image_url`、`asset.media_path`、generation mode、AI usage
 - 錯誤情境: product not found、ambiguous product name、too many products、missing drawing prompt、AI generation failed、permission denied
 - Audit fields: request ID、user ID、account ID、site ID、product names、aspect ratio
 

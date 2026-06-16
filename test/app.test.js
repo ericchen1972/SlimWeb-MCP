@@ -449,6 +449,8 @@ assert.match(toolsByName.get('slimweb_newsletters_create').description, /does no
 assert.equal(toolsByName.get('slimweb_posters_create').inputSchema.properties.product_names.maxItems, 5);
 assert.deepEqual(toolsByName.get('slimweb_posters_create').inputSchema.properties.aspect_ratio.enum, ['9:16', '1:1', '16:9']);
 assert.match(toolsByName.get('slimweb_posters_create').description, /poster/i);
+assert.match(toolsByName.get('slimweb_posters_create').description, /image-edit references/i);
+assert.match(toolsByName.get('slimweb_posters_create').description, /media asset/i);
 assert.equal(toolsByName.get('slimweb_posters_create')._meta['openai/outputTemplate'], 'ui://slimweb/poster-preview.html');
 assert.equal(toolsByName.get('slimweb_orders_profit_statistics').inputSchema.properties.date_from.description.includes('optional'), true);
     assert.match(toolsByName.get('slimweb_articles_check_title').description, /title already exists/i);
