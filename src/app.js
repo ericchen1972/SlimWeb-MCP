@@ -1732,7 +1732,14 @@ const MCP_TOOLS = [
         required: ['site_id', 'product_names', 'drawing_prompt']
       },
       _meta: {
-        'openai/outputTemplate': POSTER_PREVIEW_WIDGET_URI
+        ui: {
+          resourceUri: POSTER_PREVIEW_WIDGET_URI,
+          visibility: ['model', 'app']
+        },
+        'openai/outputTemplate': POSTER_PREVIEW_WIDGET_URI,
+        'openai/widgetAccessible': true,
+        'openai/toolInvocation/invoking': '正在產生海報...',
+        'openai/toolInvocation/invoked': '海報已產生'
       }
     },
 	  {
@@ -3586,7 +3593,12 @@ async function toolResultForCall(message, request, context) {
               }
             ],
             _meta: {
-              'openai/outputTemplate': POSTER_PREVIEW_WIDGET_URI
+              ui: {
+                resourceUri: POSTER_PREVIEW_WIDGET_URI,
+                visibility: ['model', 'app']
+              },
+              'openai/outputTemplate': POSTER_PREVIEW_WIDGET_URI,
+              'openai/widgetAccessible': true
             }
           });
         } catch (error) {

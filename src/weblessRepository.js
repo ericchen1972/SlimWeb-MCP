@@ -3620,7 +3620,7 @@ export class WeblessAccountRepository {
   async findProductsForPoster(site, productName) {
     const result = await this.pool.query(
       `
-        select p.id, p.site_id, p.name, p.status,
+        select p.id, p.site_id, p.name, p.summary, p.description, p.status,
                (
                  select path
                  from product_images
@@ -3642,6 +3642,8 @@ export class WeblessAccountRepository {
     return result.rows.map((product) => ({
       id: product.id,
       name: product.name,
+      summary: htmlToPlainText(product.summary ?? ''),
+      description: htmlToPlainText(product.description ?? ''),
       status: product.status ?? null,
       primary_image_url: product.primary_image_path ? mediaUrlFor(this.publicSiteBaseUrl, product.primary_image_path) : null
     }));

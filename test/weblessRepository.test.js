@@ -4133,9 +4133,9 @@ function posterPool() {
     site_admin_id: 501
   };
   const products = [
-    { id: 7, site_id: 101, name: 'Aurora 鋼琴', status: 'active', primary_image_path: 'sites/101/products/aurora.webp' },
-    { id: 8, site_id: 101, name: 'Aurora 鋼琴 Pro', status: 'active', primary_image_path: 'sites/101/products/aurora-pro.webp' },
-    { id: 9, site_id: 101, name: 'Judy 香氛', status: 'active', primary_image_path: 'sites/101/products/judy.webp' }
+    { id: 7, site_id: 101, name: 'Aurora 鋼琴', status: 'active', summary: '入門款數位鋼琴', description: '適合初學者與小空間。', primary_image_path: 'sites/101/products/aurora.webp' },
+    { id: 8, site_id: 101, name: 'Aurora 鋼琴 Pro', status: 'active', summary: '進階款數位鋼琴', description: '含三踏板與木質琴鍵。', primary_image_path: 'sites/101/products/aurora-pro.webp' },
+    { id: 9, site_id: 101, name: 'Judy 香氛', status: 'active', summary: '木質調香氛', description: '<p>前調佛手柑，後調雪松。</p>', primary_image_path: 'sites/101/products/judy.webp' }
   ];
 
   return {
@@ -4196,6 +4196,8 @@ test('repository creates poster through Webless backend when products resolve un
     assert.equal(body.site_admin_id, 501);
     assert.equal(body.aspect_ratio, '1:1');
     assert.equal(body.products[0].name, 'Judy 香氛');
+    assert.equal(body.products[0].summary, '木質調香氛');
+    assert.equal(body.products[0].description, '前調佛手柑，後調雪松。');
     assert.equal(body.products[0].primary_image_url, 'https://slimweb.tw/media/sites/101/products/judy.webp');
 
     return new Response(JSON.stringify({
@@ -4225,6 +4227,8 @@ test('repository creates poster through Webless backend when products resolve un
   assert.equal(result.ok, true);
   assert.equal(result.image_url, 'https://tmp.example.test/poster.webp');
   assert.equal(result.products[0].primary_image_url, 'https://slimweb.tw/media/sites/101/products/judy.webp');
+  assert.equal(result.products[0].summary, '木質調香氛');
+  assert.equal(result.products[0].description, '前調佛手柑，後調雪松。');
   assert.equal(requests.length, 1);
 });
 
