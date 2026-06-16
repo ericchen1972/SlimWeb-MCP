@@ -449,6 +449,7 @@ assert.match(toolsByName.get('slimweb_newsletters_create').description, /does no
 assert.equal(toolsByName.get('slimweb_posters_create').inputSchema.properties.product_names.maxItems, 5);
 assert.deepEqual(toolsByName.get('slimweb_posters_create').inputSchema.properties.aspect_ratio.enum, ['9:16', '1:1', '16:9']);
 assert.match(toolsByName.get('slimweb_posters_create').description, /poster/i);
+assert.equal(toolsByName.get('slimweb_posters_create')._meta['openai/outputTemplate'], 'ui://slimweb/poster-preview.html');
 assert.equal(toolsByName.get('slimweb_orders_profit_statistics').inputSchema.properties.date_from.description.includes('optional'), true);
     assert.match(toolsByName.get('slimweb_articles_check_title').description, /title already exists/i);
     assert.equal(toolsByName.get('slimweb_articles_get_content').inputSchema.required.includes('article_id'), true);
@@ -1257,7 +1258,12 @@ test('homepage editing tools call repository implementations', async () => {
 	    assert.equal((await callTool(61, 'slimweb_members_list', { site_id: 101, keyword: 'member@example.com' })).result.structuredContent.members[0].email, 'member@example.com');
 	    assert.equal((await callTool(62, 'slimweb_members_get', { site_id: 101, member_id: 88 })).result.structuredContent.member.id, 88);
 assert.equal((await callTool(621, 'slimweb_newsletters_create', { site_id: 101, recipient_scope: 'members', member_names: ['Eric'], member_emails: ['eric@example.test'], title: '到貨通知', html_content: '<p>到貨了</p>' })).result.structuredContent.newsletter.id, 9);
-assert.equal((await callTool(622, 'slimweb_posters_create', { site_id: 101, product_names: ['商品A'], drawing_prompt: '母親節促銷7折優惠' })).result.structuredContent.image_url, 'https://tmp.example.test/poster.webp');
+const posterResult = (await callTool(622, 'slimweb_posters_create', { site_id: 101, product_names: ['商品A'], drawing_prompt: '母親節促銷7折優惠' })).result;
+assert.equal(posterResult.structuredContent.image_url, 'https://tmp.example.test/poster.webp');
+assert.equal(posterResult._meta['openai/outputTemplate'], 'ui://slimweb/poster-preview.html');
+assert.match(posterResult.content[0].text, /海報已產生/);
+assert.equal(posterResult.content[0].text.includes('data:image'), false);
+assert.equal(posterResult.content[0].text.includes('b64_json'), false);
 assert.equal((await callTool(63, 'slimweb_discount_codes_list', { site_id: 101 })).result.structuredContent.discount_codes[0].code, 'VIP200');
 	    assert.equal((await callTool(64, 'slimweb_discount_codes_upsert', { site_id: 101, code: 'VIP200', discount_amount: 200 })).result.structuredContent.discount_code.code, 'VIP200');
 	    assert.equal((await callTool(65, 'slimweb_member_tiers_list', { site_id: 101 })).result.structuredContent.member_tiers[0].name, 'VIP');

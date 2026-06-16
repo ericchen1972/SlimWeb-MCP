@@ -1730,6 +1730,9 @@ const MCP_TOOLS = [
           }
         },
         required: ['site_id', 'product_names', 'drawing_prompt']
+      },
+      _meta: {
+        'openai/outputTemplate': POSTER_PREVIEW_WIDGET_URI
       }
     },
 	  {
@@ -2231,6 +2234,24 @@ function mcpJsonContent(json) {
       }
     ]
   };
+}
+
+function posterResultSummary(result) {
+  if (result?.requiresProductSelection) {
+    return String(result.message ?? '找到多個相符商品，請確認要使用哪一個商品。');
+  }
+
+  const aspectRatio = typeof result?.aspect_ratio === 'string' ? result.aspect_ratio : '9:16';
+  const products = Array.isArray(result?.products)
+    ? result.products.map((item) => item?.name).filter(Boolean).join('、')
+    : '';
+  const assetPath = typeof result?.asset?.media_path === 'string' ? result.asset.media_path : '';
+
+  return [
+    `海報已產生：${aspectRatio}`,
+    products ? `商品：${products}` : '',
+    assetPath ? `素材：${assetPath}` : ''
+  ].filter(Boolean).join('\n');
 }
 
 function toolArgs(message) {
@@ -3557,7 +3578,13 @@ async function toolResultForCall(message, request, context) {
           );
 
           return mcpResult(message.id ?? null, {
-            ...mcpJsonContent(result),
+            structuredContent: result,
+            content: [
+              {
+                type: 'text',
+                text: posterResultSummary(result)
+              }
+            ],
             _meta: {
               'openai/outputTemplate': POSTER_PREVIEW_WIDGET_URI
             }
