@@ -8,6 +8,7 @@ import { Agent } from 'undici';
 const { Pool } = pg;
 const MAX_ASSET_BYTES = 10 * 1024 * 1024;
 const POSTER_REQUEST_TIMEOUT_MS = 780_000;
+const POSTER_POLL_INTERVAL_MS = 5_000;
 const POSTER_FETCH_DISPATCHER = new Agent({
   headersTimeout: POSTER_REQUEST_TIMEOUT_MS,
   bodyTimeout: POSTER_REQUEST_TIMEOUT_MS
@@ -282,6 +283,9 @@ export class WeblessAccountRepository {
     this.laravelAppKey = options.laravelAppKey ?? process.env.WEBLESS_APP_KEY ?? process.env.LARAVEL_APP_KEY ?? process.env.APP_KEY ?? '';
     this.fetch = options.fetchImpl ?? fetch;
     this.logger = options.logger ?? console;
+    this.posterPollIntervalMs = Number.isFinite(Number(options.posterPollIntervalMs))
+      ? Math.max(0, Number(options.posterPollIntervalMs))
+      : POSTER_POLL_INTERVAL_MS;
   }
 
   async upsertGoogleAccount(profile) {
@@ -3634,6 +3638,7 @@ export class WeblessAccountRepository {
         status: response.status,
         duration_ms: Date.now() - startedAt
       });
+      payload = await this.pollPosterJobIfQueued(payload, logContext, startedAt);
     } catch (error) {
       this.logError('Webless poster request failed', {
         ...logContext,
@@ -3652,6 +3657,61 @@ export class WeblessAccountRepository {
       products,
       ...payload
     };
+  }
+
+  async pollPosterJobIfQueued(payload, logContext, startedAt) {
+    if (!payload?.queued || typeof payload.status_url !== 'string' || payload.status_url.trim() === '') {
+      return payload;
+    }
+
+    const statusUrl = new URL(payload.status_url, this.weblessAppBaseUrl).toString();
+    const deadlineAt = startedAt + POSTER_REQUEST_TIMEOUT_MS;
+    this.logInfo('Webless poster job polling started', {
+      ...logContext,
+      job_id: payload.job_id ?? null,
+      status_url: statusUrl
+    });
+
+    while (Date.now() < deadlineAt) {
+      if (this.posterPollIntervalMs > 0) {
+        await delay(Math.min(this.posterPollIntervalMs, Math.max(0, deadlineAt - Date.now())));
+      }
+
+      const response = await this.fetch(statusUrl, {
+        method: 'GET',
+        headers: {
+          'x-slimweb-mcp-secret': this.requireWeblessMcpSecret()
+        },
+        dispatcher: POSTER_FETCH_DISPATCHER,
+        signal: createTimeoutSignal(Math.max(1_000, Math.min(60_000, deadlineAt - Date.now())))
+      });
+      const statusPayload = await parseJsonResponse(response, 'Unable to read Webless poster status');
+      const status = String(statusPayload?.status ?? '').toLowerCase();
+
+      this.logInfo('Webless poster job poll received', {
+        ...logContext,
+        job_id: statusPayload?.job_id ?? payload.job_id ?? null,
+        status,
+        duration_ms: Date.now() - startedAt
+      });
+
+      if (status === 'completed') {
+        return statusPayload;
+      }
+
+      if (status === 'failed') {
+        const message = String(statusPayload?.message ?? statusPayload?.error?.message ?? 'Poster generation failed.').trim();
+        throw codedError('UPSTREAM_ERROR', message || 'Poster generation failed.', {
+          job_id: statusPayload?.job_id ?? payload.job_id ?? null,
+          status
+        });
+      }
+    }
+
+    throw codedError('UPSTREAM_TIMEOUT', 'Poster generation did not finish before the MCP timeout.', {
+      job_id: payload.job_id ?? null,
+      timeout_ms: POSTER_REQUEST_TIMEOUT_MS
+    });
   }
 
   logInfo(message, context) {
@@ -6789,6 +6849,13 @@ function createTimeoutSignal(timeoutMs) {
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   timer.unref?.();
   return controller.signal;
+}
+
+function delay(ms) {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    timer.unref?.();
+  });
 }
 
 function requireThemeName(value) {

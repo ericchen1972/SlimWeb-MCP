@@ -4295,22 +4295,41 @@ test('repository creates poster through Webless backend when products resolve un
   const logs = [];
   const fetchImpl = async (url, options = {}) => {
     requests.push({ url: String(url), options });
-    assert.equal(String(url), 'https://webless.test/sites/site-1/mcp-posters');
-    assert.equal(options.method, 'POST');
+
+    if (String(url) === 'https://webless.test/sites/site-1/mcp-posters') {
+      assert.equal(options.method, 'POST');
+      assert.equal(options.headers['x-slimweb-mcp-secret'], 'secret-for-tests');
+      assert.ok(options.signal instanceof AbortSignal);
+      assert.ok(options.dispatcher);
+
+      const body = JSON.parse(options.body);
+      assert.equal(body.site_admin_id, 501);
+      assert.equal(body.aspect_ratio, '1:1');
+      assert.equal(body.products[0].name, 'Judy 香氛');
+      assert.equal(body.products[0].summary, '木質調香氛');
+      assert.equal(body.products[0].description, '前調佛手柑，後調雪松。');
+      assert.equal(body.products[0].primary_image_url, 'https://slimweb.tw/media/sites/101/products/judy.webp');
+
+      return new Response(JSON.stringify({
+        ok: true,
+        queued: true,
+        job_id: 'poster-job-1',
+        status: 'queued',
+        status_url: 'https://webless.test/sites/site-1/mcp-posters/poster-job-1'
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+
+    assert.equal(String(url), 'https://webless.test/sites/site-1/mcp-posters/poster-job-1');
+    assert.equal(options.method, 'GET');
     assert.equal(options.headers['x-slimweb-mcp-secret'], 'secret-for-tests');
     assert.ok(options.signal instanceof AbortSignal);
     assert.ok(options.dispatcher);
 
-    const body = JSON.parse(options.body);
-    assert.equal(body.site_admin_id, 501);
-    assert.equal(body.aspect_ratio, '1:1');
-    assert.equal(body.products[0].name, 'Judy 香氛');
-    assert.equal(body.products[0].summary, '木質調香氛');
-    assert.equal(body.products[0].description, '前調佛手柑，後調雪松。');
-    assert.equal(body.products[0].primary_image_url, 'https://slimweb.tw/media/sites/101/products/judy.webp');
-
     return new Response(JSON.stringify({
       ok: true,
+      queued: false,
+      job_id: 'poster-job-1',
+      status: 'completed',
       image_url: 'https://tmp.example.test/poster.webp',
       aspect_ratio: '1:1',
       usage: { monthlyUsedUsd: 0.01 }
@@ -4328,7 +4347,8 @@ test('repository creates poster through Webless backend when products resolve un
     },
     publicSiteBaseUrl: 'https://slimweb.tw',
     weblessAppBaseUrl: 'https://webless.test',
-    weblessMcpSecret: 'secret-for-tests'
+    weblessMcpSecret: 'secret-for-tests',
+    posterPollIntervalMs: 0
   });
 
   const result = await repository.createPoster({
@@ -4346,10 +4366,12 @@ test('repository creates poster through Webless backend when products resolve un
   assert.equal(result.products[0].primary_image_url, 'https://slimweb.tw/media/sites/101/products/judy.webp');
   assert.equal(result.products[0].summary, '木質調香氛');
   assert.equal(result.products[0].description, '前調佛手柑，後調雪松。');
-  assert.equal(requests.length, 1);
+  assert.equal(requests.length, 2);
   assert.deepEqual(logs.map((log) => log.message), [
     'Webless poster request started',
-    'Webless poster request finished'
+    'Webless poster request finished',
+    'Webless poster job polling started',
+    'Webless poster job poll received'
   ]);
   assert.equal(logs[0].context.url, 'https://webless.test/sites/site-1/mcp-posters');
   assert.equal(logs[0].context.site_id, 101);
@@ -4357,6 +4379,48 @@ test('repository creates poster through Webless backend when products resolve un
   assert.equal(logs[0].context.aspect_ratio, '1:1');
   assert.equal(logs[0].context.product_count, 1);
   assert.equal(typeof logs[1].context.duration_ms, 'number');
+});
+
+test('repository surfaces failed async poster status details', async () => {
+  const fetchImpl = async (url) => {
+    if (String(url) === 'https://webless.test/sites/site-1/mcp-posters') {
+      return new Response(JSON.stringify({
+        ok: true,
+        queued: true,
+        job_id: 'poster-job-2',
+        status: 'queued',
+        status_url: 'https://webless.test/sites/site-1/mcp-posters/poster-job-2'
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+
+    return new Response(JSON.stringify({
+      ok: false,
+      queued: false,
+      job_id: 'poster-job-2',
+      status: 'failed',
+      message: 'OpenAI image request failed: upstream 500'
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+  const repository = new WeblessAccountRepository(posterPool(), {
+    fetchImpl,
+    publicSiteBaseUrl: 'https://slimweb.tw',
+    weblessAppBaseUrl: 'https://webless.test',
+    weblessMcpSecret: 'secret-for-tests',
+    posterPollIntervalMs: 0
+  });
+
+  await assert.rejects(
+    () => repository.createPoster({
+      email: 'owner@example.com',
+      google_id: 'google-sub-1'
+    }, {
+      site_id: 101,
+      product_names: ['Judy'],
+      aspect_ratio: '16:9',
+      drawing_prompt: '中秋節促銷8折優惠'
+    }),
+    /OpenAI image request failed: upstream 500/
+  );
 });
 
 test('repository logs Webless poster request failures with outbound URL and duration', async () => {
