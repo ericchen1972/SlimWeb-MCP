@@ -4292,11 +4292,13 @@ test('repository stops poster creation when product fuzzy search is ambiguous', 
 
 test('repository creates poster through Webless backend when products resolve uniquely', async () => {
   const requests = [];
+  const logs = [];
   const fetchImpl = async (url, options = {}) => {
     requests.push({ url: String(url), options });
     assert.equal(String(url), 'https://webless.test/sites/site-1/mcp-posters');
     assert.equal(options.method, 'POST');
     assert.equal(options.headers['x-slimweb-mcp-secret'], 'secret-for-tests');
+    assert.ok(options.signal instanceof AbortSignal);
 
     const body = JSON.parse(options.body);
     assert.equal(body.site_admin_id, 501);
@@ -4315,6 +4317,14 @@ test('repository creates poster through Webless backend when products resolve un
   };
   const repository = new WeblessAccountRepository(posterPool(), {
     fetchImpl,
+    logger: {
+      info(message, context) {
+        logs.push({ level: 'info', message, context });
+      },
+      error(message, context) {
+        logs.push({ level: 'error', message, context });
+      }
+    },
     publicSiteBaseUrl: 'https://slimweb.tw',
     weblessAppBaseUrl: 'https://webless.test',
     weblessMcpSecret: 'secret-for-tests'
@@ -4336,6 +4346,66 @@ test('repository creates poster through Webless backend when products resolve un
   assert.equal(result.products[0].summary, '木質調香氛');
   assert.equal(result.products[0].description, '前調佛手柑，後調雪松。');
   assert.equal(requests.length, 1);
+  assert.deepEqual(logs.map((log) => log.message), [
+    'Webless poster request started',
+    'Webless poster request finished'
+  ]);
+  assert.equal(logs[0].context.url, 'https://webless.test/sites/site-1/mcp-posters');
+  assert.equal(logs[0].context.site_id, 101);
+  assert.equal(logs[0].context.site_slug, 'site-1');
+  assert.equal(logs[0].context.aspect_ratio, '1:1');
+  assert.equal(logs[0].context.product_count, 1);
+  assert.equal(typeof logs[1].context.duration_ms, 'number');
+});
+
+test('repository logs Webless poster request failures with outbound URL and duration', async () => {
+  const logs = [];
+  const fetchImpl = async () => {
+    const error = new Error('upstream request timeout');
+    error.name = 'AbortError';
+    throw error;
+  };
+  const repository = new WeblessAccountRepository(posterPool(), {
+    fetchImpl,
+    logger: {
+      info(message, context) {
+        logs.push({ level: 'info', message, context });
+      },
+      error(message, context) {
+        logs.push({ level: 'error', message, context });
+      }
+    },
+    publicSiteBaseUrl: 'https://slimweb.tw',
+    weblessAppBaseUrl: 'https://webless.test',
+    weblessMcpSecret: 'secret-for-tests'
+  });
+
+  await assert.rejects(
+    () => repository.createPoster({
+      email: 'owner@example.com',
+      google_id: 'google-sub-1'
+    }, {
+      site_id: 101,
+      product_names: ['Judy'],
+      aspect_ratio: '16:9',
+      drawing_prompt: '中秋節促銷8折優惠'
+    }),
+    /upstream request timeout/
+  );
+
+  assert.deepEqual(logs.map((log) => log.message), [
+    'Webless poster request started',
+    'Webless poster request failed'
+  ]);
+  assert.equal(logs[1].level, 'error');
+  assert.equal(logs[1].context.url, 'https://webless.test/sites/site-1/mcp-posters');
+  assert.equal(logs[1].context.site_id, 101);
+  assert.equal(logs[1].context.site_slug, 'site-1');
+  assert.equal(logs[1].context.aspect_ratio, '16:9');
+  assert.equal(logs[1].context.product_count, 1);
+  assert.equal(logs[1].context.error_name, 'AbortError');
+  assert.equal(logs[1].context.error_message, 'upstream request timeout');
+  assert.equal(typeof logs[1].context.duration_ms, 'number');
 });
 
 test('repository returns candidate emails when a newsletter recipient name is ambiguous', async () => {

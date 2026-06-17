@@ -6,6 +6,7 @@ import ExcelJS from 'exceljs';
 
 const { Pool } = pg;
 const MAX_ASSET_BYTES = 10 * 1024 * 1024;
+const POSTER_REQUEST_TIMEOUT_MS = 780_000;
 const METADATA_TOKEN_URL = 'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token';
 const GOOGLE_OAUTH_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const GCS_TOKEN_SCOPE = 'https://www.googleapis.com/auth/devstorage.read_write';
@@ -275,6 +276,7 @@ export class WeblessAccountRepository {
     this.weblessMcpSecret = options.weblessMcpSecret ?? process.env.WEBLESS_MCP_SECRET ?? '';
     this.laravelAppKey = options.laravelAppKey ?? process.env.WEBLESS_APP_KEY ?? process.env.LARAVEL_APP_KEY ?? process.env.APP_KEY ?? '';
     this.fetch = options.fetchImpl ?? fetch;
+    this.logger = options.logger ?? console;
   }
 
   async upsertGoogleAccount(profile) {
@@ -3592,20 +3594,49 @@ export class WeblessAccountRepository {
       products.push(matches[0]);
     }
 
-    const response = await this.fetch(`${this.weblessAppBaseUrl}/sites/${encodeURIComponent(site.slug)}/mcp-posters`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-slimweb-mcp-secret': this.requireWeblessMcpSecret()
-      },
-      body: JSON.stringify({
-        site_admin_id: accountId && typeof accountId === 'object' ? accountId.site_admin_id ?? site.site_admin_id ?? null : null,
-        aspect_ratio: aspectRatio,
-        drawing_prompt: drawingPrompt,
-        products
-      })
-    });
-    const payload = await parseJsonResponse(response, 'Unable to create Webless poster');
+    const url = `${this.weblessAppBaseUrl}/sites/${encodeURIComponent(site.slug)}/mcp-posters`;
+    const startedAt = Date.now();
+    const logContext = {
+      url,
+      site_id: site.id,
+      site_slug: site.slug,
+      aspect_ratio: aspectRatio,
+      product_count: products.length,
+      timeout_ms: POSTER_REQUEST_TIMEOUT_MS
+    };
+    this.logInfo('Webless poster request started', logContext);
+
+    let payload;
+    try {
+      const response = await this.fetch(url, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-slimweb-mcp-secret': this.requireWeblessMcpSecret()
+        },
+        signal: createTimeoutSignal(POSTER_REQUEST_TIMEOUT_MS),
+        body: JSON.stringify({
+          site_admin_id: accountId && typeof accountId === 'object' ? accountId.site_admin_id ?? site.site_admin_id ?? null : null,
+          aspect_ratio: aspectRatio,
+          drawing_prompt: drawingPrompt,
+          products
+        })
+      });
+      payload = await parseJsonResponse(response, 'Unable to create Webless poster');
+      this.logInfo('Webless poster request finished', {
+        ...logContext,
+        status: response.status,
+        duration_ms: Date.now() - startedAt
+      });
+    } catch (error) {
+      this.logError('Webless poster request failed', {
+        ...logContext,
+        duration_ms: Date.now() - startedAt,
+        error_name: error?.name ?? 'Error',
+        error_message: error?.message ?? String(error)
+      });
+      throw error;
+    }
 
     return {
       ok: true,
@@ -3615,6 +3646,22 @@ export class WeblessAccountRepository {
       products,
       ...payload
     };
+  }
+
+  logInfo(message, context) {
+    try {
+      this.logger?.info?.(message, context);
+    } catch {
+      // Logging should never change MCP tool behavior.
+    }
+  }
+
+  logError(message, context) {
+    try {
+      this.logger?.error?.(message, context);
+    } catch {
+      // Logging should never change MCP tool behavior.
+    }
   }
 
   async findProductsForPoster(site, productName) {
@@ -6725,6 +6772,17 @@ async function parseJsonResponse(response, action) {
   }
 
   return payload ?? {};
+}
+
+function createTimeoutSignal(timeoutMs) {
+  if (typeof AbortSignal?.timeout === 'function') {
+    return AbortSignal.timeout(timeoutMs);
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  timer.unref?.();
+  return controller.signal;
 }
 
 function requireThemeName(value) {
