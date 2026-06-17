@@ -90,6 +90,19 @@ function fakePool() {
         };
       }
 
+      if (sql.includes('from site_pages') && sql.includes('where site_id = $1 and is_default = true')) {
+        return {
+          rows: [{
+            id: 7,
+            site_id: 101,
+            name: 'Default',
+            is_default: true,
+            is_active: true,
+            theme_mode: 'light'
+          }]
+        };
+      }
+
       throw new Error(`Unexpected query: ${sql}`);
     }
   };
@@ -2818,6 +2831,44 @@ test('repository reads and updates editable homepage content through page tools'
   assert.equal(
     await readFile(path.join(storageRoot, updated.storage_path), 'utf8'),
     '<section>Original homepage</section><section>Poster</section>\n'
+  );
+});
+
+test('repository falls back to legacy formal homepage template when site-level homepage is empty', async () => {
+  const storageRoot = await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-'));
+  const repository = new WeblessAccountRepository(fakePool(), {
+    storageRoot,
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+
+  const legacyHomepagePath = path.join(storageRoot, 'site-page-templates/101/7/pages/index.blade.php');
+  await mkdir(path.dirname(legacyHomepagePath), { recursive: true });
+  await writeFile(
+    legacyHomepagePath,
+    '<section>Legacy homepage</section>\n',
+    'utf8'
+  );
+
+  const read = await repository.getPageContent(11, {
+    site_id: 101,
+    page_name: 'index'
+  });
+
+  assert.equal(read.content.html, '<section>Legacy homepage</section>\n');
+  assert.equal(read.storage_path, 'site-page-templates/101/7/pages/index.blade.php');
+
+  const updated = await repository.updatePage(11, {
+    site_id: 101,
+    page_name: 'index',
+    content: {
+      html: '<section>Legacy homepage</section><section>Poster</section>'
+    }
+  });
+
+  assert.equal(updated.storage_path, 'site-page-templates/101/7/pages/index.blade.php');
+  assert.equal(
+    await readFile(path.join(storageRoot, updated.storage_path), 'utf8'),
+    '<section>Legacy homepage</section><section>Poster</section>\n'
   );
 });
 

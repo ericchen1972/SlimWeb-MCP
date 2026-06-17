@@ -4394,7 +4394,7 @@ export class WeblessAccountRepository {
     const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
     const pageName = requireNonEmptyString(args.page_name, 'page_name');
     const html = extractHtmlContent(args.content);
-    const pageRecord = await this.findPageForSite(site, pageName, { includeHtml: false });
+    const pageRecord = await this.findPageForSite(site, pageName, { includeHtml: true });
 
     if (!pageRecord) {
       throw codedError('NOT_FOUND', `Page not found or not accessible: ${pageName}`);
@@ -4406,7 +4406,7 @@ export class WeblessAccountRepository {
 
     if (isEditableFixedPageKey(pageRecord.page_key)) {
       const theme = siteLevelHomepageTheme(site);
-      const storagePath = homeContentStoragePath(site.id);
+      const storagePath = pageRecord.storage_path ?? homeContentStoragePath(site.id);
 
       await this.storage.write(storagePath, Buffer.from(html.trim() + '\n', 'utf8'), 'text/x-php; charset=utf-8');
 
@@ -4582,8 +4582,7 @@ export class WeblessAccountRepository {
     const fixedMatch = fixedPages.find((page) => pageLookupCandidates(page).some((candidate) => normalizeTitleMatch(candidate) === lookup));
     if (fixedMatch) {
       if (fixedMatch.page_key === 'index') {
-        const storagePath = homeContentStoragePath(site.id);
-        const html = await this.storage.readText(storagePath);
+        const { storagePath, html } = await this.readHomepageHtml(site);
         return {
           ...fixedMatch,
           storage_path: storagePath,
@@ -4608,6 +4607,25 @@ export class WeblessAccountRepository {
     }
 
     return null;
+  }
+
+  async readHomepageHtml(site) {
+    const storagePath = homeContentStoragePath(site.id);
+    const html = await this.storage.readText(storagePath);
+    if (html !== null && html.trim() !== '') {
+      return { storagePath, html };
+    }
+
+    const defaultTheme = await this.resolveThemeForSite(site.id, 'default').catch(() => null);
+    if (defaultTheme?.id) {
+      const legacyStoragePath = legacyHomepageContentStoragePath(site.id, defaultTheme.id);
+      const legacyHtml = await this.storage.readText(legacyStoragePath);
+      if (legacyHtml !== null && legacyHtml.trim() !== '') {
+        return { storagePath: legacyStoragePath, html: legacyHtml };
+      }
+    }
+
+    return { storagePath, html: html ?? '' };
   }
 
   async findPageTitleMatchesForSite(site, title) {
@@ -10721,6 +10739,10 @@ function siteLevelHomepageTheme(site) {
 
 function homeContentStoragePath(siteId) {
   return pageContentStoragePath(siteId, { id: 'default', site_id: siteId, is_default: true }, 'index');
+}
+
+function legacyHomepageContentStoragePath(siteId, themeId) {
+  return `site-page-templates/${siteId}/${themeId}/pages/index.blade.php`;
 }
 
 function customPageMetadataStoragePath(siteId, pageKey) {
