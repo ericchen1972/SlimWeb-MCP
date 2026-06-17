@@ -3,10 +3,15 @@ import { createCipheriv, createDecipheriv, createHmac, createSign, randomBytes, 
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import ExcelJS from 'exceljs';
+import { Agent } from 'undici';
 
 const { Pool } = pg;
 const MAX_ASSET_BYTES = 10 * 1024 * 1024;
 const POSTER_REQUEST_TIMEOUT_MS = 780_000;
+const POSTER_FETCH_DISPATCHER = new Agent({
+  headersTimeout: POSTER_REQUEST_TIMEOUT_MS,
+  bodyTimeout: POSTER_REQUEST_TIMEOUT_MS
+});
 const METADATA_TOKEN_URL = 'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token';
 const GOOGLE_OAUTH_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const GCS_TOKEN_SCOPE = 'https://www.googleapis.com/auth/devstorage.read_write';
@@ -3614,6 +3619,7 @@ export class WeblessAccountRepository {
           'content-type': 'application/json',
           'x-slimweb-mcp-secret': this.requireWeblessMcpSecret()
         },
+        dispatcher: POSTER_FETCH_DISPATCHER,
         signal: createTimeoutSignal(POSTER_REQUEST_TIMEOUT_MS),
         body: JSON.stringify({
           site_admin_id: accountId && typeof accountId === 'object' ? accountId.site_admin_id ?? site.site_admin_id ?? null : null,

@@ -4299,6 +4299,7 @@ test('repository creates poster through Webless backend when products resolve un
     assert.equal(options.method, 'POST');
     assert.equal(options.headers['x-slimweb-mcp-secret'], 'secret-for-tests');
     assert.ok(options.signal instanceof AbortSignal);
+    assert.ok(options.dispatcher);
 
     const body = JSON.parse(options.body);
     assert.equal(body.site_admin_id, 501);
