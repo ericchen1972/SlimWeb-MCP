@@ -56,6 +56,6 @@ jobs:
             --add-cloudsql-instances="${CLOUD_SQL_INSTANCE}" \
             --vpc-connector="${VPC_CONNECTOR}" \
             --vpc-egress=all-traffic \
-            --set-env-vars="NODE_ENV=production,PUBLIC_BASE_URL=https://slimweb-mcp-aakwcbp2ca-de.a.run.app,GOOGLE_CLIENT_ID=27587628711-upin8ch154kqrl88k41978q660oc0pbg.apps.googleusercontent.com,DB_HOST=${{ secrets.DB_HOST }},DB_PORT=${{ secrets.DB_PORT }},DB_DATABASE=${{ secrets.DB_DATABASE }},DB_USERNAME=${{ secrets.DB_USERNAME }},DB_PASSWORD=${{ secrets.DB_PASSWORD }},DB_SSLMODE=${{ secrets.DB_SSLMODE }},MCP_SESSION_SECRET=${{ secrets.MCP_SESSION_SECRET }},WEBLESS_MCP_SECRET=${{ secrets.WEBLESS_MCP_SECRET }},WEBLESS_STORAGE_DRIVER=gcs,GCS_BUCKET=webless_bucket,WEBLESS_PUBLIC_BASE_URL=https://slimweb.tw" \
+            --set-env-vars="NODE_ENV=production,PUBLIC_BASE_URL=https://slimweb-mcp-aakwcbp2ca-de.a.run.app,GOOGLE_CLIENT_ID=27587628711-upin8ch154kqrl88k41978q660oc0pbg.apps.googleusercontent.com,DB_HOST=${{ secrets.DB_HOST }},DB_PORT=${{ secrets.DB_PORT }},DB_DATABASE=${{ secrets.DB_DATABASE }},DB_USERNAME=${{ secrets.DB_USERNAME }},DB_PASSWORD=${{ secrets.DB_PASSWORD }},DB_SSLMODE=${{ secrets.DB_SSLMODE }},MCP_SESSION_SECRET=${{ secrets.MCP_SESSION_SECRET }},WEBLESS_MCP_SECRET=${{ secrets.WEBLESS_MCP_SECRET }},WEBLESS_STORAGE_DRIVER=gcs,GCS_BUCKET=webless_bucket,WEBLESS_PUBLIC_BASE_URL=https://slimweb.tw,WEBLESS_APP_BASE_URL=https://webless-aakwcbp2ca-de.a.run.app" \
             --allow-unauthenticated \
             --quiet
