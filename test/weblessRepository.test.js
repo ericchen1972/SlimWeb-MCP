@@ -1369,6 +1369,21 @@ function productCatalogPool() {
     nextImageId: 30
   };
 
+  function productMatchesListFilters(product, sql, params) {
+    if (product.site_id !== params[0]) {
+      return false;
+    }
+
+    if (sql.includes('p.stock <=')) {
+      const stockParamIndex = Number.parseInt(sql.match(/p\.stock <= \$(\d+)/)?.[1] ?? '0', 10) - 1;
+      const maxStock = params[stockParamIndex];
+      const hasMatchingVariant = state.variants.some((variant) => variant.product_id === product.id && variant.stock <= maxStock);
+      return product.stock <= maxStock || hasMatchingVariant;
+    }
+
+    return true;
+  }
+
   return {
     state,
     async query(sql, params) {
@@ -1487,11 +1502,11 @@ function productCatalogPool() {
       }
 
       if (sql.includes('select count(*)::int as total from products p')) {
-        return { rows: [{ total: String(state.products.length) }] };
+        return { rows: [{ total: String(state.products.filter((product) => productMatchesListFilters(product, sql, params)).length) }] };
       }
 
       if (sql.includes('from products p') && sql.includes('left join site_categories')) {
-        return { rows: state.products.map((product) => ({ ...product, category_name: '男童' })) };
+        return { rows: state.products.filter((product) => productMatchesListFilters(product, sql, params)).map((product) => ({ ...product, category_name: '男童' })) };
       }
 
       if (sql.includes('select *') && sql.includes('from products')) {
@@ -2495,6 +2510,58 @@ test('repository maps product variants to the remaining different-price spec sto
   }]);
 });
 
+test('repository lists products with zero-stock variants when max_stock is zero', async () => {
+  const pool = productCatalogPool();
+  const repository = new WeblessAccountRepository(pool, {
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+
+  const product = await repository.upsertProduct(11, {
+    site_id: 101,
+    site_category_id: 6,
+    name: '規格庫存歸零商品',
+    base_price: 1200,
+    stock: 50,
+    variants: [{
+      name: '紫金色',
+      price: 1200,
+      stock: 0
+    }, {
+      name: '綠色',
+      price: 1200,
+      stock: 95
+    }],
+    primary_images: [{
+      source: {
+        media_path: 'sites/101/mcp-uploads/committed/spec-stock-product.png'
+      }
+    }]
+  });
+
+  await repository.upsertProduct(11, {
+    site_id: 101,
+    site_category_id: 6,
+    name: '規格庫存充足商品',
+    base_price: 1200,
+    stock: 50,
+    variants: [{
+      name: '黑色',
+      price: 1200,
+      stock: 10
+    }],
+    primary_images: [{
+      source: {
+        media_path: 'sites/101/mcp-uploads/committed/in-stock-product.png'
+      }
+    }]
+  });
+
+  const listed = await repository.listProducts(11, { site_id: 101, max_stock: 0 });
+
+  assert.deepEqual(listed.products.map((item) => item.id), [product.product.id]);
+  assert.equal(listed.pagination.total, 1);
+});
+
 test('repository manages nav items with root default and base64 svg icons', async () => {
   const pool = productCatalogPool();
   const repository = new WeblessAccountRepository(pool, {
@@ -2729,6 +2796,40 @@ test('repository creates and reads Webless custom page content files', async () 
 
   assert.equal(read.exists, true);
   assert.equal(read.content.html, '<section><h1>日本旅遊三城小旅行</h1><p>京都、北海道、大阪</p></section>\n');
+});
+
+test('repository stores page-scoped libraries as managed CDN dependencies while returning clean HTML', async () => {
+  const storageRoot = await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-'));
+  const repository = new WeblessAccountRepository(fakePool(), {
+    storageRoot,
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+
+  const created = await repository.createPage(11, {
+    site_id: 101,
+    title: 'Animated About Us',
+    enabled_libraries: ['swiper', 'animate_css', 'scrolltrigger'],
+    content: {
+      html: '<section class="swiper"><div class="swiper-wrapper"><div class="swiper-slide">About</div></div></section><script>document.addEventListener("DOMContentLoaded", () => { gsap.to(".swiper", { opacity: 1 }); });</script>'
+    }
+  });
+  const storedHtml = await readFile(path.join(storageRoot, created.storage_path), 'utf8');
+  const metadata = JSON.parse(await readFile(path.join(storageRoot, created.metadata_path), 'utf8'));
+  const read = await repository.getPageContent(11, {
+    site_id: 101,
+    page_name: 'animated-about-us'
+  });
+
+  assert.deepEqual(created.enabled_libraries, ['animate_css', 'swiper', 'gsap', 'scrolltrigger']);
+  assert.match(storedHtml, /slimweb:page-libraries:start/);
+  assert.match(storedHtml, /animate\.css@4\.1\.1/);
+  assert.match(storedHtml, /swiper@12\/swiper-bundle\.min\.js/);
+  assert.match(storedHtml, /gsap@3\.13\.0\/dist\/gsap\.min\.js/);
+  assert.match(storedHtml, /ScrollTrigger\.min\.js/);
+  assert.deepEqual(metadata.enabled_libraries, ['animate_css', 'swiper', 'gsap', 'scrolltrigger']);
+  assert.deepEqual(read.enabled_libraries, ['animate_css', 'swiper', 'gsap', 'scrolltrigger']);
+  assert.doesNotMatch(read.content.html, /slimweb:page-libraries/);
+  assert.match(read.content.html, /<script>document\.addEventListener/);
 });
 
 test('repository updates content SEO metadata for custom pages after page workflows', async () => {
@@ -3402,7 +3503,7 @@ test('repository replaces product images when update mode is replace', async () 
   assert.deepEqual(updated.product.primary_images.map((image) => image.sort_order), [0]);
 });
 
-test('repository rejects unsafe inline script content', async () => {
+test('repository rejects unsafe page event handlers and unmanaged external scripts', async () => {
   const storageRoot = await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-'));
   const repository = new WeblessAccountRepository(fakePool(), {
     storageRoot
@@ -3416,7 +3517,19 @@ test('repository rejects unsafe inline script content', async () => {
         html: '<section onclick="alert(1)">Bad</section>'
       }
     }),
-    /HTML content cannot include/
+    /inline event handlers/
+  );
+
+  await assert.rejects(
+    repository.createPage(11, {
+      site_id: 101,
+      title: 'Bad external script page',
+      content: {
+        html: '<section>Bad</section><script src="https://example.com/bad.js"></script>'
+      },
+      enabled_libraries: []
+    }),
+    /external script/
   );
 });
 

@@ -1390,8 +1390,8 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 狀態: Available
 - 權限: content write
 - Scope: active site
-- 用途: 建立新的自訂頁面。AI 應先確認標題不撞名，再依設計摘要與圖片素材建立 HTML/CSS，固定頁不可透過這個工具建立或覆寫；若目前是 ChatGPT Remote MCP 而且沒有可用附圖或可直接下載的圖片 URL，就先終止任務並請使用者貼圖。
-- Input: `site_code`、`title`、`content.html` or `content.body_html`、optional `page_key`、optional `confirmation_token`
+- 用途: 建立新的自訂頁面。AI 應先確認標題不撞名，再依設計摘要與圖片素材建立單頁 HTML/CSS/頁面內 JavaScript，固定頁不可透過這個工具建立或覆寫；若目前是 ChatGPT Remote MCP 而且沒有可用附圖或可直接下載的圖片 URL，就先終止任務並請使用者貼圖。
+- Input: `site_code`、`title`、`content.html` or `content.body_html`、`enabled_libraries`、optional `page_key`、optional `confirmation_token`
 - Output: write summary、site summary、theme summary、page key、title、public URL、preview URL、bytes written
 - Side effects: writes custom page body and metadata to Webless template storage
 - 是否需要 confirmation: yes when creating customer-facing content
@@ -1403,8 +1403,8 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 狀態: Available
 - 權限: content write
 - Scope: active site
-- 用途: 修改既有可編輯頁面，包含自訂頁與首頁 `index`。流程會先用 `slimweb_pages_get_content` 讀取目前頁面內容；其他固定系統頁不可編輯。若目前是 ChatGPT Remote MCP 而且沒有可用附圖或可直接下載的圖片 URL，就先終止任務並請使用者貼圖。
-- Input: `site_code`、`page_name`、`content.html` or `content.body_html`、optional `title`、optional `confirmation_token`
+- 用途: 修改既有可編輯頁面，包含自訂頁與首頁 `index`。流程會先用 `slimweb_pages_get_content` 讀取目前頁面內容與 `enabled_libraries`；其他固定系統頁不可編輯。若目前是 ChatGPT Remote MCP 而且沒有可用附圖或可直接下載的圖片 URL，就先終止任務並請使用者貼圖。
+- Input: `site_code`、`page_name`、`content.html` or `content.body_html`、`enabled_libraries`、optional `title`、optional `confirmation_token`
 - Output: write summary、site summary、theme summary、page key、title、public URL、preview URL、bytes written
 - Side effects: overwrites page body in configured Webless template storage; custom pages also update metadata, while homepage `index` keeps fixed-page metadata
 - 是否需要 confirmation: yes when replacing customer-facing content
@@ -1423,6 +1423,19 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 是否需要 confirmation: no
 - 錯誤情境: site not found、theme not found、invalid page key
 - Audit fields: request ID、user ID、account ID、site ID、theme ID、page key
+
+### 頁面可用外部視覺支援
+
+`slimweb_pages_create` 與 `slimweb_pages_update` 都必須傳入 `enabled_libraries`。沒有使用外部支援時傳 `[]`。AI 可依頁面需求自行選用下列 allowlist；不要在 `content.html` 內自行加入 CDN `<script src>` 或 `<link>`，SlimWeb 會依參數用 CDN 載入固定資產。頁面 HTML 可以包含自訂 CSS 與頁面範圍 inline JavaScript。
+
+| key | 類型 | 名稱 | 用途 | AI 使用建議 |
+| --- | --- | --- | --- | --- |
+| `animate_css` | CSS | Animate.css | 現成進場/提示動畫 | 少量強調元素可用，不適合整頁到處套 |
+| `aos` | JS + CSS | AOS | scroll reveal，元素進入視窗時淡入/位移 | 比 GSAP 簡單，適合一般形象頁 |
+| `swiper` | JS + CSS | Swiper | 輪播、商品滑動、案例 slider | 只在真的有 slider/carousel 時開 |
+| `gsap` | JS | GSAP core | 複雜時間軸動畫 | 高階選項，AI 要有明確動畫需求才用 |
+| `scrolltrigger` | JS | GSAP plugin | 滾動觸發 GSAP 動畫 | 依賴 `gsap`，適合進階 scroll storytelling |
+| `scrollsmoother` | JS | GSAP plugin | 平滑滾動、沉浸式滾動頁 | 第一版視為進階選項，除非使用者明確需要，否則不要自動開 |
 
 ### `slimweb_audit_list`
 
@@ -1495,7 +1508,8 @@ AI Client 收到或引用的圖片預設是 reference-only。只有當 tool call
 - 使用 `slimweb_design_context_get` 取得目前網站版型摘要、色系與框架。
 - 頁面如果有圖片需求，依照通用圖片規則處理。
 - 以網站版型摘要、色系、使用框架為基礎進行設計。
-- HTML 可以自訂 CSS 以及視覺設計所需要的 JavaScript。
+- HTML 可以自訂 CSS 以及頁面範圍 inline JavaScript；互動元素如 accordion、FAQ、tabs 優先用 HTML + Tailwind + 自訂 CSS，不必開大型 JS。
+- 依需求決定 `enabled_libraries`，沒有外部支援時傳 `[]`；少量提示動畫優先用 `animate_css`，scroll reveal 優先用 `aos`，輪播才用 `swiper`，進階滾動敘事才使用 `gsap` / `scrolltrigger` / `scrollsmoother`。
 - 使用 `slimweb_pages_create` 建立頁面。
 - 除非使用者明確表示不用 SEO，建立後使用 `slimweb_content_seo_update` 搭配 `workflow_context: page_create` 更新內容層級 SEO / AEO / GEO。
 - 建立完成後回傳頁面 URL，可用 `slimweb_preview_get_page_url` 做預覽驗證。
@@ -1507,6 +1521,7 @@ AI Client 收到或引用的圖片預設是 reference-only。只有當 tool call
 - 如果找不到頁面，立刻停止並告知使用者。
 - 如果需要新增或替換圖片，依通用圖片規則處理。
 - 參考目前內容與 `slimweb_design_context_get` 的設計摘要修改 HTML。
+- 依修改後頁面的實際需求保留或調整 `enabled_libraries`，沒有外部支援時傳 `[]`。
 - 使用 `slimweb_pages_update` 回存頁面。
 - 除非使用者明確表示不用 SEO，編輯後使用 `slimweb_content_seo_update` 搭配 `workflow_context: page_update` 更新內容層級 SEO / AEO / GEO。
 - 編輯完成後回傳頁面 URL，可用 `slimweb_preview_get_page_url` 做預覽驗證。

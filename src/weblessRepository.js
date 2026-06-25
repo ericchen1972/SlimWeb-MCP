@@ -38,6 +38,33 @@ const SEO_SETTINGS_COLUMNS = [
   'geo_same_as_profiles',
   'geo_comparison_positioning'
 ];
+const PAGE_LIBRARY_BLOCK_START = '<!-- slimweb:page-libraries:start -->';
+const PAGE_LIBRARY_BLOCK_END = '<!-- slimweb:page-libraries:end -->';
+const PAGE_SUPPORTED_LIBRARY_KEYS = ['animate_css', 'aos', 'swiper', 'gsap', 'scrolltrigger', 'scrollsmoother'];
+const PAGE_LIBRARY_ASSETS = {
+  animate_css: {
+    css: ['https://cdn.jsdelivr.net/npm/animate.css@4.1.1/animate.min.css']
+  },
+  aos: {
+    css: ['https://cdn.jsdelivr.net/npm/aos@2.3.4/dist/aos.css'],
+    js: ['https://cdn.jsdelivr.net/npm/aos@2.3.4/dist/aos.js']
+  },
+  swiper: {
+    css: ['https://cdn.jsdelivr.net/npm/swiper@12/swiper-bundle.min.css'],
+    js: ['https://cdn.jsdelivr.net/npm/swiper@12/swiper-bundle.min.js']
+  },
+  gsap: {
+    js: ['https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js']
+  },
+  scrolltrigger: {
+    requires: ['gsap'],
+    js: ['https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/ScrollTrigger.min.js']
+  },
+  scrollsmoother: {
+    requires: ['gsap', 'scrolltrigger'],
+    js: ['https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/ScrollSmoother.min.js']
+  }
+};
 const INTEGRATION_SETTINGS_COLUMNS = [
   'sms_account',
   'sms_password',
@@ -2907,7 +2934,8 @@ export class WeblessAccountRepository {
     }
 
     if (args.max_stock !== undefined && args.max_stock !== null) {
-      filters.push(`p.stock < $${params.length + 1}`);
+      const stockParam = params.length + 1;
+      filters.push(`(p.stock <= $${stockParam} or exists (select 1 from product_variants pv where pv.product_id = p.id and pv.stock <= $${stockParam}))`);
       params.push(requireNonNegativeAmount(args.max_stock, 'max_stock'));
     }
 
@@ -4463,6 +4491,8 @@ export class WeblessAccountRepository {
     const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
     const title = requireNonEmptyString(args.title, 'title');
     const html = extractHtmlContent(args.content);
+    const enabledLibraries = normalizePageEnabledLibraries(args.enabled_libraries ?? args.content?.enabled_libraries);
+    const storedHtml = pageHtmlWithManagedLibraries(html, enabledLibraries);
     const { matches } = await this.findPageTitleMatchesForSite(site, title);
     if (matches.length > 0) {
       throw codedError('CONFLICT', 'Page title already exists.', { matches });
@@ -4483,10 +4513,11 @@ export class WeblessAccountRepository {
     const metadata = {
       key: pageKey,
       name: title,
+      enabled_libraries: enabledLibraries,
       updated_at: new Date().toISOString()
     };
 
-    await this.storage.write(storagePath, Buffer.from(html.trim() + '\n', 'utf8'), 'text/x-php; charset=utf-8');
+    await this.storage.write(storagePath, Buffer.from(storedHtml.trim() + '\n', 'utf8'), 'text/x-php; charset=utf-8');
     await this.storage.write(metadataPath, Buffer.from(JSON.stringify(metadata, null, 2) + '\n', 'utf8'), 'application/json; charset=utf-8');
 
     return {
@@ -4497,9 +4528,10 @@ export class WeblessAccountRepository {
       theme,
       storage_path: storagePath,
       metadata_path: metadataPath,
+      enabled_libraries: enabledLibraries,
       public_url: this.customPagePublicUrlFor(site, pageKey),
       preview_url: this.previewUrlFor(site, pageKey, theme.id),
-      bytes_written: Buffer.byteLength(html.trim() + '\n')
+      bytes_written: Buffer.byteLength(storedHtml.trim() + '\n')
     };
   }
 
@@ -4507,6 +4539,8 @@ export class WeblessAccountRepository {
     const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
     const pageName = requireNonEmptyString(args.page_name, 'page_name');
     const html = extractHtmlContent(args.content);
+    const enabledLibraries = normalizePageEnabledLibraries(args.enabled_libraries ?? args.content?.enabled_libraries);
+    const storedHtml = pageHtmlWithManagedLibraries(html, enabledLibraries);
     const pageRecord = await this.findPageForSite(site, pageName, { includeHtml: true });
 
     if (!pageRecord) {
@@ -4521,7 +4555,7 @@ export class WeblessAccountRepository {
       const theme = siteLevelHomepageTheme(site);
       const storagePath = pageRecord.storage_path ?? homeContentStoragePath(site.id);
 
-      await this.storage.write(storagePath, Buffer.from(html.trim() + '\n', 'utf8'), 'text/x-php; charset=utf-8');
+      await this.storage.write(storagePath, Buffer.from(storedHtml.trim() + '\n', 'utf8'), 'text/x-php; charset=utf-8');
 
       return {
         ok: true,
@@ -4531,9 +4565,10 @@ export class WeblessAccountRepository {
         theme,
         storage_path: storagePath,
         metadata_path: null,
+        enabled_libraries: enabledLibraries,
         public_url: pageRecord.public_url,
         preview_url: pageRecord.preview_url,
-        bytes_written: Buffer.byteLength(html.trim() + '\n')
+        bytes_written: Buffer.byteLength(storedHtml.trim() + '\n')
       };
     }
 
@@ -4555,10 +4590,11 @@ export class WeblessAccountRepository {
       ...existingMetadata,
       key: pageRecord.page_key,
       name: nextTitle,
+      enabled_libraries: enabledLibraries,
       updated_at: new Date().toISOString()
     };
 
-    await this.storage.write(storagePath, Buffer.from(html.trim() + '\n', 'utf8'), 'text/x-php; charset=utf-8');
+    await this.storage.write(storagePath, Buffer.from(storedHtml.trim() + '\n', 'utf8'), 'text/x-php; charset=utf-8');
     await this.storage.write(metadataPath, Buffer.from(JSON.stringify(metadata, null, 2) + '\n', 'utf8'), 'application/json; charset=utf-8');
 
     return {
@@ -4569,9 +4605,10 @@ export class WeblessAccountRepository {
       theme,
       storage_path: storagePath,
       metadata_path: metadataPath,
+      enabled_libraries: enabledLibraries,
       public_url: this.customPagePublicUrlFor(site, pageRecord.page_key),
       preview_url: this.previewUrlFor(site, pageRecord.page_key, theme.id),
-      bytes_written: Buffer.byteLength(html.trim() + '\n')
+      bytes_written: Buffer.byteLength(storedHtml.trim() + '\n')
     };
   }
 
@@ -4651,7 +4688,9 @@ export class WeblessAccountRepository {
       const contentPath = pageContentStoragePath(site.id, siteLevelHomepageTheme(site), key);
       const bodyPath = `${directory}/${key}/body.blade.php`;
       const metadata = parseJsonObject(await this.storage.readText(metadataPath));
-      const html = await this.storage.readText(contentPath) ?? await this.storage.readText(bodyPath) ?? '';
+      const storedHtml = await this.storage.readText(contentPath) ?? await this.storage.readText(bodyPath) ?? '';
+      const html = stripManagedPageLibraryBlock(storedHtml);
+      const enabledLibraries = normalizePageEnabledLibraries(metadata.enabled_libraries ?? extractManagedPageLibraries(storedHtml));
       const title = nullableString(metadata.name) || headlineFromPageKey(key);
 
       pages.push({
@@ -4667,6 +4706,7 @@ export class WeblessAccountRepository {
         preview_url: this.previewUrlFor(site, key, previewThemeId),
         storage_path: html !== '' ? contentPath : null,
         metadata_path: metadataPath,
+        enabled_libraries: enabledLibraries,
         ...(includeHtml ? { html } : {})
       });
     }
@@ -4699,7 +4739,8 @@ export class WeblessAccountRepository {
         return {
           ...fixedMatch,
           storage_path: storagePath,
-          content: { html: html ?? '' },
+          enabled_libraries: normalizePageEnabledLibraries(extractManagedPageLibraries(html ?? '')),
+          content: { html: stripManagedPageLibraryBlock(html ?? '') },
           exists: true
         };
       }
@@ -10962,19 +11003,117 @@ function extractHtmlContent(content) {
     ? content.html
     : (typeof content?.body_html === 'string' ? content.body_html : '');
 
-  return extractSafeHtml(html, 'content.html or content.body_html');
+  return extractSafeHtml(stripManagedPageLibraryBlock(html), 'content.html or content.body_html', { allowInlineScript: true });
 }
 
-function extractSafeHtml(html, name) {
+function extractSafeHtml(html, name, options = {}) {
   if (typeof html !== 'string' || html.trim() === '') {
     throw codedError('VALIDATION_FAILED', `${name} is required.`);
   }
 
-  if (/<\s*(script|link|iframe)\b/i.test(html) || /\son[a-z]+\s*=/i.test(html)) {
-    throw codedError('UNSAFE_CONTENT', 'HTML content cannot include script/link/iframe tags or inline event handlers. Use external asset tools for CSS/JS.');
+  const allowInlineScript = options.allowInlineScript === true;
+  const blockedTagPattern = allowInlineScript
+    ? /<\s*(link|iframe)\b/i
+    : /<\s*(script|link|iframe)\b/i;
+
+  if (blockedTagPattern.test(html) || /<\s*script\b[^>]*\bsrc\s*=/i.test(html) || /\son[a-z]+\s*=/i.test(html)) {
+    throw codedError('UNSAFE_CONTENT', allowInlineScript
+      ? 'Page HTML cannot include external script/link/iframe tags or inline event handlers. Select supported libraries with enabled_libraries and keep page JavaScript inline.'
+      : 'HTML content cannot include script/link/iframe tags or inline event handlers.');
+  }
+
+  if (allowInlineScript && hasUnsafePageScript(html)) {
+    throw codedError('UNSAFE_CONTENT', 'Page JavaScript cannot use eval, Function, fetch, storage, cookies, or navigation APIs.');
   }
 
   return html;
+}
+
+function normalizePageEnabledLibraries(value) {
+  const normalized = [];
+  for (const key of normalizeStringArray(value)) {
+    if (!PAGE_SUPPORTED_LIBRARY_KEYS.includes(key)) {
+      throw codedError('VALIDATION_FAILED', `enabled_libraries may only include: ${PAGE_SUPPORTED_LIBRARY_KEYS.join(', ')}.`);
+    }
+    if (!normalized.includes(key)) {
+      normalized.push(key);
+    }
+  }
+
+  for (const key of [...normalized]) {
+    for (const dependency of PAGE_LIBRARY_ASSETS[key]?.requires ?? []) {
+      if (!normalized.includes(dependency)) {
+        normalized.push(dependency);
+      }
+    }
+  }
+
+  return PAGE_SUPPORTED_LIBRARY_KEYS.filter((key) => normalized.includes(key));
+}
+
+function pageHtmlWithManagedLibraries(html, enabledLibraries) {
+  const cleanHtml = stripManagedPageLibraryBlock(html).trim();
+  if (enabledLibraries.length === 0) {
+    return cleanHtml;
+  }
+
+  return `${managedPageLibraryBlock(enabledLibraries)}\n${cleanHtml}`;
+}
+
+function managedPageLibraryBlock(enabledLibraries) {
+  const cssUrls = [];
+  const jsUrls = [];
+  for (const key of enabledLibraries) {
+    cssUrls.push(...(PAGE_LIBRARY_ASSETS[key]?.css ?? []));
+    jsUrls.push(...(PAGE_LIBRARY_ASSETS[key]?.js ?? []));
+  }
+
+  const links = [...new Set(cssUrls)].map((url) => `<link rel="stylesheet" href="${url}">`);
+  const scripts = [...new Set(jsUrls)].map((url) => `<script src="${url}"></script>`);
+  const metadata = `<script type="application/json" data-slimweb-page-libraries>${JSON.stringify(enabledLibraries)}</script>`;
+
+  return [
+    PAGE_LIBRARY_BLOCK_START,
+    ...links,
+    ...scripts,
+    metadata,
+    PAGE_LIBRARY_BLOCK_END
+  ].join('\n');
+}
+
+function stripManagedPageLibraryBlock(html) {
+  return String(html ?? '').replace(managedPageLibraryBlockPattern(), '').trimStart();
+}
+
+function extractManagedPageLibraries(html) {
+  const match = String(html ?? '').match(managedPageLibraryBlockPattern());
+  if (!match) {
+    return [];
+  }
+
+  const metadataMatch = match[0].match(/<script\s+type="application\/json"\s+data-slimweb-page-libraries>([\s\S]*?)<\/script>/i);
+  if (!metadataMatch) {
+    return [];
+  }
+
+  try {
+    return JSON.parse(metadataMatch[1]);
+  } catch {
+    return [];
+  }
+}
+
+function managedPageLibraryBlockPattern() {
+  return new RegExp(`${escapeRegExp(PAGE_LIBRARY_BLOCK_START)}[\\s\\S]*?${escapeRegExp(PAGE_LIBRARY_BLOCK_END)}\\s*`, 'i');
+}
+
+function hasUnsafePageScript(html) {
+  const scripts = [...String(html).matchAll(/<\s*script\b(?![^>]*\bsrc\s*=)[^>]*>([\s\S]*?)<\s*\/\s*script\s*>/gi)];
+  return scripts.some((match) => /\b(eval|fetch)\s*\(|new\s+Function\b|document\s*\.\s*cookie|localStorage|sessionStorage|location\s*\.(?:href|assign|replace)|window\s*\.\s*open/i.test(match[1]));
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function normalizeTitleMatch(value) {

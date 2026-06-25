@@ -507,9 +507,16 @@ assert.equal(toolsByName.get('slimweb_orders_profit_statistics').inputSchema.pro
     assert.equal(toolsByName.get('slimweb_pages_list').inputSchema.properties.include_html, undefined);
     assert.equal(toolsByName.get('slimweb_pages_list').inputSchema.properties.theme_id.type[0], 'integer');
     assert.equal(toolsByName.get('slimweb_pages_create').inputSchema.required.includes('title'), true);
+    assert.equal(toolsByName.get('slimweb_pages_create').inputSchema.required.includes('enabled_libraries'), true);
+    assert.deepEqual(toolsByName.get('slimweb_pages_create').inputSchema.properties.enabled_libraries.items.enum, ['animate_css', 'aos', 'swiper', 'gsap', 'scrolltrigger', 'scrollsmoother']);
+    assert.equal(toolsByName.get('slimweb_pages_create').inputSchema.properties.enabled_libraries.items.enum.includes('slimweb_motion'), false);
+    assert.match(toolsByName.get('slimweb_pages_create').description, /enabled_libraries/);
+    assert.match(toolsByName.get('slimweb_pages_create').inputSchema.properties.content.description, /page-scoped inline JavaScript/);
     assert.equal(toolsByName.get('slimweb_pages_create').inputSchema.properties.page_key.type, 'string');
     assert.equal(toolsByName.get('slimweb_pages_update').inputSchema.required.includes('page_name'), true);
+    assert.equal(toolsByName.get('slimweb_pages_update').inputSchema.required.includes('enabled_libraries'), true);
     assert.equal(toolsByName.get('slimweb_pages_update').inputSchema.properties.title.type, 'string');
+    assert.match(toolsByName.get('slimweb_pages_update').description, /page-scoped inline JavaScript/);
     assert.match(toolsByName.get('slimweb_pages_get_content').description, /homepage index/);
     assert.match(toolsByName.get('slimweb_pages_update').description, /homepage index/);
     assert.match(toolsByName.get('slimweb_pages_create').description, /stop the task and ask the user to paste or re-upload the image/i);
@@ -1309,8 +1316,8 @@ assert.equal((await callTool(63, 'slimweb_discount_codes_list', { site_id: 101 }
     assert.equal((await callTool(631, 'slimweb_pages_list', { site_id: 101 })).result.structuredContent.pages.find((page) => page.page_key === 'about-us').public_url, 'https://slimweb.tw/sites/site-1/default-preview/pages/about-us');
     assert.equal((await callTool(63, 'slimweb_pages_get_content', { site_id: 101, page_name: '首頁' })).result.structuredContent.content.html, '<section>Home</section>');
     assert.equal((await callTool(64, 'slimweb_pages_get_content', { site_id: 101, page_name: '芙蓉' })).result.structuredContent.content.html, '<section>Furong</section>');
-    assert.equal((await callTool(65, 'slimweb_pages_create', { site_id: 101, title: '關於我們', content: { html: '<section>About</section>' } })).result.structuredContent.page_key, 'about-us');
-    assert.equal((await callTool(66, 'slimweb_pages_update', { site_id: 101, page_name: 'about-us', title: '關於我們（更新）', content: { html: '<section>Updated</section>' } })).result.structuredContent.title, '關於我們（更新）');
+    assert.equal((await callTool(65, 'slimweb_pages_create', { site_id: 101, title: '關於我們', content: { html: '<section>About</section>' }, enabled_libraries: [] })).result.structuredContent.page_key, 'about-us');
+    assert.equal((await callTool(66, 'slimweb_pages_update', { site_id: 101, page_name: 'about-us', title: '關於我們（更新）', content: { html: '<section>Updated</section>' }, enabled_libraries: [] })).result.structuredContent.title, '關於我們（更新）');
     assert.equal((await callTool(67, 'slimweb_pages_delete', { site_id: 101, page_key: 'landing' })).result.structuredContent.deleted_page_key, 'landing');
     assert.match((await callTool(68, 'slimweb_assets_upload', {
       site_id: 101,

@@ -23,8 +23,8 @@ const MCP_SERVER_GUIDELINES = [
 'Treat themes as the base styling layer for every page, including the homepage.',
 'Image rules: if a task needs image assets, obtain usable image URLs or media paths before creating or editing pages or articles. Publicly reachable image URLs may be used directly. Clients that can read local bytes and upload must use slimweb_uploads_create plus slimweb_uploads_commit. Clients that cannot upload bytes but have a ChatGPT conversation image attachment must use slimweb_images_import_chatgpt_attachment. If the client cannot upload and the user has not provided an attachment or image URL, stop and ask the user to paste or upload the image. When generating images, use the current design context colors and direction. If an image is AI-generated in a client that cannot upload it, stop and ask the user to paste the generated image back into the conversation.',
 'Content SEO/AEO/GEO rule: after creating or editing a page or article, generate content-level SEO/AEO/GEO metadata from the actual title, body, topic, and images, then call slimweb_content_seo_update with workflow_context page_create, page_update, article_create, or article_update. Skip this only when the user explicitly says not to update SEO. Never use slimweb_content_seo_update as a standalone tool, and never use slimweb_seo_settings_update for single-page or single-article SEO.',
-'Page create flow: require a title, call slimweb_pages_check_title, stop on duplicate titles including fixed-page English aliases, call slimweb_design_context_get, follow the image rules for any page images, design from the site summary, colors, and framework, build HTML with custom CSS and visual JavaScript when needed, call slimweb_pages_create, call slimweb_content_seo_update with workflow_context page_create unless the user explicitly opted out of SEO, and return the page URL; use slimweb_preview_get_page_url for preview verification.',
-'Page edit flow: require page_name, call slimweb_pages_get_content, stop if the editable page does not exist, follow the image rules for added or replacement images, call slimweb_design_context_get, modify HTML from the current content and design context, call slimweb_pages_update, call slimweb_content_seo_update with workflow_context page_update unless the user explicitly opted out of SEO, and return the page URL; the homepage index is editable through this flow, but other fixed system pages are not editable; use slimweb_preview_get_page_url for preview verification.',
+'Page create flow: require a title, call slimweb_pages_check_title, stop on duplicate titles including fixed-page English aliases, call slimweb_design_context_get, follow the image rules for any page images, design from the site summary, colors, and framework, build single-page HTML with custom CSS and page-scoped inline JavaScript when useful, choose enabled_libraries from animate_css, aos, swiper, gsap, scrolltrigger, and scrollsmoother only when the user need calls for them, pass enabled_libraries as a required array using [] when no external support is used, call slimweb_pages_create, call slimweb_content_seo_update with workflow_context page_create unless the user explicitly opted out of SEO, and return the page URL; use slimweb_preview_get_page_url for preview verification.',
+'Page edit flow: require page_name, call slimweb_pages_get_content, stop if the editable page does not exist, follow the image rules for added or replacement images, call slimweb_design_context_get, modify the returned single-page HTML from the current content and design context, preserve or adjust enabled_libraries based on the updated page behavior, pass enabled_libraries as a required array using [] when no external support is used, call slimweb_pages_update, call slimweb_content_seo_update with workflow_context page_update unless the user explicitly opted out of SEO, and return the page URL; the homepage index is editable through this flow, but other fixed system pages are not editable; use slimweb_preview_get_page_url for preview verification.',
 'Article create flow: require a title, call slimweb_articles_check_title, stop on duplicate titles, call slimweb_design_context_get, require a 16:9 cover image and follow the image rules, generate the cover from article title or content if the user gave no image direction, follow the image rules for optional content images, do not repeat the article title as an h1 in content_html, call slimweb_articles_create, call slimweb_content_seo_update with workflow_context article_create unless the user explicitly opted out of SEO, and return the article URL.',
 'Article edit flow: require article_id or an article title; if the user provides a title, call slimweb_articles_list and match the target title to an article_id, stopping if none or multiple similar matches are found. Call slimweb_articles_get_content, stop if the article does not exist, call slimweb_design_context_get, follow the image rules for added or replacement cover/content images, modify content_html from the current article and design context, call slimweb_articles_check_title before changing the title and stop on duplicates, do not repeat the article title as an h1, call slimweb_articles_update, call slimweb_content_seo_update with workflow_context article_update unless the user explicitly opted out of SEO, and return the article URL.',
 'Article delete flow: no SlimWeb MCP article deletion tool is currently available; do not invent a tool or delete through another tool, and tell the user article deletion is not supported by the current MCP.',
@@ -255,6 +255,17 @@ const DEFAULT_OUTPUT_SCHEMA = {
 const SITE_CODE_SCHEMA = {
   type: 'string',
   description: 'Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id.'
+};
+const PAGE_LIBRARY_ENUM = ['animate_css', 'aos', 'swiper', 'gsap', 'scrolltrigger', 'scrollsmoother'];
+const PAGE_LIBRARY_DESCRIPTION = 'Required page-scoped external visual support list. Pass [] when no external library is used. Supported keys: animate_css (CSS animation classes), aos (JS+CSS scroll reveal), swiper (JS+CSS sliders), gsap (advanced animation core), scrolltrigger (GSAP scroll animations; also enables gsap), scrollsmoother (GSAP smooth scrolling; also enables gsap and scrolltrigger). Do not include library CDN tags in content.html; SlimWeb injects fixed CDN assets from this allowlist.';
+const PAGE_CONTENT_DESCRIPTION = 'Structured single-page body. Provide content.html or content.body_html containing this page HTML, custom CSS, and page-scoped inline JavaScript when needed. Do not include external script/link/iframe tags or inline event handlers. Select external visual libraries through enabled_libraries.';
+const PAGE_ENABLED_LIBRARIES_SCHEMA = {
+  type: 'array',
+  description: PAGE_LIBRARY_DESCRIPTION,
+  items: {
+    type: 'string',
+    enum: PAGE_LIBRARY_ENUM
+  }
 };
 
 function publicInputSchema(schema) {
@@ -2140,7 +2151,7 @@ const MCP_TOOLS = [
   },
   {
     name: 'slimweb_pages_create',
-    description: `Create a new custom page. The AI must already have checked title collisions with slimweb_pages_check_title and should use slimweb_design_context_get plus image tools before sending HTML/CSS without JavaScript. ${CHATGPT_MISSING_IMAGE_GUIDANCE}`,
+    description: `Create a new custom page. The AI must already have checked title collisions with slimweb_pages_check_title and should use slimweb_design_context_get plus image tools before sending single-page HTML/CSS/page-scoped JavaScript. The AI may choose enabled_libraries from animate_css, aos, swiper, gsap, scrolltrigger, or scrollsmoother when useful, and must pass [] when none are used. ${CHATGPT_MISSING_IMAGE_GUIDANCE}`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -2151,7 +2162,10 @@ const MCP_TOOLS = [
         },
         content: {
           type: 'object',
-          description: 'Structured page body. Provide content.html or content.body_html. HTML must not include script/link/iframe tags or inline event handlers.'
+          description: PAGE_CONTENT_DESCRIPTION
+        },
+        enabled_libraries: {
+          ...PAGE_ENABLED_LIBRARIES_SCHEMA
         },
         page_key: {
           type: 'string',
@@ -2161,12 +2175,12 @@ const MCP_TOOLS = [
           type: 'string'
         }
       },
-      required: ['site_id', 'title', 'content']
+      required: ['site_id', 'title', 'content', 'enabled_libraries']
     }
   },
   {
     name: 'slimweb_pages_update',
-    description: `Update an existing editable page by page_name. This includes custom pages and the homepage index; other fixed template pages are not editable. Use slimweb_pages_get_content first to fetch the current page state. Use uploaded media_path URLs for reusable images; do not embed base64 images. Custom CSS is allowed in page HTML, but JavaScript is forbidden. ${CHATGPT_MISSING_IMAGE_GUIDANCE}`,
+    description: `Update an existing editable page by page_name. This includes custom pages and the homepage index; other fixed template pages are not editable. Use slimweb_pages_get_content first to fetch the current page state, including enabled_libraries. Use uploaded media_path URLs for reusable images; do not embed base64 images. Custom CSS and page-scoped inline JavaScript are allowed in page HTML; external libraries must be selected through the required enabled_libraries array. ${CHATGPT_MISSING_IMAGE_GUIDANCE}`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -2181,11 +2195,14 @@ const MCP_TOOLS = [
         },
         content: {
           type: 'object',
-          description: 'Structured page body. Provide content.html or content.body_html. HTML must not include script/link/iframe tags or inline event handlers.'
+          description: PAGE_CONTENT_DESCRIPTION
+        },
+        enabled_libraries: {
+          ...PAGE_ENABLED_LIBRARIES_SCHEMA
         },
         confirmation_token: { type: 'string' }
       },
-      required: ['site_id', 'page_name', 'content']
+      required: ['site_id', 'page_name', 'content', 'enabled_libraries']
     }
   },
   {
