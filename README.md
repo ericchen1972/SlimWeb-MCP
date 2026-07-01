@@ -197,7 +197,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 | `slimweb_theme_style_profile_append_request` | Available | content write | 追加一筆使用者風格需求或變更紀錄。 |
 | `slimweb_site_readiness_get` | Available | site readiness read | 回傳站台目前缺少或不完整的設定區塊，讓 AI 可主動回答開站缺口。 |
 | `slimweb_seo_settings_get` | Available | content read | 讀取後台 SEO 設定頁也會顯示的 SEO / AEO / GEO 欄位。 |
-| `slimweb_seo_settings_update` | Available | content write | 更新站台層級 SEO、AEO、GEO、OG 與 llms.txt 設定。 |
+| `slimweb_seo_settings_update` | Available | content write | 更新站台層級 SEO、AEO、GEO、OG、llms.txt 與 GA4 流量追蹤 Measurement ID 設定。 |
 | `slimweb_facebook_settings_get` | Available | settings read | 讀取後台 Facebook 串接欄位，包含 App ID、Page ID 與留言板開關。 |
 | `slimweb_facebook_settings_update` | Available | settings write | 更新後台 Facebook 串接欄位，包含 App ID、Page ID 與留言板開關。 |
 | `slimweb_notion_settings_get` | Available | settings read | 讀取後台 Notion API token 欄位。 |
@@ -530,7 +530,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - Scope: active site
 - 用途: 讀取站台層級 SEO / AEO / GEO 設定，這些欄位會顯示在 SlimWeb 後台的 SEO 設定頁。
 - Input: `site_code`
-- Output: site summary、settings (`seo_title`, `seo_description`, `seo_keywords`, `canonical_url`, `robots_policy`, `og_title`, `og_description`, `og_image_url`, `llms_txt`, `aeo_business_summary`, `aeo_target_audience`, `aeo_products_services`, `aeo_customer_questions`, `aeo_answer_style`, `aeo_entity_facts`, `geo_citation_targets`, `geo_verifiable_claims`, `geo_trust_signals`, `geo_same_as_profiles`, `geo_comparison_positioning`)
+- Output: site summary、settings (`seo_title`, `seo_description`, `seo_keywords`, `google_analytics_measurement_id`, `canonical_url`, `robots_policy`, `og_title`, `og_description`, `og_image_url`, `llms_txt`, `aeo_business_summary`, `aeo_target_audience`, `aeo_products_services`, `aeo_customer_questions`, `aeo_answer_style`, `aeo_entity_facts`, `geo_citation_targets`, `geo_verifiable_claims`, `geo_trust_signals`, `geo_same_as_profiles`, `geo_comparison_positioning`)
 - Side effects: none
 - 是否需要 confirmation: no
 - 錯誤情境: site not found、permission denied
@@ -541,10 +541,10 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 狀態: Available
 - 權限: content write
 - Scope: active site
-- 用途: 更新站台層級 SEO、OG、llms.txt、AEO 與 GEO 欄位。適合「我是賣服飾的，幫我做好 SEO / AEO / GEO」這類需求，由 AI 產生結構化設定後寫入同一份後台資料。
-- Input: `site_code` plus any subset of SEO/AEO/GEO fields
+- 用途: 更新站台層級 SEO、OG、llms.txt、AEO、GEO 與 GA4 流量追蹤 Measurement ID 欄位。適合「我是賣服飾的，幫我做好 SEO / AEO / GEO」或「幫我設定 Google Analytics」這類需求，由 AI 產生或填入結構化設定後寫入同一份後台資料。
+- Input: `site_code` plus any subset of SEO/AEO/GEO fields; for Google Analytics, fill only `google_analytics_measurement_id` such as `G-ABC1234567`, not full script tags
 - Output: updated settings、site summary
-- Side effects: updates `sites` SEO/AEO/GEO columns that SlimWeb admin displays
+- Side effects: updates `sites` SEO/AEO/GEO and GA4 Measurement ID columns that SlimWeb admin displays
 - 是否需要 confirmation: yes when changing robots policy to noindex or replacing existing customer-facing metadata
 - 錯誤情境: validation failed、site not found、permission denied、conflict
 - Audit fields: request ID、user ID、account ID、site ID、changed fields

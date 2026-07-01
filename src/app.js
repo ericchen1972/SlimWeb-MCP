@@ -731,7 +731,7 @@ const MCP_TOOLS = [
   },
   {
     name: 'slimweb_seo_settings_update',
-    description: 'Update site-level SEO, AEO, and GEO settings. Use this when a user asks the AI to configure search, answer-engine, generative-engine, llms.txt, or social preview metadata.',
+    description: 'Update site-level SEO, AEO, GEO, Google Analytics traffic tracking, and social preview settings. Use this when a user asks the AI to configure search, answer-engine, generative-engine, llms.txt, GA4 Measurement ID, or social preview metadata.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -739,6 +739,11 @@ const MCP_TOOLS = [
         seo_title: { type: 'string' },
         seo_description: { type: 'string' },
         seo_keywords: { type: 'string' },
+        google_analytics_measurement_id: {
+          type: 'string',
+          pattern: '^G-[A-Z0-9-]+$',
+          description: 'GA4 web data stream Measurement ID for storefront traffic tracking, such as G-ABC1234567. Do not provide full script tags.'
+        },
         canonical_url: { type: 'string' },
         robots_policy: {
           type: 'string',

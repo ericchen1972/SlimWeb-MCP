@@ -481,6 +481,10 @@ assert.equal(toolsByName.get('slimweb_orders_profit_statistics').inputSchema.pro
     assert.match(toolsByName.get('slimweb_articles_update').description, /stop the task and ask the user to paste or re-upload the image/i);
     assert.equal(toolsByName.get('slimweb_content_seo_update').inputSchema.required.includes('workflow_context'), true);
     assert.match(toolsByName.get('slimweb_content_seo_update').description, /must not be used standalone|standalone/i);
+    assert.equal(
+      toolsByName.get('slimweb_seo_settings_update').inputSchema.properties.google_analytics_measurement_id.pattern,
+      '^G-[A-Z0-9-]+$'
+    );
     assert.deepEqual(toolsByName.get('slimweb_images_import_chatgpt_attachment')._meta['openai/fileParams'], ['image']);
     assert.equal(toolsByName.get('slimweb_images_import_chatgpt_attachment').inputSchema.required.includes('image'), true);
     assert.match(toolsByName.get('slimweb_images_import_chatgpt_attachment').description, /ChatGPT web\/desktop/);
@@ -662,7 +666,16 @@ test('homepage editing tools call repository implementations', async () => {
     },
     updateSeoSettings: async (accountId, args) => {
       calls.push(['seo_update', accountId, args]);
-      return { ok: true, site: { id: args.site_id }, settings: { seo_title: args.seo_title, aeo_business_summary: args.aeo_business_summary, geo_verifiable_claims: args.geo_verifiable_claims } };
+      return {
+        ok: true,
+        site: { id: args.site_id },
+        settings: {
+          seo_title: args.seo_title,
+          google_analytics_measurement_id: args.google_analytics_measurement_id,
+          aeo_business_summary: args.aeo_business_summary,
+          geo_verifiable_claims: args.geo_verifiable_claims
+        }
+      };
     },
     getFacebookSettings: async (accountId, args) => {
       calls.push(['facebook_settings_get', accountId, args]);
@@ -1171,9 +1184,10 @@ test('homepage editing tools call repository implementations', async () => {
     assert.equal((await callTool(31, 'slimweb_seo_settings_update', {
       site_id: 101,
       seo_title: '質感女裝、上班穿搭推薦',
+      google_analytics_measurement_id: 'G-ABC1234567',
       aeo_business_summary: '服飾電商，提供上班與日常穿搭',
       geo_verifiable_claims: '提供台灣本島快速出貨'
-    })).result.structuredContent.settings.aeo_business_summary, '服飾電商，提供上班與日常穿搭');
+    })).result.structuredContent.settings.google_analytics_measurement_id, 'G-ABC1234567');
     assert.equal((await callTool(32, 'slimweb_facebook_settings_get', { site_id: 101 })).result.structuredContent.settings.facebook_app_id, 'fb-app');
     assert.equal((await callTool(33, 'slimweb_facebook_settings_update', {
       site_id: 101,

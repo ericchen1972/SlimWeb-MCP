@@ -38,6 +38,29 @@ const SEO_SETTINGS_COLUMNS = [
   'geo_same_as_profiles',
   'geo_comparison_positioning'
 ];
+const SITE_SEO_SETTINGS_COLUMNS = [
+  'seo_title',
+  'seo_description',
+  'seo_keywords',
+  'google_analytics_measurement_id',
+  'canonical_url',
+  'robots_policy',
+  'og_title',
+  'og_description',
+  'og_image_url',
+  'llms_txt',
+  'aeo_business_summary',
+  'aeo_target_audience',
+  'aeo_products_services',
+  'aeo_customer_questions',
+  'aeo_answer_style',
+  'aeo_entity_facts',
+  'geo_citation_targets',
+  'geo_verifiable_claims',
+  'geo_trust_signals',
+  'geo_same_as_profiles',
+  'geo_comparison_positioning'
+];
 const PAGE_LIBRARY_BLOCK_START = '<!-- slimweb:page-libraries:start -->';
 const PAGE_LIBRARY_BLOCK_END = '<!-- slimweb:page-libraries:end -->';
 const PAGE_SUPPORTED_LIBRARY_KEYS = ['animate_css', 'aos', 'swiper', 'gsap', 'scrolltrigger', 'scrollsmoother'];
@@ -974,31 +997,33 @@ export class WeblessAccountRepository {
           seo_title = $1,
           seo_description = $2,
           seo_keywords = $3,
-          canonical_url = $4,
-          robots_policy = $5,
-          og_title = $6,
-          og_description = $7,
-          og_image_url = $8,
-          llms_txt = $9,
-          aeo_business_summary = $10,
-          aeo_target_audience = $11,
-          aeo_products_services = $12,
-          aeo_customer_questions = $13,
-          aeo_answer_style = $14,
-          aeo_entity_facts = $15,
-          geo_citation_targets = $16,
-          geo_verifiable_claims = $17,
-          geo_trust_signals = $18,
-          geo_same_as_profiles = $19,
-          geo_comparison_positioning = $20,
+          google_analytics_measurement_id = $4,
+          canonical_url = $5,
+          robots_policy = $6,
+          og_title = $7,
+          og_description = $8,
+          og_image_url = $9,
+          llms_txt = $10,
+          aeo_business_summary = $11,
+          aeo_target_audience = $12,
+          aeo_products_services = $13,
+          aeo_customer_questions = $14,
+          aeo_answer_style = $15,
+          aeo_entity_facts = $16,
+          geo_citation_targets = $17,
+          geo_verifiable_claims = $18,
+          geo_trust_signals = $19,
+          geo_same_as_profiles = $20,
+          geo_comparison_positioning = $21,
           updated_at = now()
-        where id = $21
-        returning ${SEO_SETTINGS_COLUMNS.join(', ')}
+        where id = $22
+        returning ${SITE_SEO_SETTINGS_COLUMNS.join(', ')}
       `,
       [
         next.seo_title,
         next.seo_description,
         next.seo_keywords,
+        next.google_analytics_measurement_id,
         next.canonical_url,
         next.robots_policy,
         next.og_title,
@@ -5712,7 +5737,7 @@ export class WeblessAccountRepository {
   async findSeoSettingsForSite(siteId) {
     const result = await this.pool.query(
       `
-        select ${SEO_SETTINGS_COLUMNS.join(', ')}
+        select ${SITE_SEO_SETTINGS_COLUMNS.join(', ')}
         from sites
         where id = $1
         limit 1
@@ -6960,13 +6985,16 @@ function safeGeneratedPageKey(value, fallbackPrefix = 'page') {
 function normalizeSeoSettings(args, current = {}) {
   const normalized = {};
 
-  for (const column of SEO_SETTINGS_COLUMNS) {
+  for (const column of SITE_SEO_SETTINGS_COLUMNS) {
     normalized[column] = Object.prototype.hasOwnProperty.call(args, column)
       ? nullableString(args[column])
       : (current[column] ?? null);
   }
 
   normalized.robots_policy = normalizeRobotsPolicy(normalized.robots_policy);
+  normalized.google_analytics_measurement_id = normalizeGoogleAnalyticsMeasurementId(
+    normalized.google_analytics_measurement_id
+  );
 
   return normalized;
 }
@@ -6981,6 +7009,20 @@ function normalizeContentSeoPayload(args) {
   }
 
   normalized.robots_policy = normalizeRobotsPolicy(normalized.robots_policy);
+
+  return normalized;
+}
+
+function normalizeGoogleAnalyticsMeasurementId(value) {
+  const measurementId = nullableString(value);
+  if (measurementId === null) {
+    return null;
+  }
+
+  const normalized = measurementId.toUpperCase();
+  if (!/^G-[A-Z0-9-]+$/.test(normalized)) {
+    throw codedError('VALIDATION_FAILED', 'google_analytics_measurement_id must be a GA4 Measurement ID like G-XXXXXXXXXX.');
+  }
 
   return normalized;
 }
@@ -7025,7 +7067,7 @@ function normalizeRobotsPolicy(value) {
 function formatSeoSettings(row) {
   const settings = {};
 
-  for (const column of SEO_SETTINGS_COLUMNS) {
+  for (const column of SITE_SEO_SETTINGS_COLUMNS) {
     settings[column] = row[column] ?? null;
   }
 

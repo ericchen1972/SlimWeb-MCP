@@ -577,6 +577,7 @@ function seoSettingsPool() {
       seo_title: '',
       seo_description: '',
       seo_keywords: '',
+      google_analytics_measurement_id: '',
       canonical_url: '',
       robots_policy: 'index,follow',
       og_title: '',
@@ -619,23 +620,24 @@ function seoSettingsPool() {
           seo_title: params[0],
           seo_description: params[1],
           seo_keywords: params[2],
-          canonical_url: params[3],
-          robots_policy: params[4],
-          og_title: params[5],
-          og_description: params[6],
-          og_image_url: params[7],
-          llms_txt: params[8],
-          aeo_business_summary: params[9],
-          aeo_target_audience: params[10],
-          aeo_products_services: params[11],
-          aeo_customer_questions: params[12],
-          aeo_answer_style: params[13],
-          aeo_entity_facts: params[14],
-          geo_citation_targets: params[15],
-          geo_verifiable_claims: params[16],
-          geo_trust_signals: params[17],
-          geo_same_as_profiles: params[18],
-          geo_comparison_positioning: params[19]
+          google_analytics_measurement_id: params[3],
+          canonical_url: params[4],
+          robots_policy: params[5],
+          og_title: params[6],
+          og_description: params[7],
+          og_image_url: params[8],
+          llms_txt: params[9],
+          aeo_business_summary: params[10],
+          aeo_target_audience: params[11],
+          aeo_products_services: params[12],
+          aeo_customer_questions: params[13],
+          aeo_answer_style: params[14],
+          aeo_entity_facts: params[15],
+          geo_citation_targets: params[16],
+          geo_verifiable_claims: params[17],
+          geo_trust_signals: params[18],
+          geo_same_as_profiles: params[19],
+          geo_comparison_positioning: params[20]
         };
 
         return { rows: [state.site] };
@@ -1989,6 +1991,7 @@ test('repository updates and reads site SEO and AEO settings for admin display',
     seo_title: '質感女裝、上班穿搭推薦',
     seo_description: '精選上班、約會與日常穿搭服飾。',
     seo_keywords: '女裝, 上班穿搭, 韓系服飾',
+    google_analytics_measurement_id: 'G-ABC1234567',
     robots_policy: 'index,follow',
     llms_txt: '本網站販售女裝、洋裝、襯衫與外套。',
     aeo_business_summary: '服飾電商，提供上班與日常穿搭。',
@@ -2007,6 +2010,7 @@ test('repository updates and reads site SEO and AEO settings for admin display',
 
   assert.equal(updated.ok, true);
   assert.equal(updated.settings.seo_title, '質感女裝、上班穿搭推薦');
+  assert.equal(updated.settings.google_analytics_measurement_id, 'G-ABC1234567');
   assert.equal(read.settings.aeo_target_audience, '25-40 歲女性上班族');
   assert.equal(read.settings.aeo_customer_questions, '如何挑選尺寸？\n夏天適合哪些材質？');
   assert.equal(read.settings.geo_verifiable_claims, '提供台灣本島快速出貨；支援七天鑑賞期。');
