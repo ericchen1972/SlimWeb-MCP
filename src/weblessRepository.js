@@ -985,6 +985,20 @@ export class WeblessAccountRepository {
     });
   }
 
+  async getSiteLaunchProgress(accountId, args) {
+    const readinessReport = await this.getSiteReadiness(accountId, {
+      site_id: requireInteger(args.site_id, 'site_id'),
+      include_optional: true
+    });
+    const homepage = await this.readHomepageHtml(readinessReport.site).catch(() => ({ html: '' }));
+
+    return buildSiteLaunchProgressReport({
+      readinessReport,
+      homepageHtml: homepage.html ?? '',
+      includeOptional: Boolean(args.include_optional)
+    });
+  }
+
   async updateSeoSettings(accountId, args) {
     const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
     const current = await this.findSeoSettingsForSite(site.id);
@@ -7159,6 +7173,211 @@ function buildSiteReadinessReport({
       counts
     }
   };
+}
+
+function buildSiteLaunchProgressReport({ readinessReport, homepageHtml, includeOptional }) {
+  const categories = new Map(readinessReport.categories.map((category) => [category.key, category]));
+  const homepageComplete = !isBlank(homepageHtml);
+  const required = [
+    launchItemFromCategory(categories.get('catalog'), {
+      key: 'catalog',
+      label: '商品與分類',
+      priority: 10,
+      blockingLaunch: true,
+      completeSummary: '已建立商品類別與可上架商品。',
+      incompleteSummary: '網站還需要商品類別與商品資料，才能讓訪客瀏覽與下單。',
+      nextAction: '先整理商品類別，再建立或匯入第一批商品。',
+      aiCanHelp: ['規劃商品類別', '撰寫商品名稱與描述', '整理商品規格', '協助產生或匯入商品圖片'],
+      suggestedTools: ['slimweb_categories_list', 'slimweb_categories_upsert', 'slimweb_products_list', 'slimweb_products_upsert']
+    }),
+    launchItemFromCategory(categories.get('payment_logistics'), {
+      key: 'payment_logistics',
+      label: '金流、物流與運費',
+      priority: 20,
+      blockingLaunch: true,
+      completeSummary: '已啟用基本收款與出貨設定。',
+      incompleteSummary: '網站還缺少可正式收款或出貨的金物流設定。',
+      nextAction: '確認要使用的金流、物流與運費規則，這是正式上線前的硬條件。',
+      aiCanHelp: ['整理金物流待填欄位', '檢查測試/正式模式', '協助規劃免運或固定運費規則'],
+      suggestedTools: ['slimweb_payment_logistics_get', 'slimweb_payment_logistics_update']
+    }),
+    launchItem({
+      key: 'homepage',
+      label: '首頁內容',
+      priority: 30,
+      blocking_launch: true,
+      status: homepageComplete ? 'complete' : 'incomplete',
+      summary: homepageComplete ? '首頁已有內容，可作為訪客第一入口。' : '首頁尚未建立明確內容，訪客進站後缺少品牌與商品導引。',
+      missing: homepageComplete ? [] : ['首頁主視覺、品牌介紹、商品入口或行動呼籲'],
+      next_action: homepageComplete ? '需要時可再優化首頁轉換與視覺。' : '先建立首頁主視覺、品牌介紹、商品分類入口與購買行動呼籲。',
+      ai_can_help: ['撰寫首頁文案', '設計首頁版面', '產生首頁主視覺', '把商品與分類串成入口'],
+      suggested_tools: ['slimweb_design_context_get', 'slimweb_pages_get_content', 'slimweb_pages_update']
+    })
+  ];
+
+  const recommended = [
+    launchItemFromCategory(categories.get('public_information'), {
+      key: 'seo_aeo_geo',
+      label: 'SEO / AEO / GEO',
+      priority: 40,
+      blockingLaunch: false,
+      completeSummary: '站台層級搜尋與 AI 引用資訊已有基礎設定。',
+      incompleteSummary: '站台搜尋摘要、回答引擎資訊或 AI 引用資訊尚不完整。',
+      nextAction: 'AI 可根據品牌、商品與首頁內容先產生一版基礎 SEO / AEO / GEO，不必先細問技術欄位。',
+      aiCanHelp: ['產生 SEO title/description', '整理 AEO 常見問題與回答方向', '產生 GEO 可引用品牌事實與信任訊號'],
+      suggestedTools: ['slimweb_seo_settings_get', 'slimweb_seo_settings_update']
+    }),
+    launchItemFromCategory(categories.get('navigation'), {
+      key: 'navigation',
+      label: '導覽與頁面入口',
+      priority: 50,
+      blockingLaunch: false,
+      completeSummary: '網站已有基本導覽入口。',
+      incompleteSummary: '網站導覽尚不完整，使用者可能不容易找到商品或內容。',
+      nextAction: '建立商品、文章、關於我們或聯絡資訊等主要入口。',
+      aiCanHelp: ['規劃導覽結構', '依商品類別建立選單', '補上重要頁面入口'],
+      suggestedTools: ['slimweb_nav_items_list', 'slimweb_nav_items_upsert']
+    }),
+    launchItemFromCategory(categories.get('email'), {
+      key: 'email_templates',
+      label: 'Email 通知與版型',
+      priority: 60,
+      blockingLaunch: false,
+      completeSummary: 'Email 寄送與版型已有基本設定。',
+      incompleteSummary: 'Email 寄送或通知版型尚不完整，訂單通知與會員體驗可能受影響。',
+      nextAction: '確認 SMTP、管理通知收件者，以及訂單/註冊等事件信內容。',
+      aiCanHelp: ['改寫通知信標題', '設計共用 Email 版型', '優化六種事件 Email 內容'],
+      suggestedTools: ['slimweb_mail_delivery_settings_get', 'slimweb_mail_templates_get', 'slimweb_mail_layout_get']
+    }),
+    launchItemFromCategory(categories.get('content'), {
+      key: 'articles',
+      label: '文章與品牌內容',
+      priority: 70,
+      blockingLaunch: false,
+      completeSummary: '已有文章或品牌內容。',
+      incompleteSummary: '尚未建立文章內容，品牌知識、長尾搜尋與 AI 引用來源較弱。',
+      nextAction: '先建立 1 到 3 篇與商品、品牌故事或常見問題相關的文章。',
+      aiCanHelp: ['規劃文章主題', '撰寫文章', '產生文章 16:9 主圖', '補內容層級 SEO / AEO / GEO'],
+      suggestedTools: ['slimweb_articles_list', 'slimweb_articles_create']
+    }),
+    launchItemFromCategory(categories.get('customer_support'), {
+      key: 'ai_customer_support',
+      label: 'AI 客服與常見問題',
+      priority: 80,
+      blockingLaunch: false,
+      completeSummary: 'AI 客服已有基本啟用狀態。',
+      incompleteSummary: 'AI 客服尚未啟用或資料不足，訪客問題需要人工處理。',
+      nextAction: '整理常見問題、退換貨、運送與商品挑選資訊，讓 AI 客服能回答。',
+      aiCanHelp: ['整理 FAQ', '設定 AI 客服方向', '把文章與頁面內容轉成客服知識'],
+      suggestedTools: ['slimweb_customer_service_settings_get', 'slimweb_customer_service_settings_update']
+    })
+  ];
+
+  const growth = [
+    launchItemFromCategory(categories.get('promotions'), {
+      key: 'promotions',
+      label: '優惠券與促銷',
+      priority: 90,
+      blockingLaunch: false,
+      completeSummary: '已有基本優惠或促銷設定。',
+      incompleteSummary: '尚未建立優惠券或折扣碼，仍可上線，但缺少活動推廣入口。',
+      nextAction: '需要促銷時，再建立首購券、免運活動或折扣碼。',
+      aiCanHelp: ['規劃首購優惠', '建立促銷文案', '設計活動海報', '設定優惠券或折扣碼'],
+      suggestedTools: ['slimweb_coupon_templates_upsert', 'slimweb_discount_codes_upsert']
+    }),
+    launchItem({
+      key: 'member_growth',
+      label: '會員經營',
+      priority: 100,
+      blocking_launch: false,
+      status: 'incomplete',
+      summary: '會員分級、加價購、滿額贈與電子報屬於成長項目，不是開站硬條件。',
+      missing: ['會員分級、電子報、加價購或滿額贈'],
+      next_action: '等商品與金物流完成後，再依營運策略規劃會員成長機制。',
+      ai_can_help: ['規劃會員分級', '撰寫電子報', '設計加價購組合', '建立滿額贈活動'],
+      suggested_tools: ['slimweb_member_tiers_upsert', 'slimweb_newsletters_create', 'slimweb_product_add_ons_upsert', 'slimweb_threshold_gifts_upsert']
+    })
+  ];
+
+  const requiredBlockingCount = required.filter((item) => item.blocking_launch && item.status !== 'complete').length;
+  const requiredCompleteCount = required.filter((item) => item.status === 'complete').length;
+  const nextStep = [...required, ...recommended, ...(includeOptional ? growth : [])]
+    .filter((item) => item.status !== 'complete')
+    .sort((a, b) => a.priority - b.priority)[0] ?? null;
+
+  return {
+    site: readinessReport.site,
+    launch_status: {
+      stage: requiredBlockingCount > 0
+        ? 'setup_incomplete'
+        : (recommended.some((item) => item.status !== 'complete') ? 'ready_for_launch' : 'growth_ready'),
+      can_launch: requiredBlockingCount === 0,
+      completion_percent: Math.round((requiredCompleteCount / required.length) * 100),
+      required_complete_count: requiredCompleteCount,
+      required_total_count: required.length,
+      required_blocking_count: requiredBlockingCount
+    },
+    required,
+    recommended,
+    growth: includeOptional ? growth : [],
+    next_step: nextStep ? {
+      key: nextStep.key,
+      label: nextStep.label,
+      priority: nextStep.priority,
+      message_to_user: `下一步建議先處理「${nextStep.label}」。${nextStep.next_action}`,
+      suggested_tools: nextStep.suggested_tools
+    } : {
+      key: 'complete',
+      label: '開站基礎完成',
+      priority: 999,
+      message_to_user: '開站必要項目已完成，可以進入正式上線檢查或成長優化。',
+      suggested_tools: []
+    },
+    ai_guidance: {
+      onboarding_rule: 'Guide the user one phase at a time. Start with next_step, ask only for information needed for that phase, and avoid dumping the entire checklist unless the user asks.',
+      priority_rule: 'Payment/logistics, product categories, products, and homepage content are launch blockers. SEO, promotions, articles, email polish, and AI customer support are recommended unless the user asks for deeper setup.',
+      seo_rule: 'Do not ask detailed SEO, AEO, or GEO configuration questions unless the user asks. Generate sensible defaults from the business, catalog, homepage, page, or article content.'
+    },
+    source_readiness_summary: readinessReport.summary
+  };
+}
+
+function launchItemFromCategory(category, options) {
+  const status = category?.issues?.length ? 'incomplete' : 'complete';
+
+  return launchItem({
+    key: options.key,
+    label: options.label,
+    priority: options.priority,
+    blocking_launch: options.blockingLaunch,
+    status,
+    summary: status === 'complete' ? options.completeSummary : options.incompleteSummary,
+    missing: status === 'complete' ? [] : (category?.issues ?? []).map((issue) => issue.label),
+    next_action: status === 'complete' ? '目前不需要優先處理。' : options.nextAction,
+    ai_can_help: options.aiCanHelp,
+    suggested_tools: uniqueStrings([...(options.suggestedTools ?? []), ...((category?.issues ?? []).flatMap((issue) => issue.suggested_tools ?? []))]),
+    evidence: category?.evidence ?? {}
+  });
+}
+
+function launchItem(item) {
+  return {
+    key: item.key,
+    label: item.label,
+    priority: item.priority,
+    blocking_launch: Boolean(item.blocking_launch),
+    status: item.status,
+    summary: item.summary,
+    missing: item.missing ?? [],
+    next_action: item.next_action,
+    ai_can_help: item.ai_can_help ?? [],
+    suggested_tools: item.suggested_tools ?? [],
+    evidence: item.evidence ?? {}
+  };
+}
+
+function uniqueStrings(values) {
+  return [...new Set(values.filter((value) => typeof value === 'string' && value.trim() !== ''))];
 }
 
 function paymentLogisticsReadiness(paymentProviders, logisticsProviders) {

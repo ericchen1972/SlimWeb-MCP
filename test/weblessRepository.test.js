@@ -2034,6 +2034,24 @@ test('repository reports missing site readiness areas for AI answers', async () 
   assert.ok(report.next_actions.some((action) => action.suggested_tools.includes('slimweb_payment_logistics_update')));
 });
 
+test('repository summarizes launch progress for guided ecommerce onboarding', async () => {
+  const repository = new WeblessAccountRepository(readinessPool(), {
+    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-'))
+  });
+
+  const progress = await repository.getSiteLaunchProgress(11, { site_id: 101 });
+
+  assert.equal(progress.launch_status.stage, 'setup_incomplete');
+  assert.equal(progress.launch_status.can_launch, false);
+  assert.ok(progress.launch_status.required_blocking_count > 0);
+  assert.ok(progress.required.some((item) => item.key === 'catalog' && item.blocking_launch));
+  assert.ok(progress.required.some((item) => item.key === 'payment_logistics' && item.blocking_launch));
+  assert.ok(progress.required.some((item) => item.key === 'homepage' && item.blocking_launch));
+  assert.ok(progress.recommended.some((item) => item.key === 'seo_aeo_geo' && !item.blocking_launch));
+  assert.match(progress.next_step.message_to_user, /商品|類別|金物流|首頁/);
+  assert.match(progress.ai_guidance.seo_rule, /Do not ask.*GEO/i);
+});
+
 test('repository updates and reads site integration settings for admin display', async () => {
   const pool = integrationSettingsPool();
   const repository = new WeblessAccountRepository(pool, {

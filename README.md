@@ -196,6 +196,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 | `slimweb_theme_style_profile_upsert` | Available | content write | 建立或更新版型風格摘要、色彩、字體、版面、插圖與避免事項。 |
 | `slimweb_theme_style_profile_append_request` | Available | content write | 追加一筆使用者風格需求或變更紀錄。 |
 | `slimweb_site_readiness_get` | Available | site readiness read | 回傳站台目前缺少或不完整的設定區塊，讓 AI 可主動回答開站缺口。 |
+| `slimweb_site_launch_progress_get` | Available | site launch progress read | 回傳從 0 到正式上線的建站進度、必要項目、建議項目與下一步，供 AI 引導新手用戶。 |
 | `slimweb_seo_settings_get` | Available | content read | 讀取後台 SEO 設定頁也會顯示的 SEO / AEO / GEO 欄位。 |
 | `slimweb_seo_settings_update` | Available | content write | 更新站台層級 SEO、AEO、GEO、OG、llms.txt 與 GA4 流量追蹤 Measurement ID 設定。 |
 | `slimweb_facebook_settings_get` | Available | settings read | 讀取後台 Facebook 串接欄位，包含 App ID、Page ID 與留言板開關。 |
@@ -518,6 +519,32 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
   - 導覽與內容: navbar、文章
   - 客服與權限: AI 客服、後台管理員、backend_ai_assistant 權限
   - Optional: 優惠券模板、折扣碼
+- Side effects: none
+- 是否需要 confirmation: no
+- 錯誤情境: site not found、permission denied
+- Audit fields: request ID、user ID、account ID、site ID
+
+### `slimweb_site_launch_progress_get`
+
+- 狀態: Available
+- 權限: site launch progress read
+- Scope: active site
+- 用途: 將站台 readiness 轉成「從 0 到正式上線」的引導式進度，讓 AI 可以判斷下一步該協助用戶設定什麼，而不是每次都把使用者當成完全新手。
+- Input: `site_id`, optional `include_optional`
+- Output: site summary、launch_status (`stage`, `can_launch`, `completion_percent`, required counts)、required、recommended、growth、next_step、ai_guidance
+- Required launch blockers:
+  - 商品與分類
+  - 金流、物流與運費
+  - 首頁內容
+- Recommended setup:
+  - SEO / AEO / GEO
+  - 導覽與頁面入口
+  - Email 通知與版型
+  - 文章與品牌內容
+  - AI 客服與常見問題
+- Optional/growth setup:
+  - 優惠券與促銷
+  - 會員經營、電子報、加價購、滿額贈等
 - Side effects: none
 - 是否需要 confirmation: no
 - 錯誤情境: site not found、permission denied

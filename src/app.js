@@ -716,6 +716,24 @@ const MCP_TOOLS = [
     }
   },
   {
+    name: 'slimweb_site_launch_progress_get',
+    description: 'Read launch progress from blank ecommerce site to go-live, grouped into required setup, recommended improvements, growth tasks, and the next user-friendly action.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        site_id: {
+          type: 'integer',
+          description: 'Target SlimWeb site ID.'
+        },
+        include_optional: {
+          type: 'boolean',
+          description: 'When true, include optional growth and marketing tasks. Defaults to false.'
+        }
+      },
+      required: ['site_id']
+    }
+  },
+  {
     name: 'slimweb_seo_settings_get',
     description: 'Read site-level SEO, AEO, and GEO settings that are also visible in the SlimWeb admin SEO settings page.',
     inputSchema: {
@@ -2554,6 +2572,7 @@ const TOOL_PERMISSION_RULES = {
   slimweb_theme_style_profile_upsert: ['page_management', 'page_management_templates'],
   slimweb_theme_style_profile_append_request: ['page_management', 'page_management_templates'],
   slimweb_site_readiness_get: [],
+  slimweb_site_launch_progress_get: [],
   slimweb_seo_settings_get: ['seo_settings'],
   slimweb_seo_settings_update: ['seo_settings'],
   slimweb_facebook_settings_get: ['integration_settings'],
@@ -2939,6 +2958,19 @@ async function toolResultForCall(message, request, context) {
     case 'slimweb_site_readiness_get': {
       try {
         const result = await context.accountRepository.getSiteReadiness(
+          await actorForTool(session, name, toolArgs(message), context),
+          toolArgs(message)
+        );
+
+        return mcpResult(message.id ?? null, mcpJsonContent(result));
+      } catch (error) {
+        return toolExceptionToMcpError(message?.id ?? null, error);
+      }
+    }
+
+    case 'slimweb_site_launch_progress_get': {
+      try {
+        const result = await context.accountRepository.getSiteLaunchProgress(
           await actorForTool(session, name, toolArgs(message), context),
           toolArgs(message)
         );
