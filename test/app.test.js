@@ -368,6 +368,7 @@ test('MCP tools list includes homepage editing contract tools', async () => {
       'slimweb_nav_items_delete',
       'slimweb_products_list',
       'slimweb_products_get',
+      'slimweb_product_image_reference_prepare',
       'slimweb_products_upsert',
 	      'slimweb_products_delete',
 	      'slimweb_products_import_inspect',
@@ -489,6 +490,10 @@ assert.equal(toolsByName.get('slimweb_orders_profit_statistics').inputSchema.pro
     assert.deepEqual(toolsByName.get('slimweb_images_import_chatgpt_attachment')._meta['openai/fileParams'], ['image']);
     assert.equal(toolsByName.get('slimweb_images_import_chatgpt_attachment').inputSchema.required.includes('image'), true);
     assert.match(toolsByName.get('slimweb_images_import_chatgpt_attachment').description, /ChatGPT web\/desktop/);
+    assert.match(toolsByName.get('slimweb_product_image_reference_prepare').description, /ChatGPT visual reference/);
+    assert.match(toolsByName.get('slimweb_product_image_reference_prepare').description, /Codex, Hermes/);
+    assert.equal(toolsByName.get('slimweb_product_image_reference_prepare').inputSchema.properties.image_url.type, 'string');
+    assert.equal(toolsByName.get('slimweb_product_image_reference_prepare').inputSchema.properties.media_path.type, 'string');
     assert.deepEqual(toolsByName.get('slimweb_debug_attachment_refs')._meta['openai/fileParams'], ['image']);
     assert.match(toolsByName.get('slimweb_debug_attachment_refs').description, /Debug/);
     assert.match(toolsByName.get('slimweb_uploads_create').description, /PUT the raw image bytes/);
@@ -919,6 +924,16 @@ test('homepage editing tools call repository implementations', async () => {
       calls.push(['product_get', accountId, args]);
       return { product: { id: args.product_id, name: '洋裝' } };
     },
+    prepareProductImageReference: async (accountId, args) => {
+      calls.push(['product_image_reference_prepare', accountId, args]);
+      return {
+        reference_image: {
+          download_url: args.image_url,
+          mime_type: 'image/jpeg',
+          usage: 'chatgpt_image_edit_reference'
+        }
+      };
+    },
     upsertProduct: async (accountId, args) => {
       calls.push(['product_upsert', accountId, args]);
       return { ok: true, product: { id: args.product_id ?? 7, name: args.name, primary_images: args.primary_images } };
@@ -1270,6 +1285,13 @@ test('homepage editing tools call repository implementations', async () => {
     assert.equal((await callTool(51, 'slimweb_nav_items_delete', { site_id: 101, nav_item_id: 12 })).result.structuredContent.deleted_nav_item_ids[0], 12);
     assert.equal((await callTool(52, 'slimweb_products_list', { site_id: 101 })).result.structuredContent.products[0].name, '洋裝');
     assert.equal((await callTool(53, 'slimweb_products_get', { site_id: 101, product_id: 7 })).result.structuredContent.product.name, '洋裝');
+    assert.equal((await callTool(531, 'slimweb_product_image_reference_prepare', {
+      site_id: 101,
+      product_id: 7,
+      product_image_id: 70,
+      image_url: 'https://slimweb.tw/media/sites/101/products/main.jpg',
+      purpose: 'generate_more_product_images'
+    })).result.structuredContent.reference_image.usage, 'chatgpt_image_edit_reference');
     assert.equal((await callTool(54, 'slimweb_uploads_create', { site_id: 101, filename: 'main.png', mime_type: 'image/png', size_bytes: 1234, target_usage: 'product_image' })).result.structuredContent.upload_url, 'https://slimweb.tw/sites/site-1/mcp-uploads/upload-1?token=token-1');
     assert.equal((await callTool(55, 'slimweb_uploads_commit', { site_id: 101, upload_id: 'upload-1', upload_token: 'token-1' })).result.structuredContent.asset.media_path, 'sites/101/mcp-uploads/committed/upload-1.webp');
     assert.equal((await callTool(55, 'slimweb_images_import_chatgpt_attachment', {
@@ -1350,7 +1372,7 @@ assert.equal((await callTool(63, 'slimweb_discount_codes_list', { site_id: 101 }
     })).result.structuredContent.public_url, /hero\.png/);
     assert.equal((await callTool(69, 'slimweb_themes_delete', { site_id: 101, theme_id: 22 })).result.structuredContent.deleted_theme_id, 22);
 
-    assert.deepEqual(calls.map((call) => call[0]), ['select', 'themes_list', 'theme_mode_get', 'design_context_get', 'theme_mode_update', 'themes_create', 'themes_activate', 'shell_context', 'profile_get', 'profile_upsert', 'profile_append', 'site_readiness_get', 'site_launch_progress_get', 'seo_get', 'seo_update', 'facebook_settings_get', 'facebook_settings_update', 'notion_settings_get', 'notion_settings_update', 'mail_delivery_settings_get', 'mail_delivery_settings_update', 'payment_logistics_get', 'payment_logistics_update', 'orders_list', 'orders_profit_statistics', 'orders_get', 'orders_create_logistics', 'orders_mark_shipped', 'returns_pending_list', 'returns_create_logistics', 'returns_cancel', 'returns_complete', 'refunds_complete', 'refunds_create', 'dashboard_summary', 'settings_get', 'settings_update', 'admins_list', 'admin_upsert', 'admin_delete', 'articles_list', 'articles_check_title', 'articles_get_content', 'article_create', 'article_update', 'content_seo_update', 'categories_list', 'category_upsert', 'category_delete', 'nav_items_list', 'nav_item_upsert', 'nav_item_delete', 'products_list', 'product_get', 'upload_create', 'upload_commit', 'chatgpt_attachment_import', 'product_upsert', 'product_delete', 'product_import_inspect', 'product_import_validate', 'product_import_commit', 'coupon_templates_list', 'coupon_template_upsert', 'member_coupon_issue', 'members_list', 'member_get', 'newsletter_create', 'poster_create', 'discount_codes_list', 'discount_code_upsert', 'member_tiers_list', 'member_tier_upsert', 'threshold_gifts_list', 'threshold_gift_upsert', 'product_add_ons_list', 'product_add_on_upsert', 'customer_service_logs_list', 'customer_service_settings_get', 'customer_service_settings_update', 'export_create', 'audit_list', 'themes_root', 'preview', 'pages_check_title', 'pages_check_title', 'pages_check_title', 'pages_check_title', 'pages_list', 'get_content', 'get_content', 'page_create', 'page_update', 'page_delete', 'upload', 'themes_delete']);
+    assert.deepEqual(calls.map((call) => call[0]), ['select', 'themes_list', 'theme_mode_get', 'design_context_get', 'theme_mode_update', 'themes_create', 'themes_activate', 'shell_context', 'profile_get', 'profile_upsert', 'profile_append', 'site_readiness_get', 'site_launch_progress_get', 'seo_get', 'seo_update', 'facebook_settings_get', 'facebook_settings_update', 'notion_settings_get', 'notion_settings_update', 'mail_delivery_settings_get', 'mail_delivery_settings_update', 'payment_logistics_get', 'payment_logistics_update', 'orders_list', 'orders_profit_statistics', 'orders_get', 'orders_create_logistics', 'orders_mark_shipped', 'returns_pending_list', 'returns_create_logistics', 'returns_cancel', 'returns_complete', 'refunds_complete', 'refunds_create', 'dashboard_summary', 'settings_get', 'settings_update', 'admins_list', 'admin_upsert', 'admin_delete', 'articles_list', 'articles_check_title', 'articles_get_content', 'article_create', 'article_update', 'content_seo_update', 'categories_list', 'category_upsert', 'category_delete', 'nav_items_list', 'nav_item_upsert', 'nav_item_delete', 'products_list', 'product_get', 'product_image_reference_prepare', 'upload_create', 'upload_commit', 'chatgpt_attachment_import', 'product_upsert', 'product_delete', 'product_import_inspect', 'product_import_validate', 'product_import_commit', 'coupon_templates_list', 'coupon_template_upsert', 'member_coupon_issue', 'members_list', 'member_get', 'newsletter_create', 'poster_create', 'discount_codes_list', 'discount_code_upsert', 'member_tiers_list', 'member_tier_upsert', 'threshold_gifts_list', 'threshold_gift_upsert', 'product_add_ons_list', 'product_add_on_upsert', 'customer_service_logs_list', 'customer_service_settings_get', 'customer_service_settings_update', 'export_create', 'audit_list', 'themes_root', 'preview', 'pages_check_title', 'pages_check_title', 'pages_check_title', 'pages_check_title', 'pages_list', 'get_content', 'get_content', 'page_create', 'page_update', 'page_delete', 'upload', 'themes_delete']);
 		    assert.deepEqual(calls.map((call) => call[1].email), Array.from({ length: calls.length }, () => 'owner@example.com'));
   });
 });

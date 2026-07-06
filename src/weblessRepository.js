@@ -3018,6 +3018,56 @@ export class WeblessAccountRepository {
     };
   }
 
+  async prepareProductImageReference(accountId, args) {
+    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
+    const mediaPath = nullableString(args.media_path);
+    const imageUrl = nullableString(args.image_url);
+
+    if (!mediaPath && !imageUrl) {
+      throw codedError('VALIDATION_FAILED', 'image_url or media_path is required.');
+    }
+
+    const sourceUrl = mediaPath ? mediaUrlFor(this.publicSiteBaseUrl, mediaPath) : imageUrl;
+    if (!looksLikeUrl(sourceUrl)) {
+      throw codedError('VALIDATION_FAILED', 'image_url must be a public http/https URL or media_path must be a SlimWeb media path.');
+    }
+
+    const filename = filenameFromUrl(sourceUrl) ?? 'product-reference-image';
+    const mimeType = mimeTypeFromImageFilename(filename);
+    const purpose = nullableString(args.purpose) ?? 'image_edit_reference';
+    if (!['image_edit_reference', 'generate_more_product_images', 'visual_judgement', 'other'].includes(purpose)) {
+      throw codedError('VALIDATION_FAILED', 'purpose must be image_edit_reference, generate_more_product_images, visual_judgement, or other.');
+    }
+
+    return {
+      site: {
+        id: site.id,
+        site_code: site.site_code ?? null,
+        name: site.name ?? null
+      },
+      product_context: {
+        product_id: args.product_id ?? null,
+        product_image_id: args.product_image_id ?? null
+      },
+      reference_image: {
+        source_url: sourceUrl,
+        download_url: sourceUrl,
+        media_path: mediaPath,
+        mime_type: mimeType,
+        file_name: filename,
+        purpose,
+        usage: 'chatgpt_image_edit_reference'
+      },
+      downloadable_reference: {
+        download_url: sourceUrl,
+        mime_type: mimeType,
+        file_name: filename
+      },
+      chatgpt_guidance: 'Use this only as an experimental ChatGPT visual reference. If ChatGPT cannot attach this returned reference as image-edit input, ask the user to paste or upload the product image before generating or editing images.',
+      other_clients_guidance: 'Codex, Hermes, and clients with byte access should fetch source_url directly and pass the image bytes to their own vision or image-edit runtime.'
+    };
+  }
+
   async upsertProduct(accountId, args) {
     const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
     const productId = args.product_id === undefined || args.product_id === null ? null : requireInteger(args.product_id, 'product_id');
@@ -9760,6 +9810,15 @@ function filenameFromUrl(value) {
   } catch {
     return path.basename(value);
   }
+}
+
+function mimeTypeFromImageFilename(value) {
+  const extension = path.extname(String(value ?? '')).replace('.', '').toLowerCase();
+  if (extension === 'png') return 'image/png';
+  if (extension === 'gif') return 'image/gif';
+  if (extension === 'webp') return 'image/webp';
+  if (extension === 'svg') return 'image/svg+xml';
+  return 'image/jpeg';
 }
 
 function categoryPathLabel(category, rows) {

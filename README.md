@@ -225,6 +225,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 | `slimweb_nav_items_delete` | Available | page write | 刪除導覽項目與其子項目。 |
 | `slimweb_products_list` | Available | product read | 依狀態、分類、關鍵字與庫存條件列出商品。 |
 | `slimweb_products_get` | Available | product read | 讀取單一商品，包含圖片、影片、規格與數量折扣。 |
+| `slimweb_product_image_reference_prepare` | Available | product read | 將 `slimweb_products_get` 回傳的商品圖片 URL 或 media path 準備成 ChatGPT 實驗性視覺參考；Codex/Hermes 等可自行讀取圖片 bytes 的 client 不需使用。 |
 | `slimweb_products_upsert` | Available | product write | 新增或更新商品；主圖至少一張，缺必要資訊時 AI 必須先詢問。 |
 | `slimweb_products_delete` | Available | product write | 刪除商品與已儲存商品圖片。 |
 | `slimweb_products_import_inspect` | Available | product read | 解析 CSV/XLSX/SQL，回傳欄位、樣本列與分類，讓 AI Client 自行分析 mapping。 |
@@ -320,6 +321,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 需要圖片的 tools 不接受 inline base64、image URL、file URL、`/mnt/data`、attachment handle、data ref、placeholder URL 或任何本地路徑。
 - 圖片流程固定為：AI 必須先判斷自己所在 runtime 是否能讀取圖片 bytes 並對外做 HTTPS `PUT`。Codex / Hermes 這類有本地或 code execution access 的 client 可以先呼叫 `slimweb_uploads_create`，讀取使用者上傳圖片或 AI 生成圖片的 binary，對 returned `upload_url` 做 raw bytes `PUT`，再呼叫 `slimweb_uploads_commit`，最後把回傳 `asset.media_path` 傳給商品、文章或 asset tools。
 - ChatGPT Remote MCP 不可假設能把 AI 生成中的暫存圖片、`/mnt/data` 或 hidden attachment rewrite 轉成 remote MCP 可讀 bytes。若使用者已經把圖片作為 ChatGPT 對話附件貼上或重新上傳，AI 應改用 `slimweb_images_import_chatgpt_attachment` 匯入；若圖片仍只是 AI 生成結果而未成為對話附件，必須請使用者把核准的圖片貼回來後再匯入。
+- 當 ChatGPT 需要先看既有商品圖再做圖片編輯、延伸生成或視覺判斷時，先用 `slimweb_products_get` 取得商品圖片，再用 `slimweb_product_image_reference_prepare` 準備實驗性的 visual reference；若 ChatGPT 無法把回傳 reference 當作 image-edit input，必須請使用者貼上或上傳商品圖。Codex/Hermes 等可自行讀取圖片 bytes 的 client 直接用自己的 runtime 看圖，不需依賴此工具。
 - Webless 端負責與後台手動上傳一致的驗證、decode/re-encode、等比例縮圖與公開媒體 URL 產生；MCP 不再承接大段圖片 payload。
 - Write tools 應拒絕未經 allowlist 的 `<script>`、`<link rel="stylesheet">`、inline event handler 與可執行片段，除非該 tool 明確標示支援且通過安全驗證。
 - AI 不需要知道 SlimWeb 檔案目錄或後端 route，只需依 tool contract 使用 tools。

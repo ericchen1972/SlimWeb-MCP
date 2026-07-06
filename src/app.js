@@ -22,6 +22,7 @@ const MCP_SERVER_GUIDELINES = [
 'Distinguish page and article from user intent only; do not infer from history.',
 'Treat themes as the base styling layer for every page, including the homepage.',
 'Image rules: if a task needs image assets, obtain usable image URLs or media paths before creating or editing pages or articles. Publicly reachable image URLs may be used directly. Clients that can read local bytes and upload must use slimweb_uploads_create plus slimweb_uploads_commit. Clients that cannot upload bytes but have a ChatGPT conversation image attachment must use slimweb_images_import_chatgpt_attachment. If the client cannot upload and the user has not provided an attachment or image URL, stop and ask the user to paste or upload the image. When generating images, use the current design context colors and direction. If an image is AI-generated in a client that cannot upload it, stop and ask the user to paste the generated image back into the conversation.',
+'Product image reference rule: when ChatGPT needs to see an existing product image before editing, extending, judging, or generating related images, first read the product with slimweb_products_get, then call slimweb_product_image_reference_prepare with the image_url or media_path returned by the product tool. This tool is for ChatGPT clients that need an image reference bridge; Codex, Hermes, and other clients that can directly fetch image bytes may inspect the image in their own runtime instead. If ChatGPT cannot use the returned reference as visual context for image editing, ask the user to paste or upload the product image.',
 'Content SEO/AEO/GEO rule: after creating or editing a page or article, generate content-level SEO/AEO/GEO metadata from the actual title, body, topic, and images, then call slimweb_content_seo_update with workflow_context page_create, page_update, article_create, or article_update. Skip this only when the user explicitly says not to update SEO. Never use slimweb_content_seo_update as a standalone tool, and never use slimweb_seo_settings_update for single-page or single-article SEO.',
 'Page create flow: require a title, call slimweb_pages_check_title, stop on duplicate titles including fixed-page English aliases, call slimweb_design_context_get, follow the image rules for any page images, design from the site summary, colors, and framework, build single-page HTML with custom CSS and page-scoped inline JavaScript when useful, choose enabled_libraries from animate_css, aos, swiper, gsap, scrolltrigger, and scrollsmoother only when the user need calls for them, pass enabled_libraries as a required array using [] when no external support is used, call slimweb_pages_create, call slimweb_content_seo_update with workflow_context page_create unless the user explicitly opted out of SEO, and return the page URL; use slimweb_preview_get_page_url for preview verification.',
 'Page edit flow: require page_name, call slimweb_pages_get_content, stop if the editable page does not exist, follow the image rules for added or replacement images, call slimweb_design_context_get, modify the returned single-page HTML from the current content and design context, preserve or adjust enabled_libraries based on the updated page behavior, pass enabled_libraries as a required array using [] when no external support is used, call slimweb_pages_update, call slimweb_content_seo_update with workflow_context page_update unless the user explicitly opted out of SEO, and return the page URL; the homepage index is editable through this flow, but other fixed system pages are not editable; use slimweb_preview_get_page_url for preview verification.',
@@ -1564,6 +1565,38 @@ const MCP_TOOLS = [
         product_id: { type: 'integer' }
       },
       required: ['site_id', 'product_id']
+    }
+  },
+  {
+    name: 'slimweb_product_image_reference_prepare',
+    description: 'Prepare one existing product image as an experimental ChatGPT visual reference for image-edit or related image-generation tasks. Use only when ChatGPT needs to see a product image returned by slimweb_products_get; Codex, Hermes, and clients that can fetch image bytes should inspect the image directly in their own runtime. This tool does not save assets or guarantee that ChatGPT can attach the returned reference as image-edit input.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        site_id: { type: 'integer' },
+        image_url: {
+          type: 'string',
+          description: 'Public http/https product image URL returned by slimweb_products_get.'
+        },
+        media_path: {
+          type: 'string',
+          description: 'SlimWeb media path returned by slimweb_products_get. Use this instead of image_url when available.'
+        },
+        product_id: {
+          type: 'integer',
+          description: 'Optional product id for trace context.'
+        },
+        product_image_id: {
+          type: 'integer',
+          description: 'Optional product image id for trace context.'
+        },
+        purpose: {
+          type: 'string',
+          enum: ['image_edit_reference', 'generate_more_product_images', 'visual_judgement', 'other'],
+          description: 'Why ChatGPT needs to see this product image. Defaults to image_edit_reference.'
+        }
+      },
+      required: ['site_id']
     }
   },
   {
@@ -3599,6 +3632,19 @@ async function toolResultForCall(message, request, context) {
     case 'slimweb_products_get': {
       try {
         const result = await context.accountRepository.getProduct(
+          await actorForTool(session, name, toolArgs(message), context),
+          toolArgs(message)
+        );
+
+        return mcpResult(message.id ?? null, mcpJsonContent(result));
+      } catch (error) {
+        return toolExceptionToMcpError(message?.id ?? null, error);
+      }
+    }
+
+    case 'slimweb_product_image_reference_prepare': {
+      try {
+        const result = await context.accountRepository.prepareProductImageReference(
           await actorForTool(session, name, toolArgs(message), context),
           toolArgs(message)
         );
