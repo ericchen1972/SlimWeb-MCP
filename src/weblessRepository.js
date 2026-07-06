@@ -2998,7 +2998,7 @@ export class WeblessAccountRepository {
 
     return {
       site,
-      products: productResult.rows.map((product) => formatProductSummary(product)),
+      products: productResult.rows.map((product) => formatProductSummary(product, site, this.publicSiteBaseUrl)),
       pagination: {
         page,
         per_page: perPage,
@@ -3014,7 +3014,7 @@ export class WeblessAccountRepository {
 
     return {
       site,
-      product: await this.formatProductWithRelations(product)
+      product: await this.formatProductWithRelations(product, site)
     };
   }
 
@@ -3174,7 +3174,7 @@ export class WeblessAccountRepository {
       return {
         ok: true,
         site,
-        product: await this.formatProductWithRelations(savedProduct)
+        product: await this.formatProductWithRelations(savedProduct, site)
       };
     } catch (error) {
       await this.pool.query('ROLLBACK');
@@ -5612,7 +5612,7 @@ export class WeblessAccountRepository {
     }
   }
 
-  async formatProductWithRelations(product) {
+  async formatProductWithRelations(product, site = null) {
     const [images, videos, variants, quantityDiscounts] = await Promise.all([
       this.pool.query('select id, product_id, image_type, path, sort_order, alt_text from product_images where product_id = $1 order by sort_order asc, id asc', [product.id]),
       this.pool.query('select id, product_id, url, sort_order from product_videos where product_id = $1 order by sort_order asc, id asc', [product.id]),
@@ -5620,7 +5620,7 @@ export class WeblessAccountRepository {
       this.pool.query('select id, product_id, quantity, discount_percent, sort_order from product_quantity_discounts where product_id = $1 order by sort_order asc, id asc', [product.id])
     ]);
 
-    return formatProduct(product, images.rows, videos.rows, variants.rows, quantityDiscounts.rows, this.publicSiteBaseUrl);
+    return formatProduct(product, images.rows, videos.rows, variants.rows, quantityDiscounts.rows, this.publicSiteBaseUrl, site);
   }
 
   async ensureProductImportCategory(siteId) {
@@ -9063,8 +9063,9 @@ function normalizeQuantityDiscounts(value) {
     .sort((a, b) => a.quantity - b.quantity);
 }
 
-function formatProductSummary(product) {
-  return {
+function formatProductSummary(product, site = null, publicSiteBaseUrl = '') {
+  const productUrl = productUrlFor(product, site, publicSiteBaseUrl);
+  const summary = {
     id: product.id,
     site_id: product.site_id,
     site_category_id: product.site_category_id,
@@ -9080,6 +9081,15 @@ function formatProductSummary(product) {
     created_at: product.created_at ?? null,
     updated_at: product.updated_at ?? null
   };
+
+  return {
+    ...summary,
+    product_url: productUrl,
+    cart_action: cartActionForProduct(summary, {
+      productUrl,
+      imageUrl: product.primary_image_url ?? null
+    })
+  };
 }
 
 function formatEmailProduct(product, publicSiteBaseUrl, siteSlug) {
@@ -9090,18 +9100,44 @@ function formatEmailProduct(product, publicSiteBaseUrl, siteSlug) {
   const productUrl = `${publicSiteBaseUrl}/sites/${slug}/default-preview/products/${product.id}`;
   const aiUrl = `${publicSiteBaseUrl}/sites/${slug}/default-preview/products/${product.id}/ai`;
 
+  const summary = formatProductSummary(product, { slug: siteSlug }, publicSiteBaseUrl);
+  const imageUrl = product.primary_image_path ? mediaUrlFor(publicSiteBaseUrl, product.primary_image_path) : null;
+
   return {
-    ...formatProductSummary(product),
+    ...summary,
     price,
-    primary_image_url: product.primary_image_path ? mediaUrlFor(publicSiteBaseUrl, product.primary_image_path) : null,
+    primary_image_url: imageUrl,
     product_url: productUrl,
+    cart_action: cartActionForProduct(summary, {
+      productUrl,
+      imageUrl
+    }),
     ai_url: aiUrl
   };
 }
 
-function formatProduct(product, images, videos, variants, quantityDiscounts, publicSiteBaseUrl) {
+function formatProduct(product, images, videos, variants, quantityDiscounts, publicSiteBaseUrl, site = null) {
+  const primaryImages = images.filter((image) => image.image_type === 'primary').map((image) => formatProductImage(image, publicSiteBaseUrl));
+  const contentImages = images.filter((image) => image.image_type === 'content').map((image) => formatProductImage(image, publicSiteBaseUrl));
+  const summary = formatProductSummary(product, site, publicSiteBaseUrl);
+  const variantsPayload = variants.map((variant) => ({
+    id: variant.id,
+    name: variant.name,
+    price: Number.parseInt(variant.price ?? '0', 10),
+    sale_price: variant.sale_price === null || variant.sale_price === undefined ? null : Number.parseInt(variant.sale_price, 10),
+    stock: Number.parseInt(variant.stock ?? '0', 10),
+    sort_order: Number.parseInt(variant.sort_order ?? '0', 10),
+    is_default: Boolean(variant.is_default)
+  }));
+  const quantityDiscountsPayload = quantityDiscounts.map((discount) => ({
+    id: discount.id,
+    quantity: Number.parseInt(discount.quantity ?? '0', 10),
+    discount_percent: Number.parseInt(discount.discount_percent ?? '0', 10),
+    sort_order: Number.parseInt(discount.sort_order ?? '0', 10)
+  }));
+
   return {
-    ...formatProductSummary(product),
+    ...summary,
     slug: product.slug,
     variant_mode: product.variant_mode || 'none',
     replace_image_by_variant: Boolean(product.replace_image_by_variant),
@@ -9111,25 +9147,91 @@ function formatProduct(product, images, videos, variants, quantityDiscounts, pub
     buy_limit: product.buy_limit === null || product.buy_limit === undefined ? null : Number.parseInt(product.buy_limit, 10),
     gift_coupon_template_id: product.gift_coupon_template_id ?? null,
     is_service: Boolean(product.is_service),
-    primary_images: images.filter((image) => image.image_type === 'primary').map((image) => formatProductImage(image, publicSiteBaseUrl)),
-    content_images: images.filter((image) => image.image_type === 'content').map((image) => formatProductImage(image, publicSiteBaseUrl)),
+    primary_images: primaryImages,
+    content_images: contentImages,
     videos: videos.map((video) => ({ id: video.id, url: video.url, sort_order: Number.parseInt(video.sort_order ?? '0', 10) })),
-    variants: variants.map((variant) => ({
-      id: variant.id,
-      name: variant.name,
-      price: Number.parseInt(variant.price ?? '0', 10),
-      sale_price: variant.sale_price === null || variant.sale_price === undefined ? null : Number.parseInt(variant.sale_price, 10),
-      stock: Number.parseInt(variant.stock ?? '0', 10),
-      sort_order: Number.parseInt(variant.sort_order ?? '0', 10),
-      is_default: Boolean(variant.is_default)
-    })),
-    quantity_discounts: quantityDiscounts.map((discount) => ({
-      id: discount.id,
-      quantity: Number.parseInt(discount.quantity ?? '0', 10),
-      discount_percent: Number.parseInt(discount.discount_percent ?? '0', 10),
-      sort_order: Number.parseInt(discount.sort_order ?? '0', 10)
-    }))
+    variants: variantsPayload,
+    quantity_discounts: quantityDiscountsPayload,
+    cart_action: cartActionForProduct({
+      ...summary,
+      is_service: Boolean(product.is_service)
+    }, {
+      productUrl: summary.product_url,
+      imageUrl: primaryImages[0]?.url ?? '',
+      variant: variantsPayload.find((variant) => variant.is_default) ?? null,
+      quantityDiscounts: quantityDiscountsPayload
+    })
   };
+}
+
+function productUrlFor(product, site, publicSiteBaseUrl) {
+  if (!publicSiteBaseUrl) {
+    return null;
+  }
+
+  const siteCode = site?.callback_code ?? site?.site_code ?? site?.slug ?? (product.site_slug ?? null);
+  if (!siteCode) {
+    return null;
+  }
+
+  return `${publicSiteBaseUrl}/sites/${encodeURIComponent(siteCode)}/product/${encodeURIComponent(product.id)}`;
+}
+
+function cartActionForProduct(product, options = {}) {
+  const productId = String(product.id ?? '');
+  const stock = Number.parseInt(product.stock ?? '0', 10);
+  const price = product.sale_price === null || product.sale_price === undefined
+    ? Number.parseInt(product.base_price ?? '0', 10)
+    : Number.parseInt(product.sale_price, 10);
+  const variant = options.variant ?? null;
+  const variantId = variant?.id ? String(variant.id) : '';
+  const variantName = variant?.name ? String(variant.name) : '';
+  const itemKey = variantId ? `${productId}:${variantId}` : productId;
+  const enabled = Boolean(productId)
+    && product.status === 'active'
+    && stock > 0
+    && !Boolean(product.is_service);
+  const quantityDiscounts = Array.isArray(options.quantityDiscounts) ? options.quantityDiscounts : [];
+
+  return {
+    enabled,
+    reason: enabled ? null : cartActionDisabledReason(product, stock),
+    item_key: itemKey,
+    product_id: product.id,
+    price,
+    stock,
+    data_attributes: {
+      'data-cart-add': '',
+      'data-product-id': productId,
+      'data-product-name': String(product.name ?? ''),
+      'data-product-price': String(price),
+      'data-product-image': String(options.imageUrl ?? ''),
+      'data-product-category': String(product.category_name ?? ''),
+      'data-product-url': String(options.productUrl ?? ''),
+      'data-product-quantity-discounts': JSON.stringify(quantityDiscounts),
+      'data-product-stock': String(stock),
+      'data-product-variant-id': variantId,
+      'data-product-variant-name': variantName,
+      'data-cart-item-key': itemKey,
+      'data-cart-parent-key': ''
+    }
+  };
+}
+
+function cartActionDisabledReason(product, stock) {
+  if (Boolean(product.is_service)) {
+    return 'service_product';
+  }
+
+  if (product.status !== 'active') {
+    return 'not_active';
+  }
+
+  if (stock <= 0) {
+    return 'out_of_stock';
+  }
+
+  return 'unavailable';
 }
 
 function formatProductImage(image, publicSiteBaseUrl) {

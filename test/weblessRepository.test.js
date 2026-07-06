@@ -2469,7 +2469,14 @@ test('repository creates categories and products with required primary images', 
   assert.equal(product.product.primary_images[0].path, 'sites/101/mcp-uploads/committed/kids-jacket.jpg');
   assert.equal(product.product.primary_images[0].url, `https://slimweb.tw/media/${product.product.primary_images[0].path}`);
   assert.equal(listed.products[0].name, '男童牛仔外套');
+  assert.equal(listed.products[0].product_url, `https://slimweb.tw/sites/site-1/product/${product.product.id}`);
+  assert.equal(listed.products[0].cart_action.enabled, true);
+  assert.equal(listed.products[0].cart_action.data_attributes['data-cart-add'], '');
+  assert.equal(listed.products[0].cart_action.data_attributes['data-product-url'], listed.products[0].product_url);
   assert.equal(fetched.product.base_price, 1680);
+  assert.equal(fetched.product.product_url, `https://slimweb.tw/sites/site-1/product/${product.product.id}`);
+  assert.equal(fetched.product.cart_action.data_attributes['data-product-image'], fetched.product.primary_images[0].url);
+  assert.equal(fetched.product.cart_action.data_attributes['data-product-stock'], '8');
 
   await assert.rejects(
     () => repository.upsertProduct(11, {
