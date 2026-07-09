@@ -706,6 +706,20 @@ function readinessPool() {
 
   return {
     async query(sql, params) {
+      if (sql.includes('from information_schema.columns')) {
+        return {
+          rows: [
+            'site_status',
+            'member_verification',
+            'website_type',
+            'default_country_code',
+            'product_load_mode',
+            'return_days_allowed',
+            'product_category_depth'
+          ].map((column_name) => ({ column_name }))
+        };
+      }
+
       if (sql.includes('from sites') && sql.includes('account_id = $1 and id = $2')) {
         assert.equal(params[0], 11);
         assert.equal(params[1], 101);
@@ -2060,6 +2074,54 @@ test('repository includes consumer MCP URL in basic settings', async () => {
 
   const result = await repository.getBasicSettings(11, { site_id: 101 });
 
+  assert.equal(result.settings.client_mcp_url, 'https://client-mcp.example.test/sites/swcb_test101/mcp');
+});
+
+test('repository reads basic settings when older sites table lacks newer columns', async () => {
+  const site = {
+    id: 101,
+    slug: 'site-1',
+    name: '測試網站',
+    domain: '',
+    callback_code: 'swcb_test101',
+    site_status: 'active',
+    website_type: 'brand'
+  };
+  const pool = {
+    async query(sql, params) {
+      if (sql.includes('from sites') && sql.includes('account_id = $1 and id = $2')) {
+        assert.equal(params[0], 11);
+        assert.equal(params[1], 101);
+        return { rows: [site] };
+      }
+
+      if (sql.includes('from information_schema.columns')) {
+        return {
+          rows: [
+            { column_name: 'site_status' },
+            { column_name: 'website_type' }
+          ]
+        };
+      }
+
+      if (sql.includes('from sites') && sql.includes('where id = $1')) {
+        assert.doesNotMatch(sql, /member_verification/);
+        assert.match(sql, /site_status/);
+        assert.match(sql, /website_type/);
+        return { rows: [site] };
+      }
+
+      throw new Error(`Unexpected query: ${sql}`);
+    }
+  };
+  const repository = new WeblessAccountRepository(pool, {
+    clientMcpBaseUrl: 'https://client-mcp.example.test'
+  });
+
+  const result = await repository.getBasicSettings(11, { site_id: 101 });
+
+  assert.equal(result.settings.website_type, 'brand');
+  assert.equal(result.settings.member_verification, 'none');
   assert.equal(result.settings.client_mcp_url, 'https://client-mcp.example.test/sites/swcb_test101/mcp');
 });
 

@@ -333,6 +333,7 @@ export class WeblessAccountRepository {
     this.laravelAppKey = options.laravelAppKey ?? process.env.WEBLESS_APP_KEY ?? process.env.LARAVEL_APP_KEY ?? process.env.APP_KEY ?? '';
     this.fetch = options.fetchImpl ?? fetch;
     this.logger = options.logger ?? console;
+    this.siteColumnCache = null;
     this.posterPollIntervalMs = Number.isFinite(Number(options.posterPollIntervalMs))
       ? Math.max(0, Number(options.posterPollIntervalMs))
       : POSTER_POLL_INTERVAL_MS;
@@ -5877,9 +5878,15 @@ export class WeblessAccountRepository {
   }
 
   async findBasicSettingsForSite(siteId) {
+    const columns = await this.existingSiteColumns(BASIC_SETTINGS_COLUMNS);
+
+    if (columns.length === 0) {
+      return formatBasicSettings({});
+    }
+
     const result = await this.pool.query(
       `
-        select ${BASIC_SETTINGS_COLUMNS.join(', ')}
+        select ${columns.join(', ')}
         from sites
         where id = $1
         limit 1
@@ -5888,6 +5895,24 @@ export class WeblessAccountRepository {
     );
 
     return formatBasicSettings(result.rows[0] ?? {});
+  }
+
+  async existingSiteColumns(columns) {
+    if (!this.siteColumnCache) {
+      const result = await this.pool.query(
+        `
+          select column_name
+          from information_schema.columns
+          where table_name = 'sites'
+            and column_name = any($1)
+        `,
+        [columns]
+      );
+
+      this.siteColumnCache = new Set(result.rows.map((row) => row.column_name));
+    }
+
+    return columns.filter((column) => this.siteColumnCache.has(column));
   }
 
   async findMailDeliverySettingsForSite(siteId) {
