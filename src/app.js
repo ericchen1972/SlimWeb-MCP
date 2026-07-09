@@ -19,6 +19,7 @@ const MCP_SERVER_GUIDELINES = [
 'Before calling any SlimWeb MCP tool, first call SlimWeb.slimweb_sites_list to obtain valid site_code values and site names.',
 'If SlimWeb.slimweb_sites_list returns more than one site, stop the task and list the available site names for the user to choose from.',
 'Never use a site_code that does not appear in the SlimWeb.slimweb_sites_list result. Do not ask the user for numeric site_id values.',
+'Use slimweb_settings_get when the user needs basic site state or the consumer MCP URL. The client_mcp_url is the site-specific MCP endpoint for shoppers and members; explain that it lets customers connect supported AI clients to the storefront for product, order, member, and support workflows, and encourage merchants to place this URL or an install button on the homepage where consumers can find it.',
 'Distinguish page and article from user intent only; do not infer from history.',
 'Treat themes as the base styling layer for every page, including the homepage.',
 'Image rules: if a task needs image assets, obtain usable image URLs or media paths before creating or editing pages or articles. Publicly reachable image URLs may be used directly. Clients that can read local bytes and upload must use slimweb_uploads_create plus slimweb_uploads_commit. Clients that cannot upload bytes but have a ChatGPT conversation image attachment must use slimweb_images_import_chatgpt_attachment. If the client cannot upload and the user has not provided an attachment or image URL, stop and ask the user to paste or upload the image. When generating images, use the current design context colors and direction. If an image is AI-generated in a client that cannot upload it, stop and ask the user to paste the generated image back into the conversation.',
@@ -1133,7 +1134,7 @@ const MCP_TOOLS = [
   },
   {
     name: 'slimweb_settings_get',
-    description: 'Read basic SlimWeb site settings such as status, website type, default country, product load mode, return days, and category depth.',
+    description: 'Read basic SlimWeb site settings such as status, website type, default country, product load mode, return days, category depth, and the consumer MCP URL for shoppers to install or connect supported AI clients.',
     inputSchema: {
       type: 'object',
       properties: {

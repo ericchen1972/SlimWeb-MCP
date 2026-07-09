@@ -1988,7 +1988,10 @@ export class WeblessAccountRepository {
 
     return {
       site,
-      settings
+      settings: {
+        ...settings,
+        client_mcp_url: clientMcpUrlForSite(site, this.clientMcpBaseUrl)
+      }
     };
   }
 

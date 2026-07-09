@@ -89,6 +89,7 @@ test('health endpoint reports service metadata', async () => {
     assert.equal(response.status, 200);
     assert.equal(body.ok, true);
     assert.equal(body.service, 'slimweb-mcp');
+    assert.match(body.instructions, /consumer MCP URL/);
     assert.match(body.instructions, /site logo/);
     assert.match(body.instructions, /product summary\/description/);
     assert.match(body.instructions, /Do not invent discounts/);
@@ -819,7 +820,13 @@ test('homepage editing tools call repository implementations', async () => {
     },
     getBasicSettings: async (accountId, args) => {
       calls.push(['settings_get', accountId, args]);
-      return { site: { id: args.site_id }, settings: { site_status: 'active' } };
+      return {
+        site: { id: args.site_id },
+        settings: {
+          site_status: 'active',
+          client_mcp_url: 'https://client-mcp.example.test/sites/swcb_test101/mcp'
+        }
+      };
     },
     getSiteReadiness: async (accountId, args) => {
       calls.push(['site_readiness_get', accountId, args]);
@@ -1249,7 +1256,9 @@ test('homepage editing tools call repository implementations', async () => {
     assert.equal((await callTool(49, 'slimweb_refunds_complete', { site_id: 101, order_no: 'SWR' })).result.structuredContent.order.refund_status, 'completed');
     assert.equal((await callTool(50, 'slimweb_refunds_create', { site_id: 101, order_no: 'SWR', provider: 'ecpay' })).result.structuredContent.order.refund_status, 'created');
     assert.equal((await callTool(51, 'slimweb_dashboard_summary', { site_id: 101 })).result.structuredContent.stats.totalProducts, 1);
-    assert.equal((await callTool(52, 'slimweb_settings_get', { site_id: 101 })).result.structuredContent.settings.site_status, 'active');
+    const settings = (await callTool(52, 'slimweb_settings_get', { site_id: 101 })).result.structuredContent.settings;
+    assert.equal(settings.site_status, 'active');
+    assert.equal(settings.client_mcp_url, 'https://client-mcp.example.test/sites/swcb_test101/mcp');
     assert.equal((await callTool(53, 'slimweb_settings_update', { site_id: 101, site_status: 'maintenance' })).result.structuredContent.settings.site_status, 'maintenance');
     assert.equal((await callTool(54, 'slimweb_admins_list', { site_id: 101 })).result.structuredContent.admins[0].canDelete, false);
     assert.equal((await callTool(55, 'slimweb_admins_upsert', { site_id: 101, google_email: 'staff@example.com', permissions: ['product_management'] })).result.structuredContent.admin.google_email, 'staff@example.com');

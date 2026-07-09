@@ -212,7 +212,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 | `slimweb_payment_logistics_get` | Available | payment/logistics read | 讀取 SlimWeb 目前支援的金物流供應商與站台設定。 |
 | `slimweb_payment_logistics_update` | Available | payment/logistics write | 更新支援的金物流資料與啟用狀態；線上刷卡金流只能啟用一家，LINE Pay 例外。 |
 | `slimweb_dashboard_summary` | Available | dashboard read | 讀取 KPI、最新訂單、最新會員、低庫存提醒等後台首頁摘要。 |
-| `slimweb_settings_get` | Available | settings read | 讀取網站狀態、國別、商品載入方式、允許退貨天數等基本設定。 |
+| `slimweb_settings_get` | Available | settings read | 讀取網站狀態、國別、商品載入方式、允許退貨天數等基本設定，並回傳可給消費者安裝使用的站台專屬 MCP 網址。 |
 | `slimweb_settings_update` | Available | settings write | 更新允許由 MCP 修改的基本設定欄位。 |
 | `slimweb_admins_list` | Available | admin read | 列出站台管理員與權限摘要；第一個 admin 為受保護系統管理員。 |
 | `slimweb_admins_upsert` | Available | admin write | 新增或更新站台管理員與權限；第一個 admin 永遠保留系統管理員。 |
@@ -761,11 +761,12 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 狀態: Available
 - 權限: settings read
 - Scope: active site
-- 用途: 讀取 AI 後台操作需要的站台基本設定。
+- 用途: 讀取 AI 後台操作需要的站台基本設定，並取得可放在首頁給消費者安裝使用的站台專屬 MCP 網址。
 - Input: optional fields list
-- Output: site status、country、product loading mode、return days allowed、editable field hints
+- Output: site status、website type、country、product loading mode、return days allowed、product category depth、`client_mcp_url`
 - Side effects: none
 - 是否需要 confirmation: no
+- Consumer MCP guidance: `client_mcp_url` 是此站台的消費者端 MCP endpoint，可提供給支援 MCP 的 AI 工具，讓顧客連接後以 AI 查詢商品、會員、訂單與客服支援。AI 應向商家說明這個入口的用途，並建議把連結或安裝按鈕放在首頁、會員中心或客服區，讓消費者容易找到。
 - 錯誤情境: missing active site、permission denied
 - Audit fields: request ID、user ID、account ID、site ID
 

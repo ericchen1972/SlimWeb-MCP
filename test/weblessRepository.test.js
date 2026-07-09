@@ -661,6 +661,7 @@ function readinessPool() {
     product_load_mode: 'pagination',
     return_days_allowed: 0,
     product_category_depth: 3,
+    callback_code: 'swcb_test101',
     seo_title: '',
     seo_description: '',
     seo_keywords: '',
@@ -2050,6 +2051,16 @@ test('repository summarizes launch progress for guided ecommerce onboarding', as
   assert.ok(progress.recommended.some((item) => item.key === 'seo_aeo_geo' && !item.blocking_launch));
   assert.match(progress.next_step.message_to_user, /商品|類別|金物流|首頁/);
   assert.match(progress.ai_guidance.seo_rule, /Do not ask.*GEO/i);
+});
+
+test('repository includes consumer MCP URL in basic settings', async () => {
+  const repository = new WeblessAccountRepository(readinessPool(), {
+    clientMcpBaseUrl: 'https://client-mcp.example.test'
+  });
+
+  const result = await repository.getBasicSettings(11, { site_id: 101 });
+
+  assert.equal(result.settings.client_mcp_url, 'https://client-mcp.example.test/sites/swcb_test101/mcp');
 });
 
 test('repository updates and reads site integration settings for admin display', async () => {
