@@ -1209,7 +1209,7 @@ function couponPool() {
         return { rows: [coupon] };
       }
 
-      if (sql.includes('from members') && sql.includes('where site_id = $1 and id = $2')) {
+      if (sql.trimStart().startsWith('select') && sql.includes('from members') && sql.includes('where site_id = $1 and id = $2')) {
         return { rows: state.members.filter((member) => member.site_id === params[0] && member.id === params[1]) };
       }
 
@@ -2187,6 +2187,233 @@ test('repository updates and reads only notion settings', async () => {
   assert.equal(read.settings.notion_token, 'notion-secret');
 });
 
+test('repository searches and reads Notion pages through independent Webless endpoints', async () => {
+  const requests = [];
+  const fetchImpl = async (url, options) => {
+    requests.push([url, JSON.parse(options.body)]);
+    if (String(url).endsWith('/mcp-notion/search')) {
+      return new Response(JSON.stringify({
+        query: 'KAI',
+        exact_matches: [{ notion_page_id: 'page-kai', title: 'KAI', imported: true, article_id: 9 }],
+        partial_matches: [{ notion_page_id: 'page-guide', title: 'KAI說明', imported: false, article_id: null }]
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    return new Response(JSON.stringify({
+      page: { notion_page_id: 'page-kai', title: 'KAI', content_html: '<p>內容</p>', imported: true, article_id: 9 }
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+  const repository = new WeblessAccountRepository(fakePool(), {
+    fetchImpl,
+    weblessAppBaseUrl: 'https://slimweb.tw',
+    weblessMcpSecret: 'shared-secret'
+  });
+
+  const matches = await repository.searchNotionPages(11, { site_id: 101, title: 'KAI' });
+  const content = await repository.getNotionPageContent(11, { site_id: 101, notion_page_id: 'page-kai' });
+
+  assert.equal(matches.exact_matches[0].article_id, 9);
+  assert.equal(matches.partial_matches[0].title, 'KAI說明');
+  assert.equal(content.page.content_html, '<p>內容</p>');
+  assert.deepEqual(requests.map(([, body]) => body), [{ title: 'KAI' }, { notion_page_id: 'page-kai' }]);
+});
+
+test('repository sends explicit complete order numbers for mutations', async () => {
+  const requests = [];
+  const fetchImpl = async (url, options) => {
+    const body = JSON.parse(options.body);
+    requests.push([url, body]);
+    return new Response(JSON.stringify({ orders: [], deleted_order_numbers: body.order_numbers ?? [] }), { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+  const repository = new WeblessAccountRepository(fakePool(), { fetchImpl, weblessAppBaseUrl: 'https://slimweb.tw', weblessMcpSecret: 'shared-secret' });
+
+  await repository.updateOrdersStatus(11, { site_id: 101, order_numbers: ['A2343242'], status: 'confirmed' });
+  await repository.updateOrdersRecipient(11, { site_id: 101, orders: [{ order_no: 'A2343242', recipient_name: '陳大明' }] });
+  await repository.deleteOrders(11, { site_id: 101, order_numbers: ['A2343242'] });
+
+  assert.deepEqual(requests.map(([, body]) => body), [
+    { order_numbers: ['A2343242'], status: 'confirmed' },
+    { orders: [{ order_no: 'A2343242', recipient_name: '陳大明' }] },
+    { order_numbers: ['A2343242'] }
+  ]);
+});
+
+test('repository returns waybill URLs for explicit or query-selected order sets', async () => {
+  const fetchImpl = async (_url, options) => {
+    const body = JSON.parse(options.body);
+    return new Response(JSON.stringify({
+      type: body.type,
+      waybill_url: 'https://slimweb.tw/sites/site-1/orders/logistics/waybills?order_ids=1,2',
+      print_available: true,
+      included_order_numbers: body.order_numbers,
+      excluded_order_numbers: []
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+  const repository = new WeblessAccountRepository(fakePool(), { fetchImpl, weblessAppBaseUrl: 'https://slimweb.tw', weblessMcpSecret: 'shared-secret' });
+
+  const result = await repository.getWaybillUrl(11, {
+    site_id: 101,
+    order_numbers: ['SW1', 'SW2'],
+    type: 'forward'
+  });
+
+  assert.equal(result.print_available, true);
+  assert.deepEqual(result.included_order_numbers, ['SW1', 'SW2']);
+});
+
+test('repository reads media stats and deletes unused media through Webless', async () => {
+  const requests = [];
+  const fetchImpl = async (url, options = {}) => {
+    requests.push([url, options.method ?? 'GET']);
+    const payload = String(url).endsWith('/stats')
+      ? { total: { count: 3, size_bytes: 30 }, unused: { count: 2, size_bytes: 20, assets: [] } }
+      : { deleted: { count: 2, size_bytes: 20 }, skipped: { count: 0, size_bytes: 0 }, failed: { count: 0, size_bytes: 0 } };
+    return new Response(JSON.stringify(payload), { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+  const repository = new WeblessAccountRepository(fakePool(), { fetchImpl, weblessAppBaseUrl: 'https://slimweb.tw', weblessMcpSecret: 'shared-secret' });
+
+  const stats = await repository.getMediaLibraryStats(11, { site_id: 101 });
+  const cleaned = await repository.deleteUnusedMedia(11, { site_id: 101 });
+
+  assert.equal(stats.unused.count, 2);
+  assert.equal(cleaned.deleted.size_bytes, 20);
+  assert.deepEqual(requests.map(([, method]) => method), ['GET', 'DELETE']);
+});
+
+test('repository updates and reads all contact settings with patch and null semantics', async () => {
+  const state = {
+    id: 101,
+    slug: 'site-1',
+    name: '測試網站',
+    domain: '',
+    callback_code: 'swcb_test101',
+    contact_email: 'old@example.com',
+    contact_line: 'https://line.me/old',
+    contact_wechat: 'old-wechat',
+    contact_telegram: null,
+    contact_twitter: null,
+    contact_instagram: null,
+    contact_facebook_page: null,
+    contact_store_address: '舊地址',
+    contact_phone: '0200000000'
+  };
+  const pool = {
+    async query(sql, params) {
+      if (sql.includes('from sites') && sql.includes('account_id = $1 and id = $2')) {
+        return { rows: [state] };
+      }
+
+      if (sql.includes('select contact_email')) {
+        return { rows: [state] };
+      }
+
+      if (sql.includes('update sites') && sql.includes('contact_email = $1')) {
+        Object.assign(state, {
+          contact_email: params[0],
+          contact_line: params[1],
+          contact_wechat: params[2],
+          contact_telegram: params[3],
+          contact_twitter: params[4],
+          contact_instagram: params[5],
+          contact_facebook_page: params[6],
+          contact_store_address: params[7],
+          contact_phone: params[8]
+        });
+        return { rows: [state] };
+      }
+
+      throw new Error(`Unexpected query: ${sql}`);
+    }
+  };
+  const repository = new WeblessAccountRepository(pool);
+
+  const updated = await repository.updateContactSettings(11, {
+    site_id: 101,
+    contact_email: 'hello@example.com',
+    contact_line: null,
+    contact_instagram: 'https://instagram.com/example'
+  });
+  const read = await repository.getContactSettings(11, { site_id: 101 });
+
+  assert.equal(updated.settings.contact_email, 'hello@example.com');
+  assert.equal(updated.settings.contact_line, null);
+  assert.equal(updated.settings.contact_wechat, 'old-wechat');
+  assert.equal(updated.settings.contact_instagram, 'https://instagram.com/example');
+  assert.equal(read.settings.contact_store_address, '舊地址');
+  assert.equal(read.settings.contact_phone, '0200000000');
+});
+
+test('repository exposes site-scoped delete methods for Web admin parity', async () => {
+  const deleted = [];
+  const pool = {
+    async query(sql, params) {
+      if (sql.includes('from sites') && sql.includes('account_id = $1 and id = $2')) {
+        return { rows: [{ id: 101, slug: 'site-1', name: '測試網站', callback_code: 'swcb_test101' }] };
+      }
+      if (/select id(?:, [a-z_]+)* from (discount_codes|member_tiers|threshold_gifts|product_add_ons|site_newsletters|customer_service_logs)/.test(sql)) {
+        return { rows: [{ id: params[1], site_id: params[0] }] };
+      }
+      const match = sql.match(/delete from (discount_codes|member_tiers|threshold_gifts|product_add_ons|site_newsletters|customer_service_logs)/);
+      if (match) {
+        deleted.push([match[1], params]);
+        return { rows: [] };
+      }
+      throw new Error(`Unexpected query: ${sql}`);
+    }
+  };
+  const repository = new WeblessAccountRepository(pool);
+
+  await repository.deleteDiscountCode(11, { site_id: 101, discount_code_id: 1 });
+  await repository.deleteMemberTier(11, { site_id: 101, member_tier_id: 2 });
+  await repository.deleteThresholdGift(11, { site_id: 101, threshold_gift_id: 3 });
+  await repository.deleteProductAddOn(11, { site_id: 101, product_add_on_id: 4 });
+  await repository.deleteNewsletter(11, { site_id: 101, newsletter_id: 5 });
+  await repository.deleteCustomerServiceLog(11, { site_id: 101, customer_service_log_id: 6 });
+
+  assert.deepEqual(deleted.map(([table]) => table), [
+    'discount_codes',
+    'member_tiers',
+    'threshold_gifts',
+    'product_add_ons',
+    'site_newsletters',
+    'customer_service_logs'
+  ]);
+});
+
+test('repository deletes members and articles and revokes issued coupons within one site', async () => {
+  const writes = [];
+  const storage = { delete: async (value) => writes.push(['storage', value]) };
+  const pool = {
+    async query(sql, params) {
+      if (sql.includes('from sites') && sql.includes('account_id = $1 and id = $2')) {
+        return { rows: [{ id: 101, slug: 'site-1', name: '測試網站', callback_code: 'swcb_test101' }] };
+      }
+      if (sql.trimStart().startsWith('select') && sql.includes('from members') && sql.includes('where site_id = $1 and id = $2')) {
+        return { rows: [{ id: params[1], site_id: 101, name: '會員' }] };
+      }
+      if (sql.includes('from member_coupons')) {
+        return { rows: [{ id: params[2] ?? params[1], site_id: 101, member_id: params[1], status: 'issued' }] };
+      }
+      if (sql.trimStart().startsWith('select') && sql.includes('from articles') && sql.includes('where site_id = $1 and id = $2')) {
+        return { rows: [{ id: params[1], site_id: 101, title: '文章', cover_path: 'sites/101/mcp-uploads/committed/cover.webp' }] };
+      }
+      if (sql.includes('delete from members') || sql.includes('delete from articles') || sql.includes('update member_coupons')) {
+        writes.push(['sql', sql, params]);
+        return { rows: [] };
+      }
+      throw new Error(`Unexpected query: ${sql}`);
+    }
+  };
+  const repository = new WeblessAccountRepository(pool, { storage });
+
+  await repository.deleteMember(11, { site_id: 101, member_id: 7 });
+  await repository.revokeMemberCoupon(11, { site_id: 101, member_id: 7, member_coupon_id: 8 });
+  await repository.deleteArticle(11, { site_id: 101, article_id: 9 });
+
+  assert.ok(writes.some((write) => write[0] === 'sql' && write[1].includes('delete from members')));
+  assert.ok(writes.some((write) => write[0] === 'sql' && write[1].includes("status = 'revoked'")));
+  assert.ok(writes.some((write) => write[0] === 'storage' && write[1].endsWith('cover.webp')));
+});
+
 test('repository updates and reads mail delivery settings with SMTP fields', async () => {
   const pool = mailDeliverySettingsPool();
   const repository = new WeblessAccountRepository(pool, {
@@ -2711,6 +2938,7 @@ test('repository manages nav items with root default and base64 svg icons', asyn
 test('repository requires generated base64 svg icons when creating product categories', async () => {
   const pool = productCatalogPool();
   const repository = new WeblessAccountRepository(pool);
+  const iconSvgBase64 = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M1 1h2v2H1z"/></svg>').toString('base64');
 
   await assert.rejects(
     () => repository.upsertCategory(11, {
@@ -2719,6 +2947,16 @@ test('repository requires generated base64 svg icons when creating product categ
       name: 'AI工具'
     }),
     /icon_svg_base64 is required/
+  );
+
+  await assert.rejects(
+    () => repository.upsertCategory(11, {
+      site_id: 101,
+      parent_id: null,
+      name: 'AI工具',
+      icon_svg_base64: iconSvgBase64
+    }),
+    /16:9 category image is required/
   );
 });
 
@@ -2788,7 +3026,8 @@ test('repository normalizes oversized SVG category icons to 24px dimensions', as
     site_id: 101,
     parent_id: null,
     name: 'AI工具',
-    icon_svg_base64: iconSvgBase64
+    icon_svg_base64: iconSvgBase64,
+    image: { media_path: 'sites/101/mcp-uploads/committed/ai-tools-category.webp' }
   });
 
   assert.match(category.category.icon_svg, /width="24"/);
@@ -4376,6 +4615,33 @@ function newsletterPool() {
         return { rows: [] };
       }
 
+      if (sql.includes('select count(*)::int as total from site_newsletters')) {
+        return { rows: [{ total: state.newsletters.length }] };
+      }
+
+      if (sql.includes('from site_newsletters') && sql.includes('order by updated_at')) {
+        return { rows: [...state.newsletters] };
+      }
+
+      if (sql.includes('from site_newsletters') && sql.includes('where site_id = $1 and id = $2')) {
+        return { rows: state.newsletters.filter((newsletter) => newsletter.site_id === params[0] && newsletter.id === params[1]) };
+      }
+
+      if (sql.includes('from site_newsletter_recipients')) {
+        return { rows: state.recipients.filter((recipient) => recipient.site_newsletter_id === params[0]) };
+      }
+
+      if (sql.includes('update site_newsletters')) {
+        const newsletter = state.newsletters.find((item) => item.site_id === params[4] && item.id === params[5]);
+        Object.assign(newsletter, { title: params[0], recipient_scope: params[1], html_content: params[2], scheduled_at: params[3] });
+        return { rows: [newsletter] };
+      }
+
+      if (sql.includes('delete from site_newsletter_recipients')) {
+        state.recipients = state.recipients.filter((recipient) => recipient.site_newsletter_id !== params[0]);
+        return { rows: [] };
+      }
+
       throw new Error(`Unexpected query: ${sql}`);
     }
   };
@@ -4406,6 +4672,30 @@ test('repository creates newsletter and defaults scheduled time to five minutes 
   const scheduledAt = new Date(result.newsletter.scheduled_at).getTime();
   assert.ok(scheduledAt >= before + 5 * 60 * 1000 - 1000);
   assert.ok(scheduledAt <= after + 5 * 60 * 1000 + 1000);
+});
+
+test('repository lists, gets, and updates existing newsletters', async () => {
+  const pool = newsletterPool();
+  const repository = new WeblessAccountRepository(pool);
+  const created = await repository.createNewsletter(11, {
+    site_id: 101,
+    recipient_scope: 'all_members',
+    title: '原標題',
+    html_content: '<p>原內容</p>'
+  });
+
+  const listed = await repository.listNewsletters(11, { site_id: 101 });
+  const read = await repository.getNewsletter(11, { site_id: 101, newsletter_id: created.newsletter.id });
+  const updated = await repository.updateNewsletter(11, {
+    site_id: 101,
+    newsletter_id: created.newsletter.id,
+    title: '新標題'
+  });
+
+  assert.equal(listed.newsletters.length, 1);
+  assert.equal(read.newsletter.title, '原標題');
+  assert.equal(updated.newsletter.title, '新標題');
+  assert.equal(updated.newsletter.html_content, '<p>原內容</p>');
 });
 
 test('repository creates newsletter for selected members only when member ids are provided', async () => {

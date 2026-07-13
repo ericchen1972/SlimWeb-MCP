@@ -203,6 +203,10 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 | `slimweb_facebook_settings_update` | Available | settings write | 更新後台 Facebook 串接欄位，包含 App ID、Page ID 與留言板開關。 |
 | `slimweb_notion_settings_get` | Available | settings read | 讀取後台 Notion API token 欄位。 |
 | `slimweb_notion_settings_update` | Available | settings write | 更新後台 Notion API token 欄位。 |
+| `slimweb_notion_pages_search` | Available | content read | 依標題搜尋已授權的 Notion 頁面，區分完全與部分符合並回傳導入狀態。 |
+| `slimweb_notion_page_get_content` | Available | content read | 讀取指定 Notion 頁面並轉換成安全 HTML，不直接導入。 |
+| `slimweb_contact_settings_get` | Available | settings read | 讀取後台所有聯絡資訊欄位。 |
+| `slimweb_contact_settings_update` | Available | settings write | 以 patch 語意更新或清除後台聯絡資訊欄位。 |
 | `slimweb_mail_delivery_settings_get` | Available | mail settings read | 讀取後台郵件寄送設定頁的 SMTP 與通知欄位。 |
 | `slimweb_mail_delivery_settings_update` | Available | mail settings write | 更新後台郵件寄送設定頁的 SMTP 與通知欄位。 |
 | `slimweb_mail_templates_get` | Available | mail settings read | 讀取各寄送時機的郵件標題與內容；內容會套用單一共用郵件版型。 |
@@ -217,8 +221,10 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 | `slimweb_admins_list` | Available | admin read | 列出站台管理員與權限摘要；第一個 admin 為受保護系統管理員。 |
 | `slimweb_admins_upsert` | Available | admin write | 新增或更新站台管理員與權限；第一個 admin 永遠保留系統管理員。 |
 | `slimweb_admins_delete` | Available | admin write | 刪除站台管理員；第一個系統管理員不能刪除。 |
+| `slimweb_external_assets_list` | Available | page read | 列出頁面與版型使用的外部 CSS/JavaScript assets。 |
+| `slimweb_external_assets_delete` | Available | page write | 刪除指定外部 asset。 |
 | `slimweb_categories_list` | Available | product read | 列出商品分類樹、leaf 狀態與商品數。 |
-| `slimweb_categories_upsert` | Available | product write | 新增或更新商品分類名稱、父層、排序與 AI 生成 SVG icon。 |
+| `slimweb_categories_upsert` | Available | product write | 新增或更新商品分類；新建時必須同時有 AI 生成 SVG icon 與已提交的 16:9 示意圖。 |
 | `slimweb_categories_delete` | Available | product write | 刪除沒有任何商品的商品分類與其空子分類。 |
 | `slimweb_nav_items_list` | Available | page read | 列出導覽項目樹、類型、URL 與 icon 狀態。 |
 | `slimweb_nav_items_upsert` | Available | page write | 新增或更新導覽項目名稱、父層、類型、URL、排序與 AI 生成 SVG icon。 |
@@ -233,12 +239,19 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 | `slimweb_products_import_commit` | Available | product write | 使用已確認 mapping 將商品寫入 SlimWeb，不在後端呼叫 OpenAI。 |
 | `slimweb_uploads_create` | Available | asset write | 向 Webless 申請短效 signed upload URL，讓 AI client Python sandbox 直接 PUT 圖片 bytes。 |
 | `slimweb_uploads_commit` | Available | asset write | 提交已上傳圖片，讓 Webless 走後台同一套圖片驗證與 resize，回傳 `media_path`。 |
+| `slimweb_media_library_stats` | Available | asset read | 回傳素材總數／容量與未使用素材數量／容量。 |
+| `slimweb_media_library_delete_unused` | Available | asset write | 重新檢查引用後，只刪除當下仍未使用的素材。 |
 | `slimweb_pages_delete` | Available | content write | 刪除自訂頁面內容；固定系統頁不可刪除。 |
 | `slimweb_orders_list` | Available | order read | 用後台同一套搜尋參數查正常訂單；「待處理」請用 `logistics_status=pending`，代表金流完成但物流未完成。超過 20 筆時 AI 應請用戶到後台縮小條件。 |
 | `slimweb_orders_profit_statistics` | Available | order read | 計算已付款且未取消訂單的純利；不帶日期代表全部，問「這個月」時由 AI 帶入當月起訖日期。 |
 | `slimweb_orders_get` | Available | order read | 讀取單一訂單，包含品項、付款、物流、退貨、退款與 `available_actions`。 |
 | `slimweb_orders_create_logistics` | Available | order write | 依 `available_actions` 建立正物流單。 |
 | `slimweb_orders_mark_shipped` | Available | order write | 無物流單時手動標記出貨完成。 |
+| `slimweb_orders_update_status` | Available | order write | 依用戶當次指令明確提供的完整訂單單號更新主狀態。 |
+| `slimweb_orders_update_recipient` | Available | order write | 依用戶當次指令明確提供的完整訂單單號更新收件人。 |
+| `slimweb_orders_delete` | Available | order write | 永久刪除用戶當次指令逐筆提供完整單號的訂單。 |
+| `slimweb_orders_get_waybill_url` | Available | order read | 回傳單筆或查詢所得訂單集合的正物流托運單列印網址。 |
+| `slimweb_returns_get_waybill_url` | Available | order read | 回傳指定退貨訂單集合的逆物流托運單列印網址。 |
 | `slimweb_returns_pending_list` | Available | order read | 列出待處理退貨單，包含可取消、手動完成或建立逆物流的操作。 |
 | `slimweb_returns_create_logistics` | Available | order write | 依 `available_actions` 建立逆物流單。 |
 | `slimweb_returns_cancel` | Available | order write | 取消退貨並回到正常完成訂單。 |
@@ -248,25 +261,37 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 | `slimweb_members_list` | Available | member read | 列出會員與篩選會員資料。 |
 | `slimweb_members_get` | Available | member read | 讀取單一會員摘要、訂單摘要、優惠券與等級。 |
 | `slimweb_members_coupons_issue` | Available | member write + promotion write | 手動發券給指定會員，只接受 active manual coupon template。 |
+| `slimweb_members_coupons_revoke` | Available | member write + promotion write | 撤銷指定會員已發優惠券並保留歷史。 |
+| `slimweb_members_delete` | Available | member write | 刪除指定會員。 |
 | `slimweb_newsletters_create` | Available | member write | 建立電子報資料，支援全部會員或指定名單；不直接寄送，未指定發送時間時預設為當下時間 + 5 分鐘。 |
+| `slimweb_newsletters_list` | Available | member read | 列出既有電子報。 |
+| `slimweb_newsletters_get` | Available | member read | 讀取單一電子報與指定收件者。 |
+| `slimweb_newsletters_update` | Available | member write | 更新既有電子報內容與排程。 |
+| `slimweb_newsletters_delete` | Available | member write | 刪除既有電子報。 |
 | `slimweb_posters_create` | Available | product read | 依商品名稱與繪圖需求產生 AI 商品海報，後端以商品主圖作為 image edit 參考並存成素材庫媒體；商品名稱模糊搜尋若有多筆結果會先返回候選讓使用者確認。 |
 | `slimweb_coupon_templates_list` | Available | promotion read | 列出優惠券模板，含 manual、all_members、order_threshold、birthday、product_bundle。 |
 | `slimweb_coupon_templates_upsert` | Available | promotion write | 新增或更新優惠券模板，套用與後台優惠券表單一致的發放規則。 |
 | `slimweb_discount_codes_list` | Available | promotion read | 列出折扣碼。 |
 | `slimweb_discount_codes_upsert` | Available | promotion write | 新增或更新折扣碼。 |
+| `slimweb_discount_codes_delete` | Available | promotion write | 刪除折扣碼。 |
 | `slimweb_member_tiers_list` | Available | promotion read | 列出會員等級與門檻。 |
 | `slimweb_member_tiers_upsert` | Available | promotion write | 新增或更新會員等級。 |
+| `slimweb_member_tiers_delete` | Available | promotion write | 刪除會員等級。 |
 | `slimweb_threshold_gifts_list` | Available | promotion read | 列出滿額禮。 |
 | `slimweb_threshold_gifts_upsert` | Available | promotion write | 新增或更新滿額禮。 |
+| `slimweb_threshold_gifts_delete` | Available | promotion write | 刪除滿額禮。 |
 | `slimweb_product_add_ons_list` | Available | promotion read | 列出單品加購規則。 |
 | `slimweb_product_add_ons_upsert` | Available | promotion write | 新增或更新單品加購規則。 |
+| `slimweb_product_add_ons_delete` | Available | promotion write | 刪除單品加購規則。 |
 | `slimweb_articles_list` | Available | content read | 列出文章，讓 AI 避免重複建立或挑選要更新的文章。 |
 | `slimweb_articles_check_title` | Available | content read | 檢查文章標題是否撞名。 |
 | `slimweb_articles_get_content` | Available | content read | 讀取單一文章內容與中繼資訊。 |
 | `slimweb_articles_create` | Available | content write + asset write | 新增文章，建立時必須有 16:9 主圖，也可附加內容圖；若 ChatGPT Remote MCP 沒有可用附圖或可直接下載的圖片 URL，先停止並請使用者貼圖。 |
 | `slimweb_articles_update` | Available | content write + asset write | 修改既有文章，固定流程與頁面修改相同；若 ChatGPT Remote MCP 沒有可用附圖或可直接下載的圖片 URL，先停止並請使用者貼圖。 |
+| `slimweb_articles_delete` | Available | content write | 刪除指定文章與其封面素材。 |
 | `slimweb_content_seo_update` | Available | content write | 更新單一頁面或文章的內容層級 SEO / AEO / GEO；不能單獨執行，只能接在建立/編輯頁面或文章流程後。 |
 | `slimweb_customer_service_logs_list` | Available | customer service read | 查詢 AI 客服紀錄。 |
+| `slimweb_customer_service_logs_delete` | Available | customer service write | 刪除指定 AI 客服紀錄。 |
 | `slimweb_customer_service_settings_get` | Available | customer service read | 讀取 AI 客服設定摘要。 |
 | `slimweb_customer_service_settings_update` | Available | customer service write | 更新 AI 客服設定。 |
 | `slimweb_exports_create` | Available | export read | 建立會員、訂單或退貨匯出檔。 |
@@ -1569,6 +1594,15 @@ AI Client 收到或引用的圖片預設是 reference-only。只有當 tool call
 - 除非使用者明確表示不用 SEO，建立後使用 `slimweb_content_seo_update` 搭配 `workflow_context: article_create` 更新內容層級 SEO / AEO / GEO。
 - 建立完成後回傳文章 URL。
 
+### 從 Notion 導入或更新文章
+
+- 使用者以 Notion 頁面標題指定來源；先呼叫 `slimweb_notion_pages_search`。
+- 只有一筆完全符合時才能直接繼續；多筆完全符合或只有部分符合時，列出候選並請使用者確認；沒有結果時請使用者檢查標題及 Notion integration 授權。
+- 以 `notion_page_id` 判斷是否已導入。一般導入要求發現既有文章時，先詢問是否更新；使用者明確要求更新且已導入時可直接繼續。
+- 呼叫 `slimweb_notion_page_get_content` 取得標題與安全 HTML；此工具不直接寫入文章。
+- 優先使用使用者已提供的圖片。需要 AI 畫 16:9 主圖時，可讀取圖片 bytes 並 PUT 的 runtime 直接完成 upload/commit；Remote MCP 無法傳送生成圖片 bytes 時，先畫圖並等待使用者把核准圖片貼回，再匯入並續接。
+- 最後依導入狀態呼叫 `slimweb_articles_create` 或 `slimweb_articles_update`。
+
 ### 編輯文章
 
 - 編輯文章前必須有文章識別資訊；使用者可以提供 `article_id` 或文章標題，兩者都沒有就先詢問使用者。
@@ -1586,9 +1620,9 @@ AI Client 收到或引用的圖片預設是 reference-only。只有當 tool call
 
 ### 刪除文章
 
-- 目前 SlimWeb MCP 沒有文章刪除工具。
-- AI 不可以自行發明 `slimweb_articles_delete`，也不可以用其他工具繞過刪除。
-- 如果使用者要求刪除文章，AI 必須停止任務，並告知使用者目前 MCP 不支援文章刪除。
+- 先以 `slimweb_articles_list` 或 `slimweb_articles_get_content` 取得唯一、穩定的 `article_id`。
+- 標題有多筆相近候選時必須請使用者確認，不可猜測。
+- 使用 `slimweb_articles_delete` 刪除指定文章與後台同樣會刪除的封面素材。
 
 ### 建立版型
 

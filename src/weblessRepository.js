@@ -142,6 +142,17 @@ const BASIC_SETTINGS_COLUMNS = [
   'return_days_allowed',
   'product_category_depth'
 ];
+const CONTACT_SETTINGS_COLUMNS = [
+  'contact_email',
+  'contact_line',
+  'contact_wechat',
+  'contact_telegram',
+  'contact_twitter',
+  'contact_instagram',
+  'contact_facebook_page',
+  'contact_store_address',
+  'contact_phone'
+];
 const MAIL_DELIVERY_SETTINGS_COLUMNS = [
   'notification_new_order_sms_numbers',
   'notification_sms_on_shipped',
@@ -1996,6 +2007,52 @@ export class WeblessAccountRepository {
     };
   }
 
+  async getContactSettings(accountId, args) {
+    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
+    const result = await this.pool.query(
+      `select ${CONTACT_SETTINGS_COLUMNS.join(', ')} from sites where id = $1`,
+      [site.id]
+    );
+
+    return {
+      site,
+      settings: formatContactSettings(result.rows[0] ?? site)
+    };
+  }
+
+  async updateContactSettings(accountId, args) {
+    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
+    const current = (await this.getContactSettings(accountId, { site_id: site.id })).settings;
+    const next = Object.fromEntries(CONTACT_SETTINGS_COLUMNS.map((field) => [
+      field,
+      Object.prototype.hasOwnProperty.call(args, field) ? nullableString(args[field]) : current[field]
+    ]));
+    const result = await this.pool.query(
+      `
+        update sites
+        set contact_email = $1,
+            contact_line = $2,
+            contact_wechat = $3,
+            contact_telegram = $4,
+            contact_twitter = $5,
+            contact_instagram = $6,
+            contact_facebook_page = $7,
+            contact_store_address = $8,
+            contact_phone = $9,
+            updated_at = now()
+        where id = $10
+        returning ${CONTACT_SETTINGS_COLUMNS.join(', ')}
+      `,
+      [...CONTACT_SETTINGS_COLUMNS.map((field) => next[field]), site.id]
+    );
+
+    return {
+      ok: true,
+      site,
+      settings: formatContactSettings(result.rows[0] ?? next)
+    };
+  }
+
   async updateBasicSettings(accountId, args) {
     const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
     const current = await this.findBasicSettingsForSite(site.id);
@@ -2043,6 +2100,100 @@ export class WeblessAccountRepository {
       site,
       settings: formatBasicSettings(result.rows[0] ?? next)
     };
+  }
+
+  async searchNotionPages(accountId, args) {
+    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
+    const title = requireNonEmptyString(args.title, 'title');
+    const payload = await this.postWeblessInternal(site, 'mcp-notion/search', { title }, 'Unable to search Notion pages');
+    return { site, ...payload };
+  }
+
+  async getNotionPageContent(accountId, args) {
+    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
+    const notionPageId = requireNonEmptyString(args.notion_page_id, 'notion_page_id');
+    const payload = await this.postWeblessInternal(site, 'mcp-notion/content', { notion_page_id: notionPageId }, 'Unable to read Notion page content');
+    return { site, ...payload };
+  }
+
+  async updateOrdersStatus(accountId, args) {
+    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
+    const orderNumbers = requireOrderNumbers(args.order_numbers);
+    const status = requireEnum(args.status, ['pending', 'confirmed', 'returning', 'returned'], 'status');
+    const payload = await this.postWeblessInternal(site, 'mcp-orders/status', { order_numbers: orderNumbers, status }, 'Unable to update order status');
+    return { site, ...payload };
+  }
+
+  async updateOrdersRecipient(accountId, args) {
+    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
+    if (!Array.isArray(args.orders) || args.orders.length === 0) {
+      throw codedError('VALIDATION_FAILED', 'orders must be a non-empty array with complete order_no values.');
+    }
+    const orders = args.orders.map((item, index) => ({
+      order_no: requireNonEmptyString(item?.order_no, `orders[${index}].order_no`),
+      recipient_name: requireNonEmptyString(item?.recipient_name, `orders[${index}].recipient_name`)
+    }));
+    requireOrderNumbers(orders.map((item) => item.order_no));
+    const payload = await this.postWeblessInternal(site, 'mcp-orders/recipient', { orders }, 'Unable to update order recipients');
+    return { site, ...payload };
+  }
+
+  async deleteOrders(accountId, args) {
+    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
+    const orderNumbers = requireOrderNumbers(args.order_numbers);
+    const payload = await this.postWeblessInternal(site, 'mcp-orders/delete', { order_numbers: orderNumbers }, 'Unable to delete orders');
+    return { site, ...payload };
+  }
+
+  async getWaybillUrl(accountId, args) {
+    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
+    const orderNumbers = requireOrderNumbers(args.order_numbers);
+    const type = requireEnum(args.type ?? 'forward', ['forward', 'return'], 'type');
+    const payload = await this.postWeblessInternal(site, 'mcp-waybills/url', { order_numbers: orderNumbers, type }, 'Unable to create waybill URL');
+    return {
+      site,
+      ...payload,
+      printing_guidance: {
+        mcp_prints_directly: false,
+        local_control_rule: 'If the AI client can control the local browser or computer, ask the user whether to open and print this URL. Operate the print UI only after the user agrees.'
+      }
+    };
+  }
+
+  async getReturnWaybillUrl(accountId, args) {
+    return this.getWaybillUrl(accountId, { ...args, type: 'return' });
+  }
+
+  async getMediaLibraryStats(accountId, args) {
+    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
+    const payload = await this.requestWeblessInternal(site, 'mcp-media/stats', 'GET', 'Unable to read media library statistics');
+    return { site, ...payload };
+  }
+
+  async deleteUnusedMedia(accountId, args) {
+    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
+    const payload = await this.requestWeblessInternal(site, 'mcp-media/unused', 'DELETE', 'Unable to delete unused media');
+    return { site, ...payload };
+  }
+
+  async postWeblessInternal(site, pathSuffix, body, errorMessage) {
+    const response = await this.fetch(`${this.weblessAppBaseUrl}/sites/${encodeURIComponent(site.slug)}/${pathSuffix}`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-slimweb-mcp-secret': this.requireWeblessMcpSecret()
+      },
+      body: JSON.stringify(body)
+    });
+    return parseJsonResponse(response, errorMessage);
+  }
+
+  async requestWeblessInternal(site, pathSuffix, method, errorMessage) {
+    const response = await this.fetch(`${this.weblessAppBaseUrl}/sites/${encodeURIComponent(site.slug)}/${pathSuffix}`, {
+      method,
+      headers: { 'x-slimweb-mcp-secret': this.requireWeblessMcpSecret() }
+    });
+    return parseJsonResponse(response, errorMessage);
   }
 
   async listAdmins(accountId, args) {
@@ -2695,6 +2846,10 @@ export class WeblessAccountRepository {
     const imagePath = args.image === undefined
       ? existing?.image_path ?? null
       : await this.resolveCommittedImageSource(accountId, site, args.image, 'image', 'page_asset');
+
+    if (!categoryId && !imagePath) {
+      throw codedError('VALIDATION_FAILED', 'A committed 16:9 category image is required when creating a category. Use a user-provided usable image first; otherwise upload generated image bytes or wait for the user to reattach the generated image.');
+    }
 
     if (categoryId && parentId === categoryId) {
       throw codedError('VALIDATION_FAILED', 'A category cannot be its own parent.');
@@ -3698,6 +3853,162 @@ export class WeblessAccountRepository {
         scheduled_at: dateString(newsletter.scheduled_at)
       }
     };
+  }
+
+  async listNewsletters(accountId, args) {
+    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
+    const page = clampPositiveInteger(args.page, 1, 1, 1000);
+    const perPage = clampPositiveInteger(args.per_page, 20, 1, 100);
+    const offset = (page - 1) * perPage;
+    const [countResult, result] = await Promise.all([
+      this.pool.query('select count(*)::int as total from site_newsletters where site_id = $1', [site.id]),
+      this.pool.query(
+        `select id, site_id, title, recipient_scope, html_content, status, scheduled_at, sent_at, created_at, updated_at
+         from site_newsletters where site_id = $1 order by updated_at desc, id desc limit $2 offset $3`,
+        [site.id, perPage, offset]
+      )
+    ]);
+    const total = Number.parseInt(countResult.rows[0]?.total ?? '0', 10);
+    return {
+      site,
+      newsletters: result.rows.map(formatNewsletter),
+      pagination: { page, per_page: perPage, last_page: Math.max(1, Math.ceil(total / perPage)), total }
+    };
+  }
+
+  async getNewsletter(accountId, args) {
+    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
+    const newsletterId = requireInteger(args.newsletter_id, 'newsletter_id');
+    const result = await this.pool.query(
+      `select id, site_id, title, recipient_scope, html_content, status, scheduled_at, sent_at, created_at, updated_at
+       from site_newsletters where site_id = $1 and id = $2 limit 1`,
+      [site.id, newsletterId]
+    );
+    if (result.rows.length === 0) {
+      throw codedError('NOT_FOUND', 'newsletter_id was not found for this site.');
+    }
+    const recipients = await this.pool.query(
+      `select member_id, member_name, member_email from site_newsletter_recipients
+       where site_newsletter_id = $1 order by id asc`,
+      [newsletterId]
+    );
+    return { site, newsletter: formatNewsletter(result.rows[0]), recipients: recipients.rows };
+  }
+
+  async updateNewsletter(accountId, args) {
+    const currentResult = await this.getNewsletter(accountId, args);
+    const current = currentResult.newsletter;
+    const title = args.title === undefined ? current.title : normalizeNewsletterTitle(args.title);
+    const recipientScope = args.recipient_scope === undefined ? current.recipient_scope : normalizeNewsletterRecipientScope(args.recipient_scope);
+    const htmlContent = args.html_content === undefined ? current.html_content : sanitizeEmailHtml(args.html_content);
+    const scheduledAt = args.scheduled_at === undefined ? current.scheduled_at : normalizeNewsletterScheduledAt(args.scheduled_at);
+    const result = await this.pool.query(
+      `update site_newsletters set title = $1, recipient_scope = $2, html_content = $3, scheduled_at = $4, updated_at = now()
+       where site_id = $5 and id = $6
+       returning id, site_id, title, recipient_scope, html_content, status, scheduled_at, sent_at, created_at, updated_at`,
+      [title, recipientScope, htmlContent, scheduledAt, currentResult.site.id, current.id]
+    );
+    return { ok: true, site: currentResult.site, newsletter: formatNewsletter(result.rows[0]), recipients: currentResult.recipients };
+  }
+
+  async deleteNewsletter(accountId, args) {
+    return this.deleteScopedRecord(accountId, args, {
+      table: 'site_newsletters',
+      idField: 'newsletter_id',
+      resultField: 'deleted_newsletter_id'
+    });
+  }
+
+  async deleteDiscountCode(accountId, args) {
+    return this.deleteScopedRecord(accountId, args, {
+      table: 'discount_codes',
+      idField: 'discount_code_id',
+      resultField: 'deleted_discount_code_id'
+    });
+  }
+
+  async deleteMemberTier(accountId, args) {
+    return this.deleteScopedRecord(accountId, args, {
+      table: 'member_tiers',
+      idField: 'member_tier_id',
+      resultField: 'deleted_member_tier_id'
+    });
+  }
+
+  async deleteThresholdGift(accountId, args) {
+    return this.deleteScopedRecord(accountId, args, {
+      table: 'threshold_gifts',
+      idField: 'threshold_gift_id',
+      resultField: 'deleted_threshold_gift_id'
+    });
+  }
+
+  async deleteProductAddOn(accountId, args) {
+    return this.deleteScopedRecord(accountId, args, {
+      table: 'product_add_ons',
+      idField: 'product_add_on_id',
+      resultField: 'deleted_product_add_on_id'
+    });
+  }
+
+  async deleteCustomerServiceLog(accountId, args) {
+    return this.deleteScopedRecord(accountId, args, {
+      table: 'customer_service_logs',
+      idField: 'customer_service_log_id',
+      resultField: 'deleted_customer_service_log_id'
+    });
+  }
+
+  async deleteMember(accountId, args) {
+    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
+    const member = await this.findMemberForSite(site.id, requireInteger(args.member_id, 'member_id'));
+    await this.pool.query('delete from members where site_id = $1 and id = $2', [site.id, member.id]);
+    return { ok: true, site, deleted_member_id: member.id };
+  }
+
+  async revokeMemberCoupon(accountId, args) {
+    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
+    const member = await this.findMemberForSite(site.id, requireInteger(args.member_id, 'member_id'));
+    const memberCouponId = requireInteger(args.member_coupon_id, 'member_coupon_id');
+    const found = await this.pool.query(
+      'select id, site_id, member_id, status from member_coupons where site_id = $1 and member_id = $2 and id = $3 limit 1',
+      [site.id, member.id, memberCouponId]
+    );
+    if (found.rows.length === 0) {
+      throw codedError('NOT_FOUND', 'member_coupon_id was not found for this member and site.');
+    }
+    await this.pool.query(
+      "update member_coupons set status = 'revoked', revoked_at = now(), updated_at = now() where site_id = $1 and member_id = $2 and id = $3",
+      [site.id, member.id, memberCouponId]
+    );
+    return { ok: true, site, member_id: member.id, revoked_member_coupon_id: memberCouponId };
+  }
+
+  async deleteArticle(accountId, args) {
+    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
+    const article = await this.findArticleForSite(site.id, requireInteger(args.article_id, 'article_id'));
+    if (article.cover_path) {
+      await this.storage.delete(article.cover_path);
+    }
+    await this.pool.query('delete from articles where site_id = $1 and id = $2', [site.id, article.id]);
+    return { ok: true, site, deleted_article_id: article.id };
+  }
+
+  async deleteScopedRecord(accountId, args, config) {
+    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
+    const id = requireInteger(args[config.idField], config.idField);
+    const found = await this.pool.query(
+      `select id from ${config.table} where site_id = $1 and id = $2 limit 1`,
+      [site.id, id]
+    );
+
+    if (found.rows.length === 0) {
+      throw codedError('NOT_FOUND', `${config.idField} was not found for this site.`);
+    }
+
+    await this.pool.query(`delete from ${config.table} where site_id = $1 and id = $2`, [site.id, id]);
+
+    return { ok: true, site, [config.resultField]: id };
   }
 
   async createPoster(accountId, args) {
@@ -7985,6 +8296,10 @@ function formatBasicSettings(row) {
   };
 }
 
+function formatContactSettings(row) {
+  return Object.fromEntries(CONTACT_SETTINGS_COLUMNS.map((field) => [field, row?.[field] ?? null]));
+}
+
 function supportedPaymentProviders() {
   return PAYMENT_PROVIDER_DEFINITIONS.map(({ provider, label, requires_hash_iv, online_card_exclusive }) => ({
     provider,
@@ -10781,6 +11096,25 @@ function nullableString(value) {
   const text = String(value).trim();
 
   return text === '' ? null : text;
+}
+
+function requireEnum(value, allowed, field) {
+  const normalized = requireNonEmptyString(value, field);
+  if (!allowed.includes(normalized)) {
+    throw codedError('VALIDATION_FAILED', `${field} must be one of: ${allowed.join(', ')}.`);
+  }
+  return normalized;
+}
+
+function requireOrderNumbers(value) {
+  if (!Array.isArray(value) || value.length === 0 || value.length > 100) {
+    throw codedError('VALIDATION_FAILED', 'order_numbers must contain 1 to 100 complete order numbers supplied in the current user instruction.');
+  }
+  const orderNumbers = value.map((item, index) => requireNonEmptyString(item, `order_numbers[${index}]`));
+  if (new Set(orderNumbers).size !== orderNumbers.length) {
+    throw codedError('VALIDATION_FAILED', 'order_numbers cannot contain duplicates.');
+  }
+  return orderNumbers;
 }
 
 function normalizedOrderListFilters(args, statuses, limit, offset) {
