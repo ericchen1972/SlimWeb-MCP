@@ -676,7 +676,6 @@ function readinessPool() {
     default_country_code: 'TW',
     product_load_mode: 'pagination',
     return_days_allowed: 0,
-    product_category_depth: 3,
     icon_path: 'sites/101/settings/logo-current.webp',
     callback_code: 'swcb_test101',
     seo_title: '',
@@ -728,7 +727,6 @@ function readinessPool() {
             'default_country_code',
             'product_load_mode',
             'return_days_allowed',
-            'product_category_depth',
             'icon_path'
           ].map((column_name) => ({ column_name }))
         };
@@ -2080,6 +2078,7 @@ test('repository includes consumer MCP URL in basic settings', async () => {
   const result = await repository.getBasicSettings(11, { site_id: 101 });
 
   assert.equal(result.settings.client_mcp_url, 'https://client-mcp.example.test/sites/swcb_test101/mcp');
+  assert.equal(Object.hasOwn(result.settings, 'product_category_depth'), false);
   assert.deepEqual(result.settings.logo, {
     media_path: 'sites/101/settings/logo-current.webp',
     public_url: 'https://slimweb.tw/media/sites/101/settings/logo-current.webp',
@@ -2100,7 +2099,6 @@ test('repository replaces the site logo through the Webless basic-settings bridg
     default_country_code: 'TW',
     product_load_mode: 'pagination',
     return_days_allowed: 0,
-    product_category_depth: 3,
     icon_path: 'sites/101/settings/logo-current.webp'
   };
   const pool = {
@@ -2117,7 +2115,6 @@ test('repository replaces the site logo through the Webless basic-settings bridg
             'default_country_code',
             'product_load_mode',
             'return_days_allowed',
-            'product_category_depth',
             'icon_path'
           ].map((column_name) => ({ column_name }))
         };
@@ -2126,6 +2123,7 @@ test('repository replaces the site logo through the Webless basic-settings bridg
         return { rows: [state] };
       }
       if (sql.includes('update sites') && sql.includes('site_status = $1')) {
+        assert.doesNotMatch(sql, /product_category_depth/);
         state.site_status = params[0];
         return { rows: [state] };
       }

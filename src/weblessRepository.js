@@ -134,7 +134,6 @@ const BASIC_SETTINGS_COLUMNS = [
   'default_country_code',
   'product_load_mode',
   'return_days_allowed',
-  'product_category_depth',
   'icon_path'
 ];
 const CONTACT_SETTINGS_COLUMNS = [
@@ -2076,9 +2075,8 @@ export class WeblessAccountRepository {
           default_country_code = $4,
           product_load_mode = $5,
           return_days_allowed = $6,
-          product_category_depth = $7,
           updated_at = now()
-        where id = $8
+        where id = $7
         returning ${BASIC_SETTINGS_COLUMNS.join(', ')}
       `,
       [
@@ -2088,7 +2086,6 @@ export class WeblessAccountRepository {
         next.default_country_code,
         next.product_load_mode,
         next.return_days_allowed,
-        next.product_category_depth,
         site.id
       ]
     );
@@ -8216,8 +8213,7 @@ function normalizeBasicSettings(args, current = {}) {
     website_type: Object.prototype.hasOwnProperty.call(args, 'website_type') ? String(args.website_type ?? '').trim() : (current.website_type ?? 'ecommerce'),
     default_country_code: Object.prototype.hasOwnProperty.call(args, 'default_country_code') ? String(args.default_country_code ?? '').trim().toUpperCase() : (current.default_country_code ?? 'TW'),
     product_load_mode: Object.prototype.hasOwnProperty.call(args, 'product_load_mode') ? String(args.product_load_mode ?? '').trim() : (current.product_load_mode ?? 'pagination'),
-    return_days_allowed: Object.prototype.hasOwnProperty.call(args, 'return_days_allowed') ? requireNonNegativeAmount(args.return_days_allowed, 'return_days_allowed') : Number.parseInt(current.return_days_allowed ?? '0', 10),
-    product_category_depth: Object.prototype.hasOwnProperty.call(args, 'product_category_depth') ? requireInteger(args.product_category_depth, 'product_category_depth') : Number.parseInt(current.product_category_depth ?? '3', 10)
+    return_days_allowed: Object.prototype.hasOwnProperty.call(args, 'return_days_allowed') ? requireNonNegativeAmount(args.return_days_allowed, 'return_days_allowed') : Number.parseInt(current.return_days_allowed ?? '0', 10)
   };
 
   if (!['active', 'maintenance'].includes(normalized.site_status)) {
@@ -8240,10 +8236,6 @@ function normalizeBasicSettings(args, current = {}) {
     throw codedError('VALIDATION_FAILED', 'product_load_mode must be pagination or dynamic.');
   }
 
-  if (![1, 2, 3].includes(normalized.product_category_depth)) {
-    throw codedError('VALIDATION_FAILED', 'product_category_depth must be 1, 2, or 3.');
-  }
-
   return normalized;
 }
 
@@ -8255,7 +8247,6 @@ function formatBasicSettings(row) {
     default_country_code: row.default_country_code ?? 'TW',
     product_load_mode: row.product_load_mode ?? 'pagination',
     return_days_allowed: Number.parseInt(row.return_days_allowed ?? '0', 10),
-    product_category_depth: Number.parseInt(row.product_category_depth ?? '3', 10),
     icon_path: row.icon_path ?? null
   };
 }

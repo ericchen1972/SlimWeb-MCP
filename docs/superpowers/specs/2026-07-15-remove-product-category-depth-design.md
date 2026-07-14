@@ -14,7 +14,7 @@ Remove the obsolete fixed product-category depth setting from SlimWeb-MCP and We
 
 - Basic-settings controllers, props, frontend state, response payloads, copy, and tests no longer carry category depth.
 - Product import always considers every non-empty leaf category for automatic name matching, regardless of the legacy database value.
-- The existing `sites.product_category_depth` column and `Site` model fillable entry remain temporarily for database compatibility, but no active application or MCP behavior reads or writes them.
+- The existing `sites.product_category_depth` database column remains temporarily for migration compatibility, but it is removed from model fillable fields and no active application or MCP behavior reads or writes it.
 
 ## Compatibility
 

@@ -438,6 +438,8 @@ test('MCP tools list includes homepage editing contract tools', async () => {
     assert.equal(toolsByName.get('slimweb_site_theme_mode_update').inputSchema.properties.theme_mode.enum.includes('dark'), true);
     assert.equal(toolsByName.get('slimweb_site_select').inputSchema.required.includes('site_code'), true);
     const logoSchema = toolsByName.get('slimweb_settings_update').inputSchema.properties.logo;
+    assert.equal(toolsByName.get('slimweb_settings_update').inputSchema.properties.product_category_depth, undefined);
+    assert.doesNotMatch(toolsByName.get('slimweb_settings_get').description, /category depth/i);
     assert.equal(logoSchema.type, 'object');
     assert.equal(logoSchema.additionalProperties, false);
     assert.equal(logoSchema.properties.media_path.type, 'string');
@@ -584,6 +586,15 @@ test('README page and article flow docs require ChatGPT users to attach missing 
   assert.match(README_TEXT, /沒有附圖/);
   assert.match(README_TEXT, /終止任務/);
   assert.match(README_TEXT, /先停止並請使用者貼圖/);
+});
+
+test('Sweety website brief is generic and contains no internal tool names', async () => {
+  const brief = await readFile(new URL('../docs/examples/sweety-website-project-brief.md', import.meta.url), 'utf8');
+
+  assert.doesNotMatch(brief, /\bMCP\b|slimweb_/i);
+  assert.doesNotMatch(brief, /商品分類層級|product category depth/i);
+  assert.match(brief, /樹狀分類/);
+  assert.match(brief, /Sweety/);
 });
 
 test('homepage editing tools call repository implementations', async () => {

@@ -1202,7 +1202,7 @@ const MCP_TOOLS = [
   },
   {
     name: 'slimweb_settings_get',
-    description: 'Read basic SlimWeb site settings such as status, website type, default country, product load mode, return days, category depth, the single active site logo, and the consumer MCP URL for shoppers to install or connect supported AI clients.',
+    description: 'Read basic SlimWeb site settings such as status, website type, default country, product load mode, return days, the single active site logo, and the consumer MCP URL for shoppers to install or connect supported AI clients.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1228,7 +1228,6 @@ const MCP_TOOLS = [
         default_country_code: { type: 'string', enum: ['TW', 'JP', 'KR', 'SG', 'HK', 'CN', 'US', 'CA', 'GB', 'AU'] },
         product_load_mode: { type: 'string', enum: ['pagination', 'dynamic'] },
         return_days_allowed: { type: 'integer' },
-        product_category_depth: { type: 'integer', enum: [1, 2, 3] },
         logo: {
           type: 'object',
           description: 'Replace the single active site logo. Use media_path from slimweb_uploads_commit for PNG, JPEG, or WebP; Webless converts raster input to WebP, preserves transparency, proportionally limits height to 96px without upscaling, removes the committed staging object, and does not add the logo to the media library. Or send svg_base64 for a sanitized SVG whose height is proportionally limited to 96px.',
