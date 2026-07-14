@@ -13,6 +13,22 @@ import {
   createStorageAdapter
 } from '../src/weblessRepository.js';
 
+const REMOVED_SITE_INTEGRATION_COLUMNS = [
+  'line_login_channel_id',
+  'line_login_channel_secret',
+  'google_login_client_id',
+  'ai_api_url',
+  'ai_api_key',
+  'ai_model_name',
+  'ai_provider'
+];
+
+function assertNoRemovedSiteIntegrationColumns(sql) {
+  for (const column of REMOVED_SITE_INTEGRATION_COLUMNS) {
+    assert.equal(sql.includes(column), false, `query references removed sites column: ${column}`);
+  }
+}
+
 function fakePool() {
   return {
     async query(sql, params) {
@@ -688,16 +704,10 @@ function readinessPool() {
     facebook_page_id: null,
     facebook_comment_on_products: false,
     facebook_comment_on_posts: false,
-    line_login_channel_id: null,
-    line_login_channel_secret: null,
-    google_login_client_id: null,
     broadcast_id: null,
     use_ai_customer_service: false,
     ai_customer_service_question_limit: 500,
     ai_customer_service_retention_days: 30,
-    ai_provider: 'openai_gpt',
-    ai_api_key: null,
-    ai_model_name: null,
     google_search_api_key: null,
     google_search_engine_id: null,
     notion_token: null,
@@ -706,6 +716,8 @@ function readinessPool() {
 
   return {
     async query(sql, params) {
+      assertNoRemovedSiteIntegrationColumns(sql);
+
       if (sql.includes('from information_schema.columns')) {
         return {
           rows: [
@@ -735,7 +747,7 @@ function readinessPool() {
         return { rows: [site] };
       }
 
-      if (sql.includes('from sites') && sql.includes('where id = $1') && sql.includes('line_login_channel_id')) {
+      if (sql.includes('from sites') && sql.includes('where id = $1') && sql.includes('facebook_app_id')) {
         return { rows: [site] };
       }
 
@@ -792,14 +804,8 @@ function integrationSettingsPool() {
       facebook_page_id: null,
       facebook_comment_on_products: false,
       facebook_comment_on_posts: false,
-      line_login_channel_id: null,
-      line_login_channel_secret: null,
-      google_login_client_id: null,
       broadcast_id: null,
       use_ai_customer_service: false,
-      ai_provider: 'openai_gpt',
-      ai_api_key: null,
-      ai_model_name: null,
       google_search_api_key: null,
       google_search_engine_id: null,
       line_bot_access_token: null,
@@ -812,6 +818,8 @@ function integrationSettingsPool() {
   return {
     state,
     async query(sql, params) {
+      assertNoRemovedSiteIntegrationColumns(sql);
+
       if (sql.includes('from sites') && sql.includes('account_id = $1 and id = $2')) {
         return { rows: [state.site] };
       }
@@ -831,20 +839,14 @@ function integrationSettingsPool() {
           facebook_page_id: params[3],
           facebook_comment_on_products: params[4],
           facebook_comment_on_posts: params[5],
-          line_login_channel_id: params[6],
-          line_login_channel_secret: params[7],
-          google_login_client_id: params[8],
-          broadcast_id: params[9],
-          use_ai_customer_service: params[10],
-          ai_provider: params[11],
-          ai_api_key: params[12],
-          ai_model_name: params[13],
-          google_search_api_key: params[14],
-          google_search_engine_id: params[15],
-          line_bot_access_token: params[16],
-          line_bot_channel_secret: params[17],
-          line_bot_user_id: params[18],
-          notion_token: params[19]
+          broadcast_id: params[6],
+          use_ai_customer_service: params[7],
+          google_search_api_key: params[8],
+          google_search_engine_id: params[9],
+          line_bot_access_token: params[10],
+          line_bot_channel_secret: params[11],
+          line_bot_user_id: params[12],
+          notion_token: params[13]
         };
 
         return { rows: [state.site] };
@@ -2046,6 +2048,7 @@ test('repository reports missing site readiness areas for AI answers', async () 
   assert.ok(report.missing_categories.some((category) => category.key === 'email'));
   assert.ok(report.missing_categories.some((category) => category.key === 'public_information'));
   assert.ok(report.missing_categories.some((category) => category.key === 'promotions'));
+  assert.equal(report.categories.some((category) => category.key === 'third_party_login'), false);
   assert.ok(report.next_actions.some((action) => action.suggested_tools.includes('slimweb_payment_logistics_update')));
 });
 
@@ -2135,9 +2138,6 @@ test('repository updates and reads site integration settings for admin display',
     site_id: 101,
     facebook_app_id: 'fb-app',
     facebook_comment_on_products: true,
-    ai_provider: 'google_gemini',
-    ai_api_key: 'gemini-key',
-    ai_model_name: 'gemini-2.5-pro',
     notion_token: 'notion-secret'
   });
   const read = await repository.getIntegrationSettings(11, { site_id: 101 });
@@ -2145,7 +2145,6 @@ test('repository updates and reads site integration settings for admin display',
   assert.equal(updated.ok, true);
   assert.equal(read.settings.facebook_app_id, 'fb-app');
   assert.equal(read.settings.facebook_comment_on_products, true);
-  assert.equal(read.settings.ai_provider, 'google_gemini');
   assert.equal(read.settings.notion_token, 'notion-secret');
 });
 

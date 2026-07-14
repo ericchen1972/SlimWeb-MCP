@@ -95,14 +95,8 @@ const INTEGRATION_SETTINGS_COLUMNS = [
   'facebook_page_id',
   'facebook_comment_on_products',
   'facebook_comment_on_posts',
-  'line_login_channel_id',
-  'line_login_channel_secret',
-  'google_login_client_id',
   'broadcast_id',
   'use_ai_customer_service',
-  'ai_provider',
-  'ai_api_key',
-  'ai_model_name',
   'google_search_api_key',
   'google_search_engine_id',
   'line_bot_access_token',
@@ -2435,22 +2429,16 @@ export class WeblessAccountRepository {
           facebook_page_id = $4,
           facebook_comment_on_products = $5,
           facebook_comment_on_posts = $6,
-          line_login_channel_id = $7,
-          line_login_channel_secret = $8,
-          google_login_client_id = $9,
-          broadcast_id = $10,
-          use_ai_customer_service = $11,
-          ai_provider = $12,
-          ai_api_key = $13,
-          ai_model_name = $14,
-          google_search_api_key = $15,
-          google_search_engine_id = $16,
-          line_bot_access_token = $17,
-          line_bot_channel_secret = $18,
-          line_bot_user_id = $19,
-          notion_token = $20,
+          broadcast_id = $7,
+          use_ai_customer_service = $8,
+          google_search_api_key = $9,
+          google_search_engine_id = $10,
+          line_bot_access_token = $11,
+          line_bot_channel_secret = $12,
+          line_bot_user_id = $13,
+          notion_token = $14,
           updated_at = now()
-        where id = $21
+        where id = $15
         returning ${INTEGRATION_SETTINGS_COLUMNS.join(', ')}
       `,
       [
@@ -2460,14 +2448,8 @@ export class WeblessAccountRepository {
         next.facebook_page_id,
         next.facebook_comment_on_products,
         next.facebook_comment_on_posts,
-        next.line_login_channel_id,
-        next.line_login_channel_secret,
-        next.google_login_client_id,
         next.broadcast_id,
         next.use_ai_customer_service,
-        next.ai_provider,
-        next.ai_api_key,
-        next.ai_model_name,
         next.google_search_api_key,
         next.google_search_engine_id,
         next.line_bot_access_token,
@@ -7504,7 +7486,6 @@ function buildSiteReadinessReport({
   const categories = [
     paymentLogisticsReadiness(paymentProviders, logisticsProviders),
     catalogReadiness(counts),
-    thirdPartyLoginReadiness(integrationSettings),
     emailReadiness(mailDeliverySettings, mailLayout),
     publicInformationReadiness(seoSettings),
     navigationReadiness(counts),
@@ -7854,28 +7835,6 @@ function catalogReadiness(counts) {
   return readinessCategory('catalog', '商品資料', 'required', issues, counts);
 }
 
-function thirdPartyLoginReadiness(settings) {
-  const issues = [];
-  const hasGoogle = !isBlank(settings.google_login_client_id);
-  const hasLine = !isBlank(settings.line_login_channel_id) && !isBlank(settings.line_login_channel_secret);
-
-  if (!hasGoogle && !hasLine) {
-    issues.push(readinessIssue('third_party_login_missing', '第三方登入未設定', 'Google Client ID 與 LINE Login Channel 資料都尚未填寫。', []));
-  } else {
-    if (!hasGoogle) {
-      issues.push(readinessIssue('google_login_missing', 'Google 登入未設定', '尚未填寫 Google Client ID。', []));
-    }
-    if (!hasLine) {
-      issues.push(readinessIssue('line_login_incomplete', 'LINE 登入未設定完整', 'LINE Channel ID 或 Channel Secret 尚未填寫完整。', []));
-    }
-  }
-
-  return readinessCategory('third_party_login', '第三方登入', 'recommended', issues, {
-    has_google_login: hasGoogle,
-    has_line_login: hasLine
-  });
-}
-
 function emailReadiness(settings, layout) {
   const issues = [];
   const smtpFields = [
@@ -8054,19 +8013,7 @@ function normalizeIntegrationSettings(args, current = {}) {
     }
   }
 
-  normalized.ai_provider = normalizeAiProvider(normalized.ai_provider);
-
   return normalized;
-}
-
-function normalizeAiProvider(value) {
-  const provider = String(value ?? 'openai_gpt').trim();
-
-  if (!['openai_gpt', 'google_gemini'].includes(provider)) {
-    throw codedError('VALIDATION_FAILED', 'ai_provider must be openai_gpt or google_gemini.');
-  }
-
-  return provider;
 }
 
 function formatIntegrationSettings(row) {
@@ -8079,7 +8026,6 @@ function formatIntegrationSettings(row) {
   settings.facebook_comment_on_products = Boolean(row.facebook_comment_on_products);
   settings.facebook_comment_on_posts = Boolean(row.facebook_comment_on_posts);
   settings.use_ai_customer_service = Boolean(row.use_ai_customer_service);
-  settings.ai_provider = settings.ai_provider ?? 'openai_gpt';
 
   return settings;
 }
