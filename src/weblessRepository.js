@@ -134,7 +134,8 @@ const BASIC_SETTINGS_COLUMNS = [
   'default_country_code',
   'product_load_mode',
   'return_days_allowed',
-  'product_category_depth'
+  'product_category_depth',
+  'icon_path'
 ];
 const CONTACT_SETTINGS_COLUMNS = [
   'contact_email',
@@ -1995,7 +1996,7 @@ export class WeblessAccountRepository {
     return {
       site,
       settings: {
-        ...settings,
+        ...formatPublicBasicSettings(settings, this.publicSiteBaseUrl),
         client_mcp_url: clientMcpUrlForSite(site, this.clientMcpBaseUrl)
       }
     };
@@ -2051,6 +2052,9 @@ export class WeblessAccountRepository {
     const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
     const current = await this.findBasicSettingsForSite(site.id);
     const next = normalizeBasicSettings(args, current);
+    const logoInput = Object.prototype.hasOwnProperty.call(args, 'logo')
+      ? normalizeBasicSettingsLogo(args.logo, site.id)
+      : null;
     const mailDeliverySettings = next.member_verification === 'email'
       ? await this.findMailDeliverySettingsForSite(site.id)
       : null;
@@ -2089,10 +2093,23 @@ export class WeblessAccountRepository {
       ]
     );
 
+    const logoPayload = logoInput
+      ? await this.postWeblessInternal(
+        site,
+        'mcp-basic-settings/logo',
+        { logo: logoInput },
+        'Unable to replace the site logo'
+      )
+      : null;
+
     return {
       ok: true,
       site,
-      settings: formatBasicSettings(result.rows[0] ?? next)
+      settings: formatPublicBasicSettings(
+        result.rows[0] ?? next,
+        this.publicSiteBaseUrl,
+        logoPayload?.logo
+      )
     };
   }
 
@@ -8238,7 +8255,50 @@ function formatBasicSettings(row) {
     default_country_code: row.default_country_code ?? 'TW',
     product_load_mode: row.product_load_mode ?? 'pagination',
     return_days_allowed: Number.parseInt(row.return_days_allowed ?? '0', 10),
-    product_category_depth: Number.parseInt(row.product_category_depth ?? '3', 10)
+    product_category_depth: Number.parseInt(row.product_category_depth ?? '3', 10),
+    icon_path: row.icon_path ?? null
+  };
+}
+
+function normalizeBasicSettingsLogo(value, siteId) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw codedError('VALIDATION_FAILED', 'logo must contain exactly one of media_path or svg_base64.');
+  }
+
+  const hasMediaPath = typeof value.media_path === 'string' && value.media_path.trim() !== '';
+  const hasSvgBase64 = typeof value.svg_base64 === 'string' && value.svg_base64.trim() !== '';
+  if (hasMediaPath === hasSvgBase64) {
+    throw codedError('VALIDATION_FAILED', 'logo must contain exactly one of media_path or svg_base64.');
+  }
+
+  if (hasMediaPath) {
+    const mediaPath = normalizeCommittedMediaPath({ media_path: value.media_path }, siteId, 'logo');
+    const committedPrefix = `sites/${siteId}/mcp-uploads/committed/`;
+    if (!mediaPath.startsWith(committedPrefix)) {
+      throw codedError('VALIDATION_FAILED', 'logo.media_path must be returned by slimweb_uploads_commit for the selected site.');
+    }
+    return { media_path: mediaPath };
+  }
+
+  return { svg_base64: value.svg_base64.trim() };
+}
+
+function formatPublicBasicSettings(row, publicSiteBaseUrl, replacementLogo) {
+  const formatted = formatBasicSettings(row);
+  const { icon_path: iconPath, ...settings } = formatted;
+  const logo = replacementLogo ?? formatSiteLogo(iconPath, publicSiteBaseUrl);
+  return { ...settings, logo };
+}
+
+function formatSiteLogo(iconPath, publicSiteBaseUrl) {
+  if (!iconPath) {
+    return null;
+  }
+
+  return {
+    media_path: iconPath,
+    public_url: mediaUrlFor(publicSiteBaseUrl, iconPath),
+    mime_type: mimeTypeFromImageFilename(iconPath)
   };
 }
 

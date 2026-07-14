@@ -437,6 +437,13 @@ test('MCP tools list includes homepage editing contract tools', async () => {
     assert.equal(toolsByName.get('slimweb_themes_create_from_default').inputSchema.properties.theme_mode, undefined);
     assert.equal(toolsByName.get('slimweb_site_theme_mode_update').inputSchema.properties.theme_mode.enum.includes('dark'), true);
     assert.equal(toolsByName.get('slimweb_site_select').inputSchema.required.includes('site_code'), true);
+    const logoSchema = toolsByName.get('slimweb_settings_update').inputSchema.properties.logo;
+    assert.equal(logoSchema.type, 'object');
+    assert.equal(logoSchema.additionalProperties, false);
+    assert.equal(logoSchema.properties.media_path.type, 'string');
+    assert.equal(logoSchema.properties.svg_base64.type, 'string');
+    assert.match(logoSchema.description, /WebP/);
+    assert.match(logoSchema.description, /96/);
     assert.equal(toolsByName.get('slimweb_site_select').inputSchema.properties.site_id, undefined);
     assert.equal(toolsByName.get('slimweb_design_context_get').inputSchema.required.includes('site_code'), true);
     assert.equal(toolsByName.get('slimweb_design_context_get').inputSchema.properties.site_id, undefined);
@@ -850,6 +857,11 @@ test('homepage editing tools call repository implementations', async () => {
         site: { id: args.site_id },
         settings: {
           site_status: 'active',
+          logo: {
+            media_path: 'sites/101/settings/logo-current.webp',
+            public_url: 'https://slimweb.tw/media/sites/101/settings/logo-current.webp',
+            mime_type: 'image/webp'
+          },
           client_mcp_url: 'https://client-mcp.example.test/sites/swcb_test101/mcp'
         }
       };
@@ -867,7 +879,20 @@ test('homepage editing tools call repository implementations', async () => {
     },
     updateBasicSettings: async (accountId, args) => {
       calls.push(['settings_update', accountId, args]);
-      return { ok: true, site: { id: args.site_id }, settings: { site_status: args.site_status } };
+      return {
+        ok: true,
+        site: { id: args.site_id },
+        settings: {
+          site_status: args.site_status,
+          logo: args.logo ? {
+            media_path: 'sites/101/settings/logo-new.webp',
+            public_url: 'https://slimweb.tw/media/sites/101/settings/logo-new.webp',
+            mime_type: 'image/webp',
+            width: 192,
+            height: 96
+          } : null
+        }
+      };
     },
     listAdmins: async (accountId, args) => {
       calls.push(['admins_list', accountId, args]);
@@ -1284,8 +1309,15 @@ test('homepage editing tools call repository implementations', async () => {
     assert.equal((await callTool(51, 'slimweb_dashboard_summary', { site_id: 101 })).result.structuredContent.stats.totalProducts, 1);
     const settings = (await callTool(52, 'slimweb_settings_get', { site_id: 101 })).result.structuredContent.settings;
     assert.equal(settings.site_status, 'active');
+    assert.equal(settings.logo.mime_type, 'image/webp');
     assert.equal(settings.client_mcp_url, 'https://client-mcp.example.test/sites/swcb_test101/mcp');
-    assert.equal((await callTool(53, 'slimweb_settings_update', { site_id: 101, site_status: 'maintenance' })).result.structuredContent.settings.site_status, 'maintenance');
+    const updatedSettings = (await callTool(53, 'slimweb_settings_update', {
+      site_id: 101,
+      site_status: 'maintenance',
+      logo: { media_path: 'sites/101/mcp-uploads/committed/sweety-logo.png' }
+    })).result.structuredContent.settings;
+    assert.equal(updatedSettings.site_status, 'maintenance');
+    assert.equal(updatedSettings.logo.height, 96);
     assert.equal((await callTool(54, 'slimweb_admins_list', { site_id: 101 })).result.structuredContent.admins[0].canDelete, false);
     assert.equal((await callTool(55, 'slimweb_admins_upsert', { site_id: 101, google_email: 'staff@example.com', permissions: ['product_management'] })).result.structuredContent.admin.google_email, 'staff@example.com');
     assert.equal((await callTool(56, 'slimweb_admins_delete', { site_id: 101, admin_id: 2 })).result.structuredContent.deleted_admin_id, 2);

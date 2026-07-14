@@ -677,6 +677,7 @@ function readinessPool() {
     product_load_mode: 'pagination',
     return_days_allowed: 0,
     product_category_depth: 3,
+    icon_path: 'sites/101/settings/logo-current.webp',
     callback_code: 'swcb_test101',
     seo_title: '',
     seo_description: '',
@@ -727,7 +728,8 @@ function readinessPool() {
             'default_country_code',
             'product_load_mode',
             'return_days_allowed',
-            'product_category_depth'
+            'product_category_depth',
+            'icon_path'
           ].map((column_name) => ({ column_name }))
         };
       }
@@ -2078,6 +2080,105 @@ test('repository includes consumer MCP URL in basic settings', async () => {
   const result = await repository.getBasicSettings(11, { site_id: 101 });
 
   assert.equal(result.settings.client_mcp_url, 'https://client-mcp.example.test/sites/swcb_test101/mcp');
+  assert.deepEqual(result.settings.logo, {
+    media_path: 'sites/101/settings/logo-current.webp',
+    public_url: 'https://slimweb.tw/media/sites/101/settings/logo-current.webp',
+    mime_type: 'image/webp'
+  });
+});
+
+test('repository replaces the site logo through the Webless basic-settings bridge', async () => {
+  const state = {
+    id: 101,
+    slug: 'site-1',
+    name: '測試網站',
+    domain: '',
+    callback_code: 'swcb_test101',
+    site_status: 'active',
+    member_verification: 'none',
+    website_type: 'ecommerce',
+    default_country_code: 'TW',
+    product_load_mode: 'pagination',
+    return_days_allowed: 0,
+    product_category_depth: 3,
+    icon_path: 'sites/101/settings/logo-current.webp'
+  };
+  const pool = {
+    async query(sql, params) {
+      if (sql.includes('account_id = $1 and id = $2')) {
+        return { rows: [state] };
+      }
+      if (sql.includes('from information_schema.columns')) {
+        return {
+          rows: [
+            'site_status',
+            'member_verification',
+            'website_type',
+            'default_country_code',
+            'product_load_mode',
+            'return_days_allowed',
+            'product_category_depth',
+            'icon_path'
+          ].map((column_name) => ({ column_name }))
+        };
+      }
+      if (sql.includes('select ') && sql.includes('from sites') && sql.includes('where id = $1')) {
+        return { rows: [state] };
+      }
+      if (sql.includes('update sites') && sql.includes('site_status = $1')) {
+        state.site_status = params[0];
+        return { rows: [state] };
+      }
+      throw new Error(`Unexpected query: ${sql}`);
+    }
+  };
+  const requests = [];
+  const fetchImpl = async (url, options) => {
+    requests.push({ url, options });
+    return new Response(JSON.stringify({
+      ok: true,
+      logo: {
+        media_path: 'sites/101/settings/logo-new.webp',
+        public_url: 'https://slimweb.tw/media/sites/101/settings/logo-new.webp',
+        mime_type: 'image/webp',
+        width: 192,
+        height: 96
+      }
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+  const repository = new WeblessAccountRepository(pool, {
+    fetchImpl,
+    weblessAppBaseUrl: 'https://slimweb.tw',
+    weblessMcpSecret: 'shared-secret'
+  });
+
+  const result = await repository.updateBasicSettings(11, {
+    site_id: 101,
+    site_status: 'maintenance',
+    logo: { media_path: 'sites/101/mcp-uploads/committed/sweety-logo.png' }
+  });
+
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].url, 'https://slimweb.tw/sites/site-1/mcp-basic-settings/logo');
+  assert.equal(requests[0].options.headers['x-slimweb-mcp-secret'], 'shared-secret');
+  assert.deepEqual(JSON.parse(requests[0].options.body), {
+    logo: { media_path: 'sites/101/mcp-uploads/committed/sweety-logo.png' }
+  });
+  assert.equal(result.settings.site_status, 'maintenance');
+  assert.equal(result.settings.logo.media_path, 'sites/101/settings/logo-new.webp');
+  assert.equal(result.settings.logo.height, 96);
+
+  await assert.rejects(
+    () => repository.updateBasicSettings(11, {
+      site_id: 101,
+      logo: {
+        media_path: 'sites/101/mcp-uploads/committed/sweety-logo.png',
+        svg_base64: Buffer.from('<svg viewBox="0 0 2 1"/>').toString('base64')
+      }
+    }),
+    /exactly one/
+  );
+  assert.equal(requests.length, 1);
 });
 
 test('repository reads basic settings when older sites table lacks newer columns', async () => {

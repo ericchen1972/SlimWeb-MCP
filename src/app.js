@@ -20,6 +20,7 @@ const MCP_SERVER_GUIDELINES = [
 'If SlimWeb.slimweb_sites_list returns more than one site, stop the task and list the available site names for the user to choose from.',
 'Never use a site_code that does not appear in the SlimWeb.slimweb_sites_list result. Do not ask the user for numeric site_id values.',
 'Use slimweb_settings_get when the user needs basic site state or the consumer MCP URL. The client_mcp_url is the site-specific MCP endpoint for shoppers and members; explain that it lets customers connect supported AI clients to the storefront for product, order, member, and support workflows, and encourage merchants to place this URL or an install button on the homepage where consumers can find it.',
+'Site logo rule: manage the single active site logo through slimweb_settings_update.logo. For raster input, first obtain a committed site media_path; Webless converts it to WebP, proportionally limits height to 96 pixels without upscaling, preserves transparency, removes the staging upload, and replaces the prior logo outside the media library. SVG may be supplied as svg_base64 and is sanitized and proportionally limited to 96 pixels high.',
 'Distinguish page and article from user intent only; do not infer from history.',
 'Treat themes as the base styling layer for every page, including the homepage.',
 'Image rules: if a task needs image assets, obtain usable image URLs or media paths before creating or editing pages or articles. Publicly reachable image URLs may be used directly. Clients that can read local bytes and upload must use slimweb_uploads_create plus slimweb_uploads_commit. Clients that cannot upload bytes but have a ChatGPT conversation image attachment must use slimweb_images_import_chatgpt_attachment. If the client cannot upload and the user has not provided an attachment or image URL, stop and ask the user to paste or upload the image. When generating images, use the current design context colors and direction. If an image is AI-generated in a client that cannot upload it, stop and ask the user to paste the generated image back into the conversation.',
@@ -1201,7 +1202,7 @@ const MCP_TOOLS = [
   },
   {
     name: 'slimweb_settings_get',
-    description: 'Read basic SlimWeb site settings such as status, website type, default country, product load mode, return days, category depth, and the consumer MCP URL for shoppers to install or connect supported AI clients.',
+    description: 'Read basic SlimWeb site settings such as status, website type, default country, product load mode, return days, category depth, the single active site logo, and the consumer MCP URL for shoppers to install or connect supported AI clients.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1212,7 +1213,7 @@ const MCP_TOOLS = [
   },
   {
     name: 'slimweb_settings_update',
-    description: 'Update basic SlimWeb site settings. Only send fields the user explicitly provided or confirmed.',
+    description: 'Update basic SlimWeb site settings, including the single active site logo. Only send fields the user explicitly provided or confirmed.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1227,7 +1228,20 @@ const MCP_TOOLS = [
         default_country_code: { type: 'string', enum: ['TW', 'JP', 'KR', 'SG', 'HK', 'CN', 'US', 'CA', 'GB', 'AU'] },
         product_load_mode: { type: 'string', enum: ['pagination', 'dynamic'] },
         return_days_allowed: { type: 'integer' },
-        product_category_depth: { type: 'integer', enum: [1, 2, 3] }
+        product_category_depth: { type: 'integer', enum: [1, 2, 3] },
+        logo: {
+          type: 'object',
+          description: 'Replace the single active site logo. Use media_path from slimweb_uploads_commit for PNG, JPEG, or WebP; Webless converts raster input to WebP, preserves transparency, proportionally limits height to 96px without upscaling, removes the committed staging object, and does not add the logo to the media library. Or send svg_base64 for a sanitized SVG whose height is proportionally limited to 96px.',
+          properties: {
+            media_path: { type: 'string', description: 'Site-owned committed PNG, JPEG, or WebP media_path.' },
+            svg_base64: { type: 'string', description: 'Base64-encoded SVG markup. Do not include a data URL prefix.' }
+          },
+          oneOf: [
+            { required: ['media_path'], not: { required: ['svg_base64'] } },
+            { required: ['svg_base64'], not: { required: ['media_path'] } }
+          ],
+          additionalProperties: false
+        }
       },
       required: ['site_id']
     }
