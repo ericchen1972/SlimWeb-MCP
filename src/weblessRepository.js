@@ -6788,7 +6788,7 @@ export class WeblessAccountRepository {
   }
 
   customPagePublicUrlFor(site, pageKey) {
-    return `${this.publicSiteBaseUrl}/sites/${encodeURIComponent(site.slug)}/default-preview/pages/${encodeURIComponent(pageKey)}`;
+    return merchantPublicUrlFor(site, this.publicSiteBaseUrl, `pages/${encodeURIComponent(pageKey)}`);
   }
 
 }
@@ -9581,7 +9581,18 @@ function productUrlFor(product, site, publicSiteBaseUrl) {
     return null;
   }
 
-  return `${publicSiteBaseUrl}/sites/${encodeURIComponent(siteCode)}/product/${encodeURIComponent(product.id)}`;
+  return merchantPublicUrlFor({ ...site, callback_code: siteCode }, publicSiteBaseUrl, `product/${encodeURIComponent(product.id)}`);
+}
+
+function merchantPublicUrlFor(site, publicSiteBaseUrl, path = '') {
+  const domain = String(site?.domain ?? '').trim().toLowerCase().replace(/\.$/, '');
+  const suffix = String(path ?? '').replace(/^\/+/, '');
+  if (domain) {
+    return `https://${domain}${suffix ? `/${suffix}` : ''}`;
+  }
+
+  const siteCode = site?.callback_code ?? site?.site_code ?? site?.slug ?? `site-${site?.id}`;
+  return `${String(publicSiteBaseUrl).replace(/\/+$/, '')}/sites/${encodeURIComponent(siteCode)}${suffix ? `/${suffix}` : ''}`;
 }
 
 function cartActionForProduct(product, options = {}) {
@@ -10514,7 +10525,7 @@ function formatArticle(article, site, publicSiteBaseUrl, includeContent) {
     ...(includeContent ? { content: article.content ?? '' } : {}),
     cover_path: article.cover_path ?? null,
     cover_url: article.cover_path ? mediaUrlFor(publicSiteBaseUrl, article.cover_path) : null,
-    article_url: `${publicSiteBaseUrl}/sites/${encodeURIComponent(site.slug)}/articles/${article.id}`,
+    article_url: merchantPublicUrlFor(site, publicSiteBaseUrl, `article/${encodeURIComponent(article.id)}`),
     created_at: article.created_at ?? null,
     updated_at: article.updated_at ?? null
   };

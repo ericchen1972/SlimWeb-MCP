@@ -3404,6 +3404,45 @@ test('repository rejects unrelated content canonical hosts before writing metada
   );
 });
 
+test('repository writes article SEO to the documented storage contract', async () => {
+  const storageRoot = await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-'));
+  const basePool = fakePool();
+  const repository = new WeblessAccountRepository({
+    async query(sql, params) {
+      if (sql.includes('from articles') && sql.includes('where site_id = $1 and id = $2')) {
+        assert.deepEqual(params, [101, 88]);
+        return { rows: [{
+          id: 88,
+          site_id: 101,
+          title: 'SEO Article',
+          content: '<p>Article</p>',
+          cover_path: null,
+          created_at: new Date('2026-08-01T00:00:00Z'),
+          updated_at: new Date('2026-08-02T00:00:00Z')
+        }] };
+      }
+      return basePool.query(sql, params);
+    }
+  }, {
+    storageRoot,
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+
+  const updated = await repository.updateContentSeo(11, {
+    site_id: 101,
+    content_type: 'article',
+    article_id: 88,
+    workflow_context: 'article_update',
+    seo_title: 'SEO Article Title'
+  });
+  const metadata = JSON.parse(await readFile(path.join(storageRoot, updated.metadata_path), 'utf8'));
+
+  assert.equal(updated.metadata_path, 'sites/101/articles/88/seo.json');
+  assert.equal(metadata.article_id, 88);
+  assert.equal(metadata.seo.seo_title, 'SEO Article Title');
+  assert.match(metadata.seo_updated_at, /^\d{4}-\d{2}-\d{2}T/);
+});
+
 test('repository rejects standalone content SEO updates without workflow context', async () => {
   const repository = new WeblessAccountRepository(fakePool(), {
     storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
@@ -3622,7 +3661,7 @@ test('repository creates and searches custom pages with real public urls', async
 
   assert.equal(created.storage_path, 'sites/101/templates/default/pages/japan-travel-codex-test/content.blade.php');
   assert.equal(created.metadata_path, 'sites/101/templates/default/pages/japan-travel-codex-test/.page.json');
-  assert.equal(created.public_url, 'https://slimweb.tw/sites/site-1/default-preview/pages/japan-travel-codex-test');
+  assert.equal(created.public_url, 'https://slimweb.tw/sites/site-1/pages/japan-travel-codex-test');
   await assert.rejects(
     readFile(path.join(storageRoot, 'sites/101/templates/schemes/22/pages/japan-travel-codex-test/body.blade.php'), 'utf8'),
     /ENOENT/
@@ -3633,7 +3672,7 @@ test('repository creates and searches custom pages with real public urls', async
 
   assert.equal(page?.title, 'Japan Travel Codex Test');
   assert.equal(page?.is_fixed, false);
-  assert.equal(page?.public_url, 'https://slimweb.tw/sites/site-1/default-preview/pages/japan-travel-codex-test');
+  assert.equal(page?.public_url, 'https://slimweb.tw/sites/site-1/pages/japan-travel-codex-test');
   assert.equal(page?.can_edit, true);
   assert.equal(page?.can_delete, true);
   assert.ok(pages.pages.length >= 1);
