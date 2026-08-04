@@ -598,7 +598,9 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 用途: 更新站台層級 SEO、OG、llms.txt、AEO、GEO 與 GA4 流量追蹤 Measurement ID 欄位。適合「我是賣服飾的，幫我做好 SEO / AEO / GEO」或「幫我設定 Google Analytics」這類需求，由 AI 產生或填入結構化設定後寫入同一份後台資料。
 - Input: `site_code` plus any subset of SEO/AEO/GEO fields; for Google Analytics, fill only `google_analytics_measurement_id` such as `G-ABC1234567`, not full script tags
 - Output: updated settings、site summary
-- Side effects: updates `sites` SEO/AEO/GEO and GA4 Measurement ID columns that SlimWeb admin displays
+- Side effects: updates `sites` SEO/AEO/GEO and GA4 Measurement ID columns; published fields feed the shared storefront SEO head and merchant sitemap/robots/llms output
+- Canonical rule: `canonical_url` must be HTTP(S) and use either the exact configured custom domain or the current site's `/sites/{site_code}` path on `WEBLESS_PUBLIC_BASE_URL`; query and fragment are removed. Unrelated hosts are rejected.
+- Publishing rule: `seo_keywords` remains in the management contract but is not emitted as a meta keywords tag. AEO/GEO text is factual context for llms/structured output, not a set of invented meta tags.
 - 是否需要 confirmation: yes when changing robots policy to noindex or replacing existing customer-facing metadata
 - 錯誤情境: validation failed、site not found、permission denied、conflict
 - Audit fields: request ID、user ID、account ID、site ID、changed fields
@@ -1348,6 +1350,12 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 是否需要 confirmation: no when it is part of a confirmed create/edit content workflow
 - 錯誤情境: missing workflow_context、workflow/content type mismatch、page not found、article not found、validation failed、permission denied
 - Rule: 不可用 `slimweb_content_seo_update` 處理全站 SEO；全站 SEO 必須使用 `slimweb_seo_settings_update`。
+- Storage contract:
+  - Page: `sites/{site_id}/templates/default/pages/{page_key}/.page.json`
+  - Article: `sites/{site_id}/articles/{article_id}/seo.json`
+  - Both store the complete nested `seo` object plus `seo_updated_at`.
+- Publication contract: content values override site settings field by field. Content `robots_policy` can narrow a public page, but it cannot override platform-forced `noindex` routes or preview/expired/private states.
+- URL rule: content `canonical_url` must stay on the authoritative storefront host and platform site prefix; query/fragment are removed. `og_image_url` must be HTTP(S).
 
 ### `slimweb_customer_service_logs_list`
 
@@ -1556,6 +1564,10 @@ AI Client 收到或引用的圖片預設是 reference-only。只有當 tool call
 - 頁面建立後使用 `workflow_context: page_create`；頁面編輯後使用 `workflow_context: page_update`。
 - 文章建立後使用 `workflow_context: article_create`；文章編輯後使用 `workflow_context: article_update`。
 - 不可使用 `slimweb_seo_settings_update` 來處理單一頁面或單一文章的 SEO，因為那是全站設定。
+- 頁面 metadata 正式路徑是 `sites/{site_id}/templates/default/pages/{page_key}/.page.json`；文章是 `sites/{site_id}/articles/{article_id}/seo.json`。
+- `robots_policy` 的繼承順序是平台強制狀態、內容公開狀態、內容設定、全站設定。登入、會員、購物車、結帳、付款、AI、callback、API、預覽、過期與未知 route 不可被改成可索引。
+- canonical 只能使用商家的自訂網域或該站的 SlimWeb platform path；OG 圖片只能使用 HTTP(S)。
+- 寫入完成後若需要驗證發布結果，應讀取公開 storefront HTML 或對應的 sitemap/robots/llms 文件，而不是只把工具成功回應當成已發布證據。
 
 ### 建立頁面
 
