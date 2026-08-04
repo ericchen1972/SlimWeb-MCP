@@ -1008,7 +1008,7 @@ export class WeblessAccountRepository {
   async updateSeoSettings(accountId, args) {
     const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
     const current = await this.findSeoSettingsForSite(site.id);
-    const next = normalizeSeoSettings(args, current);
+    const next = normalizeSeoSettings(args, current, site, this.publicSiteBaseUrl);
 
     const result = await this.pool.query(
       `
@@ -5017,7 +5017,7 @@ export class WeblessAccountRepository {
     const workflowContext = requireContentSeoWorkflowContext(args.workflow_context);
     const contentType = requireContentSeoType(args.content_type);
     validateContentSeoWorkflow(contentType, workflowContext);
-    const seo = normalizeContentSeoPayload(args);
+    const seo = normalizeContentSeoPayload(args, site, this.publicSiteBaseUrl);
 
     if (contentType === 'page') {
       const pageName = requireNonEmptyString(args.page_name ?? args.page_key, 'page_name');
@@ -7381,7 +7381,7 @@ function safeGeneratedPageKey(value, fallbackPrefix = 'page') {
   return /[a-z]/.test(candidate) ? candidate : fallbackPrefix;
 }
 
-function normalizeSeoSettings(args, current = {}) {
+function normalizeSeoSettings(args, current = {}, site = {}, publicSiteBaseUrl = 'https://slimweb.tw') {
   const normalized = {};
 
   for (const column of SITE_SEO_SETTINGS_COLUMNS) {
@@ -7394,11 +7394,17 @@ function normalizeSeoSettings(args, current = {}) {
   normalized.google_analytics_measurement_id = normalizeGoogleAnalyticsMeasurementId(
     normalized.google_analytics_measurement_id
   );
+  if (Object.prototype.hasOwnProperty.call(args, 'canonical_url')) {
+    normalized.canonical_url = normalizeMerchantCanonicalUrl(normalized.canonical_url, site, publicSiteBaseUrl, false);
+  }
+  if (Object.prototype.hasOwnProperty.call(args, 'og_image_url')) {
+    normalized.og_image_url = normalizeHttpUrl(normalized.og_image_url, 'og_image_url');
+  }
 
   return normalized;
 }
 
-function normalizeContentSeoPayload(args) {
+function normalizeContentSeoPayload(args, site = {}, publicSiteBaseUrl = 'https://slimweb.tw') {
   const normalized = {};
 
   for (const column of SEO_SETTINGS_COLUMNS) {
@@ -7408,8 +7414,69 @@ function normalizeContentSeoPayload(args) {
   }
 
   normalized.robots_policy = normalizeRobotsPolicy(normalized.robots_policy);
+  normalized.canonical_url = normalizeMerchantCanonicalUrl(normalized.canonical_url, site, publicSiteBaseUrl, true);
+  normalized.og_image_url = normalizeHttpUrl(normalized.og_image_url, 'og_image_url');
 
   return normalized;
+}
+
+function normalizeMerchantCanonicalUrl(value, site, publicSiteBaseUrl, preservePath) {
+  const canonical = nullableString(value);
+  if (canonical === null) {
+    return null;
+  }
+
+  let candidate;
+  let publicBase;
+  try {
+    candidate = new URL(canonical);
+    publicBase = new URL(publicSiteBaseUrl);
+  } catch {
+    throw codedError('VALIDATION_FAILED', 'canonical_url must be a valid HTTP or HTTPS URL.');
+  }
+  if (!['http:', 'https:'].includes(candidate.protocol) || candidate.username || candidate.password) {
+    throw codedError('VALIDATION_FAILED', 'canonical_url must be a valid HTTP or HTTPS URL.');
+  }
+
+  const configuredDomain = String(site?.domain ?? '').trim().toLowerCase().replace(/\.$/, '');
+  if (configuredDomain) {
+    if (candidate.hostname.toLowerCase().replace(/\.$/, '') !== configuredDomain || candidate.port) {
+      throw codedError('VALIDATION_FAILED', 'canonical_url must use this storefront public host.');
+    }
+    return preservePath
+      ? `${candidate.protocol}//${configuredDomain}${normalizedUrlPath(candidate.pathname)}`
+      : `${candidate.protocol}//${configuredDomain}`;
+  }
+
+  const siteCode = String(site?.callback_code ?? site?.slug ?? '').trim();
+  const sitePrefix = `/sites/${encodeURIComponent(siteCode)}`;
+  const path = normalizedUrlPath(candidate.pathname);
+  if (candidate.host.toLowerCase() !== publicBase.host.toLowerCase() || (path !== sitePrefix && !path.startsWith(`${sitePrefix}/`))) {
+    throw codedError('VALIDATION_FAILED', 'canonical_url must use this storefront public host.');
+  }
+
+  return `${publicBase.protocol}//${publicBase.host}${preservePath ? path : sitePrefix}`;
+}
+
+function normalizeHttpUrl(value, fieldName) {
+  const text = nullableString(value);
+  if (text === null) {
+    return null;
+  }
+  try {
+    const url = new URL(text);
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
+      throw new Error('unsafe protocol');
+    }
+    return url.toString();
+  } catch {
+    throw codedError('VALIDATION_FAILED', `${fieldName} must be a valid HTTP or HTTPS URL.`);
+  }
+}
+
+function normalizedUrlPath(value) {
+  const path = `/${String(value ?? '').replace(/^\/+/, '')}`;
+  return path.length > 1 ? path.replace(/\/+$/, '') : path;
 }
 
 function normalizeGoogleAnalyticsMeasurementId(value) {

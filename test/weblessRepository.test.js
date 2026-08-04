@@ -589,6 +589,7 @@ function seoSettingsPool() {
       slug: 'site-1',
       name: '測試網站',
       domain: '',
+      callback_code: 'swcb_test101',
       site_status: 'active',
       seo_title: '',
       seo_description: '',
@@ -2034,6 +2035,47 @@ test('repository updates and reads site SEO and AEO settings for admin display',
   assert.equal(read.settings.geo_comparison_positioning, '適合尋找上班與日常都能穿搭的女性客群。');
 });
 
+test('repository normalizes canonical URLs to the authoritative merchant host', async () => {
+  const platformPool = seoSettingsPool();
+  const platformRepository = new WeblessAccountRepository(platformPool, {
+    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+  const platform = await platformRepository.updateSeoSettings(11, {
+    site_id: 101,
+    canonical_url: 'https://slimweb.tw/sites/swcb_test101/sale?utm_source=test#top'
+  });
+  assert.equal(platform.settings.canonical_url, 'https://slimweb.tw/sites/swcb_test101');
+
+  const customPool = seoSettingsPool();
+  customPool.state.site.domain = 'shop.example.com';
+  const customRepository = new WeblessAccountRepository(customPool, {
+    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+  const custom = await customRepository.updateSeoSettings(11, {
+    site_id: 101,
+    canonical_url: 'https://shop.example.com/sale?utm_source=test#top'
+  });
+  assert.equal(custom.settings.canonical_url, 'https://shop.example.com');
+});
+
+test('repository rejects unrelated and non-http canonical URLs', async () => {
+  const pool = seoSettingsPool();
+  pool.state.site.domain = 'shop.example.com';
+  const repository = new WeblessAccountRepository(pool, {
+    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+
+  for (const canonical_url of ['https://other.example.com/page', 'javascript:alert(1)']) {
+    await assert.rejects(
+      () => repository.updateSeoSettings(11, { site_id: 101, canonical_url }),
+      (error) => error?.code === 'VALIDATION_FAILED' && /canonical_url/.test(error.message)
+    );
+  }
+});
+
 test('repository reports missing site readiness areas for AI answers', async () => {
   const repository = new WeblessAccountRepository(readinessPool(), {
     storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-'))
@@ -3292,6 +3334,7 @@ test('repository updates content SEO metadata for custom pages after page workfl
     page_name: '京都三日遊',
     workflow_context: 'page_create',
     seo_title: '京都三日遊行程規劃',
+    canonical_url: 'https://slimweb.tw/sites/site-1/pages/page-101?utm_source=test#schedule',
     og_description: '清水寺、嵐山與祇園的三日旅行安排。'
   });
   const metadata = JSON.parse(await readFile(path.join(storageRoot, updated.metadata_path), 'utf8'));
@@ -3299,10 +3342,66 @@ test('repository updates content SEO metadata for custom pages after page workfl
   assert.equal(updated.ok, true);
   assert.equal(updated.content_type, 'page');
   assert.equal(updated.page.page_key, 'page-101');
+  assert.equal(updated.metadata_path, 'sites/101/templates/default/pages/page-101/.page.json');
   assert.equal(metadata.name, '京都三日遊');
+  assert.deepEqual(Object.keys(metadata.seo).sort(), [
+    'seo_title',
+    'seo_description',
+    'seo_keywords',
+    'canonical_url',
+    'robots_policy',
+    'og_title',
+    'og_description',
+    'og_image_url',
+    'llms_txt',
+    'aeo_business_summary',
+    'aeo_target_audience',
+    'aeo_products_services',
+    'aeo_customer_questions',
+    'aeo_answer_style',
+    'aeo_entity_facts',
+    'geo_citation_targets',
+    'geo_verifiable_claims',
+    'geo_trust_signals',
+    'geo_same_as_profiles',
+    'geo_comparison_positioning'
+  ].sort());
+  assert.match(metadata.seo_updated_at, /^\d{4}-\d{2}-\d{2}T/);
   assert.equal(metadata.seo.seo_title, '京都三日遊行程規劃');
+  assert.equal(metadata.seo.canonical_url, 'https://slimweb.tw/sites/site-1/pages/page-101');
   assert.equal(metadata.seo.og_description, '清水寺、嵐山與祇園的三日旅行安排。');
   assert.equal(metadata.seo.robots_policy, 'index,follow');
+});
+
+test('repository rejects unrelated content canonical hosts before writing metadata', async () => {
+  const repository = new WeblessAccountRepository(fakePool(), {
+    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+
+  await assert.rejects(
+    () => repository.updateContentSeo(11, {
+      site_id: 101,
+      content_type: 'page',
+      page_name: '京都三日遊',
+      workflow_context: 'page_update',
+      canonical_url: 'https://other.example.com/page',
+      og_image_url: 'ftp://files.example.com/image.jpg'
+    }),
+    (error) => error?.code === 'VALIDATION_FAILED' && /canonical_url/.test(error.message)
+  );
+
+  await assert.rejects(
+    () => repository.updateContentSeo(11, {
+      site_id: 101,
+      content_type: 'page',
+      page_name: '京都三日遊',
+      workflow_context: 'page_update',
+      canonical_url: 'https://slimweb.tw/sites/site-1/pages/page-101',
+      og_image_url: 'ftp://files.example.com/image.jpg'
+    }),
+    (error) => error?.code === 'VALIDATION_FAILED' && /og_image_url/.test(error.message)
+  );
 });
 
 test('repository rejects standalone content SEO updates without workflow context', async () => {
