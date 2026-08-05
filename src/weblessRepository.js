@@ -2054,6 +2054,19 @@ export class WeblessAccountRepository {
     const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
     const current = await this.findBasicSettingsForSite(site.id);
     const next = normalizeBasicSettings(args, current);
+    const existingColumns = await this.existingSiteColumns(BASIC_SETTINGS_COLUMNS);
+    const writableColumns = existingColumns.filter((column) => column !== 'icon_path');
+    const missingRequestedColumn = BASIC_SETTINGS_COLUMNS
+      .filter((column) => column !== 'icon_path')
+      .find((column) => Object.prototype.hasOwnProperty.call(args, column) && !existingColumns.includes(column));
+
+    if (missingRequestedColumn) {
+      throw codedError(
+        'VALIDATION_FAILED',
+        `${missingRequestedColumn} is not available in the current sites table schema.`
+      );
+    }
+
     const logoInput = Object.prototype.hasOwnProperty.call(args, 'logo')
       ? normalizeBasicSettingsLogo(args.logo, site.id)
       : null;
@@ -2068,30 +2081,20 @@ export class WeblessAccountRepository {
       );
     }
 
-    const result = await this.pool.query(
-      `
-        update sites
-        set
-          site_status = $1,
-          member_verification = $2,
-          website_type = $3,
-          default_country_code = $4,
-          product_load_mode = $5,
-          return_days_allowed = $6,
-          updated_at = now()
-        where id = $7
-        returning ${BASIC_SETTINGS_COLUMNS.join(', ')}
-      `,
-      [
-        next.site_status,
-        next.member_verification,
-        next.website_type,
-        next.default_country_code,
-        next.product_load_mode,
-        next.return_days_allowed,
-        site.id
-      ]
-    );
+    const updateValues = writableColumns.map((column) => next[column]);
+    const result = writableColumns.length > 0
+      ? await this.pool.query(
+        `
+          update sites
+          set
+            ${writableColumns.map((column, index) => `${column} = $${index + 1}`).join(',\n            ')},
+            updated_at = now()
+          where id = $${writableColumns.length + 1}
+          returning ${existingColumns.join(', ')}
+        `,
+        [...updateValues, site.id]
+      )
+      : { rows: [current] };
 
     const logoPayload = logoInput
       ? await this.postWeblessInternal(

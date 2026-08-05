@@ -665,7 +665,7 @@ const MCP_TOOLS = [
   },
   {
     name: 'slimweb_themes_update_root_elements',
-    description: 'Update the fixed navbar, floating_actions, and footer root fragments plus theme-level CSS. Custom fragment HTML is rendered as supplied; do not auto-bind it to contact data or invent missing links. Theme JavaScript and theme-level libraries are not supported. Do not use this to overwrite page body content. The css field replaces the MCP-managed root-elements CSS file, so include every MCP-managed root style that should remain, including footer/background rules.',
+    description: 'Update the fixed navbar, floating_actions, and footer root fragments plus theme-level CSS. Add custom content to a slot only when the user explicitly requests it for that slot; data supplied for another placement does not authorize reusing it here. Custom fragment HTML is rendered as supplied; do not auto-bind it to contact data or invent missing links. Theme JavaScript and theme-level libraries are not supported. Do not use this to overwrite page body content. The css field replaces the MCP-managed root-elements CSS file, so include every MCP-managed root style that should remain, including footer/background rules.',
     inputSchema: {
       type: 'object',
       properties: {

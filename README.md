@@ -191,7 +191,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 | `slimweb_themes_activate` | Available | content write | 將指定版型設為前台啟用版型；會影響實際前台呈現。 |
 | `slimweb_themes_delete` | Available | content write | 刪除非 Default 版型與其 template 內容；Default 不能刪除。 |
 | `slimweb_theme_shell_get_context` | Available | content read | 回傳設計用 reference-only JSON，包含固定的 navbar、floating_actions、footer slots、實際 shell 資料與目前 MCP-managed root CSS。 |
-| `slimweb_themes_update_root_elements` | Available | content write | 更新版型的 navbar、floating_actions、footer 與 root CSS；`css` 會替換 MCP-managed root CSS 檔。Theme 不載入 JavaScript 或 `enabled_libraries`。 |
+| `slimweb_themes_update_root_elements` | Available | content write | 更新版型的 navbar、floating_actions、footer 與 root CSS；自訂內容只能加入使用者明確指定的 slot，不可挪用其他區域資料。`css` 會替換 MCP-managed root CSS 檔。Theme 不載入 JavaScript 或 `enabled_libraries`。 |
 | `slimweb_theme_style_profile_get` | Available | content read | 讀取版型風格摘要與需求歷史。 |
 | `slimweb_theme_style_profile_upsert` | Available | content write | 建立或更新版型風格摘要、色彩、字體、版面、插圖與避免事項。 |
 | `slimweb_theme_style_profile_append_request` | Available | content write | 追加一筆使用者風格需求或變更紀錄。 |
@@ -483,7 +483,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 狀態: Available
 - 權限: content write
 - Scope: active site and theme
-- 用途: 更新固定的 `navbar`、`floating_actions`、`footer` root elements 與 root-level CSS。slot 內 HTML 完全由使用者定義；不自動綁定聯絡資料、不補造缺少的 URL。`css` 不是局部 patch，會替換 `assets/root-elements/css/00-mcp-theme.css`。
+- 用途: 更新固定的 `navbar`、`floating_actions`、`footer` root elements 與 root-level CSS。只有使用者明確指定某個 slot 時才加入對應自訂內容，不可把 Footer、頁面或其他位置提供的資料自行挪用。slot 內 HTML 完全由使用者定義；不自動綁定聯絡資料、不補造缺少的 URL。`css` 不是局部 patch，會替換 `assets/root-elements/css/00-mcp-theme.css`。
 - Input: `site_code`、`theme_id`、optional `fragments.navbar`、`fragments.floating_actions`、`fragments.footer`、optional `css`
 - Output: write summary、theme summary、updated fragments、CSS updated flag、preview URL
 - Side effects: writes root element Blade fragments and replaces `assets/root-elements/css/00-mcp-theme.css`

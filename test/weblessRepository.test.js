@@ -2269,6 +2269,99 @@ test('repository reads basic settings when older sites table lacks newer columns
   assert.equal(result.settings.client_mcp_url, 'https://client-mcp.example.test/sites/swcb_test101/mcp');
 });
 
+test('repository updates basic settings when older sites table lacks newer columns', async () => {
+  const site = {
+    id: 101,
+    slug: 'site-1',
+    name: '測試網站',
+    domain: '',
+    callback_code: 'swcb_test101',
+    site_status: 'active',
+    website_type: 'brand'
+  };
+  const pool = {
+    async query(sql, params) {
+      if (sql.includes('from sites') && sql.includes('account_id = $1 and id = $2')) {
+        return { rows: [site] };
+      }
+
+      if (sql.includes('from information_schema.columns')) {
+        return {
+          rows: [
+            { column_name: 'site_status' },
+            { column_name: 'website_type' }
+          ]
+        };
+      }
+
+      if (sql.includes('select ') && sql.includes('from sites') && sql.includes('where id = $1')) {
+        assert.doesNotMatch(sql, /member_verification/);
+        return { rows: [site] };
+      }
+
+      if (sql.includes('update sites')) {
+        assert.doesNotMatch(sql, /member_verification/);
+        assert.match(sql, /site_status = \$1/);
+        assert.match(sql, /website_type = \$2/);
+        assert.deepEqual(params, ['maintenance', 'brand', 101]);
+        site.site_status = params[0];
+        return { rows: [site] };
+      }
+
+      throw new Error(`Unexpected query: ${sql}`);
+    }
+  };
+  const repository = new WeblessAccountRepository(pool);
+
+  const result = await repository.updateBasicSettings(11, {
+    site_id: 101,
+    site_status: 'maintenance'
+  });
+
+  assert.equal(result.settings.site_status, 'maintenance');
+  assert.equal(result.settings.member_verification, 'none');
+});
+
+test('repository rejects an explicitly requested basic setting missing from the sites table', async () => {
+  const site = {
+    id: 101,
+    slug: 'site-1',
+    name: '測試網站',
+    domain: '',
+    callback_code: 'swcb_test101',
+    site_status: 'active',
+    website_type: 'brand'
+  };
+  const pool = {
+    async query(sql) {
+      if (sql.includes('from sites') && sql.includes('account_id = $1 and id = $2')) {
+        return { rows: [site] };
+      }
+      if (sql.includes('from information_schema.columns')) {
+        return {
+          rows: [
+            { column_name: 'site_status' },
+            { column_name: 'website_type' }
+          ]
+        };
+      }
+      if (sql.includes('select ') && sql.includes('from sites') && sql.includes('where id = $1')) {
+        return { rows: [site] };
+      }
+      throw new Error(`Unexpected query: ${sql}`);
+    }
+  };
+  const repository = new WeblessAccountRepository(pool);
+
+  await assert.rejects(
+    () => repository.updateBasicSettings(11, {
+      site_id: 101,
+      return_days_allowed: 7
+    }),
+    /return_days_allowed is not available/
+  );
+});
+
 test('repository updates and reads site integration settings for admin display', async () => {
   const pool = integrationSettingsPool();
   const repository = new WeblessAccountRepository(pool, {
