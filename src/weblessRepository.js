@@ -776,9 +776,10 @@ export class WeblessAccountRepository {
       site,
       theme,
       theme_scope: {
-        root_elements: ['navbar', 'body_background', 'online_support', 'footer'],
+        root_elements: ['navbar', 'floating_actions', 'footer'],
         content_fallback: theme.is_default ? null : 'default',
-        page_body_rule: 'Non-Default themes inherit Default page content unless a page-specific body is explicitly created.'
+        page_body_rule: 'Non-Default themes inherit Default page content unless a page-specific body is explicitly created.',
+        custom_fragment_rule: 'Each fixed root slot accepts user-defined HTML. Do not auto-bind custom markup to site contact fields or invent missing URLs.'
       },
       navbar: {
         counts: {
@@ -817,8 +818,10 @@ export class WeblessAccountRepository {
         update_tool: 'slimweb_themes_update_root_elements',
         update_field: 'css'
       },
-      online_support: {
-        enabled: Boolean(siteDetails.use_ai_customer_service)
+      floating_actions: {
+        default_actions: ['scroll_top', 'ai_assistant'],
+        ai_assistant_enabled: Boolean(siteDetails.use_ai_customer_service),
+        custom_content_rule: 'Custom floating_actions markup is rendered as supplied and may contain any user-defined controls or modal markup.'
       }
     };
   }
@@ -7339,10 +7342,10 @@ function normalizeRootFragments(value) {
   }
 
   if (typeof value !== 'object' || Array.isArray(value)) {
-    throw codedError('VALIDATION_FAILED', 'fragments must be an object keyed by navbar, footer, or online_support.');
+    throw codedError('VALIDATION_FAILED', 'fragments must be an object keyed by navbar, floating_actions, or footer.');
   }
 
-  const allowed = new Set(['navbar', 'footer', 'online_support']);
+  const allowed = new Set(['navbar', 'floating_actions', 'footer']);
   const normalized = {};
 
   for (const [key, html] of Object.entries(value)) {
@@ -11850,8 +11853,8 @@ function templateAssetStoragePath(theme, relativePath) {
 function rootElementStoragePath(theme, fragment) {
   const filename = {
     navbar: 'navbar.blade.php',
+    floating_actions: 'floating-actions.blade.php',
     footer: 'footer.blade.php',
-    online_support: 'online-support.blade.php'
   }[fragment];
 
   return `${themeDirectory(theme)}/root-elements/${filename}`;

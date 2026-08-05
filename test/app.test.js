@@ -457,6 +457,9 @@ test('MCP tools list includes homepage editing contract tools', async () => {
     assert.match(toolsByName.get('slimweb_theme_shell_get_context').description, /root_css\.current_css/);
     assert.equal(toolsByName.get('slimweb_themes_update_root_elements').inputSchema.required.includes('theme_id'), true);
     assert.match(toolsByName.get('slimweb_themes_update_root_elements').description, /replaces the MCP-managed root-elements CSS file/);
+    assert.match(toolsByName.get('slimweb_themes_update_root_elements').description, /floating_actions/);
+    assert.match(toolsByName.get('slimweb_themes_update_root_elements').inputSchema.properties.fragments.description, /floating_actions/);
+    assert.doesNotMatch(toolsByName.get('slimweb_themes_update_root_elements').description, /online_support/);
     assert.equal(toolsByName.get('slimweb_theme_style_profile_upsert').inputSchema.required.includes('theme_id'), true);
     assert.equal(toolsByName.get('slimweb_assets_upload').inputSchema.required.includes('source'), true);
     assert.equal(toolsByName.get('slimweb_assets_upload').inputSchema.properties.source.properties.attachment_ref, undefined);

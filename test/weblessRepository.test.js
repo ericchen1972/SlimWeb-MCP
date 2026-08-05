@@ -4224,7 +4224,10 @@ test('repository returns theme shell context for design reference', async () => 
   assert.deepEqual(context.navbar.item_names, ['商品分類', '女生包包']);
   assert.equal(context.product_categories.counts.total_items, 1);
   assert.equal(context.footer.counts.contact_items, 8);
-  assert.equal(context.online_support.enabled, true);
+  assert.deepEqual(context.theme_scope.root_elements, ['navbar', 'floating_actions', 'footer']);
+  assert.deepEqual(context.floating_actions.default_actions, ['scroll_top', 'ai_assistant']);
+  assert.equal(context.floating_actions.ai_assistant_enabled, true);
+  assert.equal(context.online_support, undefined);
   assert.equal(context.root_css.current_css, '.navbar{background:pink}\n.footer{background:mistyrose}\n');
   assert.equal(context.root_css.update_field, 'css');
 });
@@ -4346,13 +4349,18 @@ test('repository updates root element fragments and css for a custom theme', asy
     theme_id: 22,
     fragments: {
       navbar: '<nav class="cute-nav">Cute</nav>',
+      floating_actions: '<div class="cute-actions"><button>LINE</button></div>',
       footer: '<footer>Cute footer</footer>'
     },
     css: '.cute-nav{background:#fff7d6}'
   });
 
   assert.equal(result.ok, true);
-  assert.deepEqual(result.updated_fragments, ['navbar', 'footer']);
+  assert.deepEqual(result.updated_fragments, ['navbar', 'floating_actions', 'footer']);
+  assert.equal(
+    await readFile(path.join(storageRoot, 'sites/101/templates/schemes/22/root-elements/floating-actions.blade.php'), 'utf8'),
+    '<div class="cute-actions"><button>LINE</button></div>\n'
+  );
   assert.equal(
     await readFile(path.join(storageRoot, 'sites/101/templates/schemes/22/root-elements/navbar.blade.php'), 'utf8'),
     '<nav class="cute-nav">Cute</nav>\n'
@@ -4371,12 +4379,17 @@ test('repository updates root element fragments and css for a custom theme', asy
     theme_id: 7,
     fragments: {
       navbar: '<nav class="default-nav">Default nav</nav>',
+      floating_actions: '<button data-scroll-top>Top</button>',
       footer: '<footer class="default-footer">Default footer</footer>'
     },
     css: '.default-nav{background:#fff0f5}'
   });
   assert.equal(defaultResult.ok, true);
-  assert.deepEqual(defaultResult.updated_fragments, ['navbar', 'footer']);
+  assert.deepEqual(defaultResult.updated_fragments, ['navbar', 'floating_actions', 'footer']);
+  assert.equal(
+    await readFile(path.join(storageRoot, 'sites/101/templates/default/root-elements/floating-actions.blade.php'), 'utf8'),
+    '<button data-scroll-top>Top</button>\n'
+  );
   assert.equal(
     await readFile(path.join(storageRoot, 'sites/101/templates/default/root-elements/navbar.blade.php'), 'utf8'),
     '<nav class="default-nav">Default nav</nav>\n'
@@ -4388,6 +4401,22 @@ test('repository updates root element fragments and css for a custom theme', asy
   assert.equal(
     await readFile(path.join(storageRoot, 'sites/101/templates/default/assets/root-elements/css/00-mcp-theme.css'), 'utf8'),
     '.default-nav{background:#fff0f5}\n'
+  );
+});
+
+test('repository rejects the removed online_support root fragment', async () => {
+  const repository = new WeblessAccountRepository(themeMutationPool(), {
+    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+
+  await assert.rejects(
+    repository.updateThemeRootElements(11, {
+      site_id: 101,
+      theme_id: 22,
+      fragments: { online_support: '<button>Old</button>' }
+    }),
+    /Unsupported root element fragment: online_support/
   );
 });
 
