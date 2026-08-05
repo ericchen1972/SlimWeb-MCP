@@ -4347,8 +4347,12 @@ test('repository returns theme shell context for design reference', async () => 
   assert.equal(context.footer.counts.contact_items, 8);
   assert.deepEqual(context.theme_scope.root_elements, ['navbar', 'floating_actions', 'footer']);
   assert.equal(context.storefront_actions.website_type, 'ecommerce');
-  assert.equal(context.storefront_actions.navbar_requirement, 'required');
-  assert.deepEqual(context.storefront_actions.required_navbar_actions, ['cart', 'register', 'login']);
+  assert.equal(context.storefront_actions.theme_slot_requirement, 'required');
+  assert.deepEqual(context.storefront_actions.required_theme_slots, ['member_auth', 'cart']);
+  assert.equal(context.storefront_actions.slot_attributes.member_auth, 'data-storefront-member-auth-slot');
+  assert.equal(context.storefront_actions.slot_attributes.cart, 'data-storefront-cart-slot');
+  assert.match(context.storefront_actions.visibility_rule, /Webless runtime/i);
+  assert.equal(context.storefront_actions.required_navbar_actions, undefined);
   assert.match(context.storefront_actions.appearance_rule, /appearance/i);
   assert.deepEqual(context.floating_actions.default_actions, ['scroll_top', 'ai_assistant']);
   assert.equal(context.floating_actions.ai_assistant_enabled, true);
@@ -4357,7 +4361,7 @@ test('repository returns theme shell context for design reference', async () => 
   assert.equal(context.root_css.update_field, 'css');
 });
 
-test('repository makes commerce navbar actions optional only for brand sites', async () => {
+test('repository requires the same navbar presentation slots for brand sites', async () => {
   const repository = new WeblessAccountRepository(designContextPool({ websiteType: 'brand' }), {
     storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
     publicSiteBaseUrl: 'https://slimweb.tw'
@@ -4369,8 +4373,11 @@ test('repository makes commerce navbar actions optional only for brand sites', a
   });
 
   assert.equal(context.storefront_actions.website_type, 'brand');
-  assert.equal(context.storefront_actions.navbar_requirement, 'optional');
-  assert.deepEqual(context.storefront_actions.required_navbar_actions, []);
+  assert.equal(context.storefront_actions.theme_slot_requirement, 'required');
+  assert.deepEqual(context.storefront_actions.required_theme_slots, ['member_auth', 'cart']);
+  assert.equal(context.storefront_actions.slot_attributes.member_auth, 'data-storefront-member-auth-slot');
+  assert.equal(context.storefront_actions.slot_attributes.cart, 'data-storefront-cart-slot');
+  assert.match(context.storefront_actions.visibility_rule, /Webless runtime/i);
 });
 
 test('repository accepts model-shaped theme id values for theme shell context', async () => {
@@ -4489,7 +4496,7 @@ test('repository updates root element fragments and css for a custom theme', asy
     site_id: 101,
     theme_id: 22,
     fragments: {
-      navbar: '<nav class="cute-nav">Cute</nav>',
+      navbar: '<nav class="cute-nav"><div data-storefront-commerce-actions><button data-storefront-member-auth-slot>註冊／登入</button><button data-storefront-cart-slot>購物車</button></div></nav>',
       floating_actions: '<div class="cute-actions"><button>LINE</button></div>',
       footer: '<footer>Cute footer</footer>'
     },
@@ -4504,7 +4511,7 @@ test('repository updates root element fragments and css for a custom theme', asy
   );
   assert.equal(
     await readFile(path.join(storageRoot, 'sites/101/templates/schemes/22/root-elements/navbar.blade.php'), 'utf8'),
-    '<nav class="cute-nav">Cute</nav>\n'
+    '<nav class="cute-nav"><div data-storefront-commerce-actions><button data-storefront-member-auth-slot>註冊／登入</button><button data-storefront-cart-slot>購物車</button></div></nav>\n'
   );
   assert.equal(
     await readFile(path.join(storageRoot, 'sites/101/templates/schemes/22/root-elements/footer.blade.php'), 'utf8'),
@@ -4519,7 +4526,7 @@ test('repository updates root element fragments and css for a custom theme', asy
     site_id: 101,
     theme_id: 7,
     fragments: {
-      navbar: '<nav class="default-nav">Default nav</nav>',
+      navbar: '<nav class="default-nav"><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>',
       floating_actions: '<button data-scroll-top>Top</button>',
       footer: '<footer class="default-footer">Default footer</footer>'
     },
@@ -4533,7 +4540,7 @@ test('repository updates root element fragments and css for a custom theme', asy
   );
   assert.equal(
     await readFile(path.join(storageRoot, 'sites/101/templates/default/root-elements/navbar.blade.php'), 'utf8'),
-    '<nav class="default-nav">Default nav</nav>\n'
+    '<nav class="default-nav"><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>\n'
   );
   assert.equal(
     await readFile(path.join(storageRoot, 'sites/101/templates/default/root-elements/footer.blade.php'), 'utf8'),
@@ -4543,6 +4550,63 @@ test('repository updates root element fragments and css for a custom theme', asy
     await readFile(path.join(storageRoot, 'sites/101/templates/default/assets/root-elements/css/00-mcp-theme.css'), 'utf8'),
     '.default-nav{background:#fff0f5}\n'
   );
+});
+
+test('repository rejects navbar fragments without exactly one clickable member and cart slot', async () => {
+  const repository = new WeblessAccountRepository(themeMutationPool(), {
+    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+
+  for (const navbar of [
+    '<nav><button data-storefront-member-auth-slot>Member</button></nav>',
+    '<nav><button data-storefront-cart-slot>Cart</button></nav>',
+    '<nav><div data-storefront-member-auth-slot>Member</div><button data-storefront-cart-slot>Cart</button></nav>',
+    '<nav><button data-storefront-member-auth-slot>One</button><button data-storefront-member-auth-slot>Two</button><button data-storefront-cart-slot>Cart</button></nav>'
+  ]) {
+    await assert.rejects(
+      repository.updateThemeRootElements(11, {
+        site_id: 101,
+        theme_id: 22,
+        fragments: { navbar }
+      }),
+      /navbar.*slot|slot.*navbar/i
+    );
+  }
+});
+
+test('repository rejects reserved storefront runtime attributes in theme navbar fragments', async () => {
+  const repository = new WeblessAccountRepository(themeMutationPool(), {
+    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+
+  await assert.rejects(
+    repository.updateThemeRootElements(11, {
+      site_id: 101,
+      theme_id: 22,
+      fragments: {
+        navbar: '<nav><button data-storefront-member-auth-slot data-storefront-auth-open>Member</button><button data-storefront-cart-slot>Cart</button></nav>'
+      }
+    }),
+    /reserved storefront runtime attribute/i
+  );
+});
+
+test('repository allows non-navbar root fragment updates without repeating navbar slots', async () => {
+  const storageRoot = await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-'));
+  const repository = new WeblessAccountRepository(themeMutationPool(), {
+    storageRoot,
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+
+  const result = await repository.updateThemeRootElements(11, {
+    site_id: 101,
+    theme_id: 22,
+    fragments: { footer: '<footer>Footer only</footer>' }
+  });
+
+  assert.deepEqual(result.updated_fragments, ['footer']);
 });
 
 test('repository rejects the removed online_support root fragment', async () => {

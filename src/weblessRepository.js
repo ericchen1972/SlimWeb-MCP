@@ -771,7 +771,6 @@ export class WeblessAccountRepository {
 
     const contactItems = contactItemsFromSiteDetails(siteDetails);
     const websiteType = basicSettings.website_type === 'brand' ? 'brand' : 'ecommerce';
-    const commerceNavbarRequired = websiteType !== 'brand';
 
     return {
       reference_only: true,
@@ -805,13 +804,16 @@ export class WeblessAccountRepository {
       },
       storefront_actions: {
         website_type: websiteType,
-        navbar_requirement: commerceNavbarRequired ? 'required' : 'optional',
-        required_navbar_actions: commerceNavbarRequired ? ['cart', 'register', 'login'] : [],
-        appearance_rule: 'Reference-site styling may change the appearance, spacing, order, labels, and responsive layout of navbar actions without removing required functions.',
-        cart_button: true,
-        register_button: true,
-        login_button: true,
-        account_entry: true
+        theme_slot_requirement: 'required',
+        required_theme_slots: ['member_auth', 'cart'],
+        slot_attributes: {
+          member_auth: 'data-storefront-member-auth-slot',
+          cart: 'data-storefront-cart-slot'
+        },
+        visibility_rule: 'Every Theme navbar contains both presentation slots. Webless runtime alone decides whether to resolve them for ecommerce or remove them for brand sites.',
+        appearance_rule: 'Reference-site styling may change the appearance, spacing, order, labels, icons, badges, and responsive layout of the two Theme slots without recreating their runtime behavior.',
+        member_auth_behavior: 'One combined registration/login entry backed by the canonical LINE/Google modal or signed-in member menu.',
+        cart_behavior: 'Canonical cart storage, count badge, panel, validation, and checkout behavior.'
       },
       footer: {
         counts: {
@@ -7364,9 +7366,46 @@ function normalizeRootFragments(value) {
     }
 
     normalized[key] = extractSafeHtml(html, `fragments.${key}`);
+    if (key === 'navbar') {
+      validateThemeNavbarSlots(normalized[key]);
+    }
   }
 
   return normalized;
+}
+
+function validateThemeNavbarSlots(html) {
+  const requiredSlots = [
+    'data-storefront-member-auth-slot',
+    'data-storefront-cart-slot'
+  ];
+  const openingTags = Array.from(html.matchAll(/<([a-z][a-z0-9:-]*)\b[^>]*>/gi), (match) => ({
+    name: match[1].toLowerCase(),
+    html: match[0]
+  }));
+
+  for (const attribute of requiredSlots) {
+    const attributePattern = new RegExp(`\\b${escapeRegExp(attribute)}(?:\\s*=\\s*(?:"[^"]*"|'[^']*'|[^\\s>]+))?`, 'i');
+    const matches = openingTags.filter((tag) => attributePattern.test(tag.html));
+
+    if (matches.length !== 1 || !['a', 'button'].includes(matches[0]?.name)) {
+      throw codedError('VALIDATION_FAILED', `Theme navbar must contain exactly one clickable ${attribute} slot.`);
+    }
+  }
+
+  const reservedRuntimeAttributes = [
+    'data-storefront-auth-open',
+    'data-storefront-auth-modal',
+    'data-storefront-cart-root',
+    'data-cart-trigger'
+  ];
+
+  for (const attribute of reservedRuntimeAttributes) {
+    const attributePattern = new RegExp(`\\b${escapeRegExp(attribute)}(?:\\s|=|>)`, 'i');
+    if (attributePattern.test(html)) {
+      throw codedError('VALIDATION_FAILED', `Theme navbar contains reserved storefront runtime attribute: ${attribute}.`);
+    }
+  }
 }
 
 function normalizePageKey(value) {

@@ -190,8 +190,8 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 | `slimweb_themes_create_from_default` | Available | content write | 建立新版型，並只複製 Default shell/root-element template；新版型作為每一頁的基底樣式，包含首頁。 |
 | `slimweb_themes_activate` | Available | content write | 將指定版型設為前台啟用版型；會影響實際前台呈現。 |
 | `slimweb_themes_delete` | Available | content write | 刪除非 Default 版型與其 template 內容；Default 不能刪除。 |
-| `slimweb_theme_shell_get_context` | Available | content read | 回傳設計用 reference-only JSON，包含固定的 navbar、floating_actions、footer slots、`website_type` 對應的 navbar 必要功能、實際 shell 資料與目前 MCP-managed root CSS。 |
-| `slimweb_themes_update_root_elements` | Available | content write | 更新版型的 navbar、floating_actions、footer 與 root CSS；除 `website_type=brand` 外，navbar 必須保留購物車、註冊與登入功能，但可依參考網站調整外觀與配置。自訂內容只能加入使用者明確指定的 slot，不可挪用其他區域資料。`css` 會替換 MCP-managed root CSS 檔。Theme 不載入 JavaScript 或 `enabled_libraries`。 |
+| `slimweb_theme_shell_get_context` | Available | content read | 回傳設計用 reference-only JSON，包含固定的 navbar、floating_actions、footer slots、navbar 必備的 `member_auth` 與 `cart` 呈現插槽、實際 shell 資料、`website_type` 事實資料與目前 MCP-managed root CSS。 |
+| `slimweb_themes_update_root_elements` | Available | content write | 更新版型的 navbar、floating_actions、footer 與 root CSS；每個 Theme navbar 都必須各有一個可點擊的 `data-storefront-member-auth-slot` 與 `data-storefront-cart-slot`，外觀與配置可依參考網站調整，功能及是否顯示由 Webless runtime 決定。自訂內容只能加入使用者明確指定的 slot，不可挪用其他區域資料。`css` 會替換 MCP-managed root CSS 檔。Theme 不載入 JavaScript 或 `enabled_libraries`。 |
 | `slimweb_theme_style_profile_get` | Available | content read | 讀取版型風格摘要與需求歷史。 |
 | `slimweb_theme_style_profile_upsert` | Available | content write | 建立或更新版型風格摘要、色彩、字體、版面、插圖與避免事項。 |
 | `slimweb_theme_style_profile_append_request` | Available | content write | 追加一筆使用者風格需求或變更紀錄。 |
@@ -469,7 +469,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 狀態: Available
 - 權限: content read
 - Scope: active site and selected theme
-- 用途: 在建立或修改版型前，讓 AI 取得實際會接上的資料摘要 JSON，例如 nav item 數量/名稱/樹狀結構、商品分類數量/名稱、`website_type`、navbar 必要的購物車/登入/註冊功能與 footer 聯絡資訊數量。
+- 用途: 在建立或修改版型前，讓 AI 取得實際會接上的資料摘要 JSON，例如 nav item 數量/名稱/樹狀結構、商品分類數量/名稱、每個 Theme navbar 必備的 `member_auth`/`cart` 呈現插槽、`website_type` 事實資料與 footer 聯絡資訊數量。
 - Input: `site_code`、`theme_id`
 - Output: `reference_only: true`、site summary、theme summary、`theme_scope`、`navbar`、`product_categories`、`storefront_actions`、`floating_actions`、`footer`
 - Side effects: none
@@ -483,11 +483,23 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 狀態: Available
 - 權限: content write
 - Scope: active site and theme
-- 用途: 更新固定的 `navbar`、`floating_actions`、`footer` root elements 與 root-level CSS。除 `website_type=brand` 外，navbar 必須保留可用的購物車、註冊與登入入口；可依參考網站調整其外觀、標籤、順序、間距與響應式配置，但不可移除功能。只有使用者明確指定某個 slot 時才加入對應自訂內容，不可把 Footer、頁面或其他位置提供的資料自行挪用。slot 內 HTML 完全由使用者定義；不自動綁定聯絡資料、不補造缺少的 URL。`css` 不是局部 patch，會替換 `assets/root-elements/css/00-mcp-theme.css`。
+- 用途: 更新固定的 `navbar`、`floating_actions`、`footer` root elements 與 root-level CSS。每個 Theme navbar 都必須各有一個可點擊的 `data-storefront-member-auth-slot` 與 `data-storefront-cart-slot`；前者代表單一「註冊／登入」入口，不能拆成兩個連結。AI 可依參考網站調整兩個插槽的外觀、標籤、icon、badge、順序、間距與響應式配置，但不可加入 `data-storefront-auth-open`、`data-storefront-auth-modal`、`data-storefront-cart-root` 或 `data-cart-trigger` 等 Webless 保留的 runtime attributes。功能與是否顯示完全由 Webless runtime 依網站設定處理。只有使用者明確指定某個自訂 slot 時才加入對應內容，不可把 Footer、頁面或其他位置提供的資料自行挪用。`css` 不是局部 patch，會替換 `assets/root-elements/css/00-mcp-theme.css`。
 - Input: `site_code`、`theme_id`、optional `fragments.navbar`、`fragments.floating_actions`、`fragments.footer`、optional `css`
 - Output: write summary、theme summary、updated fragments、CSS updated flag、preview URL
 - Side effects: writes root element Blade fragments and replaces `assets/root-elements/css/00-mcp-theme.css`
 - JavaScript: Theme 不支援 inline JavaScript 或 Theme-level `enabled_libraries`；動畫程式與 library 選擇只能放在 page scope。
+- 最小 navbar 插槽格式:
+
+```html
+<div data-storefront-commerce-actions>
+  <button type="button" data-storefront-member-auth-slot>註冊／登入</button>
+  <button type="button" data-storefront-cart-slot aria-label="購物車">
+    <svg aria-hidden="true"><!-- Theme cart icon --></svg>
+    <span data-cart-count>0</span>
+  </button>
+</div>
+```
+
 - 是否需要 confirmation: yes for customer-facing active theme
 - 錯誤情境: theme not found、unsafe HTML、storage adapter not configured
 - Audit fields: request ID、user ID、account ID、site ID、theme ID、updated fragments
@@ -1644,8 +1656,8 @@ AI Client 收到或引用的圖片預設是 reference-only。只有當 tool call
 - 使用 `slimweb_themes_list` 檢查是否已有同名或近似自訂版型；如果已有明確同名版型，立刻停止並告知使用者。
 - 如果使用者要求暗色、螢光、neon、高對比等明顯依賴明暗模式的風格，先使用 `slimweb_site_theme_mode_get` 確認目前色系；必要時使用 `slimweb_site_theme_mode_update` 切換 light / dark。
 - 使用 `slimweb_themes_create_from_default` 從 Default 建立新的自訂版型。
-- 使用 `slimweb_theme_shell_get_context` 取得 navbar、floating_actions、footer、分類、登入、購物車等真實 shell reference 資料，以及目前 MCP-managed root CSS。
-- 依 `storefront_actions.website_type` 與 `navbar_requirement` 處理 navbar；除形象網站 (`brand`) 外，必須保留購物車、註冊與登入功能，僅調整外觀與配置。
+- 使用 `slimweb_theme_shell_get_context` 取得 navbar、floating_actions、footer、分類、固定 `member_auth`/`cart` 插槽等真實 shell reference 資料，以及目前 MCP-managed root CSS。
+- 每個 Theme navbar 一律包含一個可點擊的 `data-storefront-member-auth-slot` 與一個可點擊的 `data-storefront-cart-slot`；參考網站與 `website_type` 只影響設計背景，不改變 Theme schema。Webless runtime 會自行決定兩個功能是否顯示。
 - 使用 `slimweb_design_context_get` 取得目前網站設計摘要、色系與框架。
 - 依照使用者需求、網站色系、shell reference 與框架設計版型基底，包含 navbar、floating_actions、footer、root CSS、body background、全站視覺氛圍等。
 - 修改 `slimweb_theme_shell_get_context.root_css.current_css` 後，使用 `slimweb_themes_update_root_elements` 寫入新版型的 navbar、floating_actions、footer 與完整 root CSS；不可用此工具修改單一頁面內容。
