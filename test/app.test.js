@@ -460,6 +460,9 @@ test('MCP tools list includes homepage editing contract tools', async () => {
     assert.match(toolsByName.get('slimweb_themes_update_root_elements').description, /floating_actions/);
     assert.match(toolsByName.get('slimweb_themes_update_root_elements').description, /explicitly requests it for that slot/);
     assert.match(toolsByName.get('slimweb_themes_update_root_elements').description, /another placement/);
+    assert.match(toolsByName.get('slimweb_themes_update_root_elements').description, /website_type=brand/);
+    assert.match(toolsByName.get('slimweb_themes_update_root_elements').description, /cart, registration, and login/i);
+    assert.match(toolsByName.get('slimweb_themes_update_root_elements').description, /appearance and layout/i);
     assert.match(toolsByName.get('slimweb_themes_update_root_elements').inputSchema.properties.fragments.description, /floating_actions/);
     assert.doesNotMatch(toolsByName.get('slimweb_themes_update_root_elements').description, /online_support/);
     assert.equal(toolsByName.get('slimweb_theme_style_profile_upsert').inputSchema.required.includes('theme_id'), true);

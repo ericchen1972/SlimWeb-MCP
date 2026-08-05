@@ -761,14 +761,17 @@ export class WeblessAccountRepository {
   async getThemeShellContext(accountId, args) {
     const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
     const theme = await this.resolveThemeForSite(site.id, args.theme_id);
-    const [navItems, categories, siteDetails] = await Promise.all([
+    const [navItems, categories, siteDetails, basicSettings] = await Promise.all([
       this.listSiteNavItems(site.id),
       this.listSiteCategories(site.id),
-      this.getSiteDesignDetails(site.id)
+      this.getSiteDesignDetails(site.id),
+      this.findBasicSettingsForSite(site.id)
     ]);
     const currentRootCss = await this.getThemeManagedRootCss(theme);
 
     const contactItems = contactItemsFromSiteDetails(siteDetails);
+    const websiteType = basicSettings.website_type === 'brand' ? 'brand' : 'ecommerce';
+    const commerceNavbarRequired = websiteType !== 'brand';
 
     return {
       reference_only: true,
@@ -801,6 +804,10 @@ export class WeblessAccountRepository {
         tree: buildTree(categories)
       },
       storefront_actions: {
+        website_type: websiteType,
+        navbar_requirement: commerceNavbarRequired ? 'required' : 'optional',
+        required_navbar_actions: commerceNavbarRequired ? ['cart', 'register', 'login'] : [],
+        appearance_rule: 'Reference-site styling may change the appearance, spacing, order, labels, and responsive layout of navbar actions without removing required functions.',
         cart_button: true,
         register_button: true,
         login_button: true,

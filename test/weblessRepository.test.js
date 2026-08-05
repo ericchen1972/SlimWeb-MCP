@@ -313,9 +313,23 @@ function themeMutationPool() {
   };
 }
 
-function designContextPool() {
+function designContextPool(options = {}) {
   return {
     async query(sql, params) {
+      if (sql.includes('from information_schema.columns')) {
+        return {
+          rows: [
+            'site_status',
+            'member_verification',
+            'website_type',
+            'default_country_code',
+            'product_load_mode',
+            'return_days_allowed',
+            'icon_path'
+          ].map((column_name) => ({ column_name }))
+        };
+      }
+
       if (sql.includes('from sites') && sql.includes('account_id = $1 and id = $2')) {
         return {
           rows: [{
@@ -451,6 +465,20 @@ function designContextPool() {
           rows: [
             { id: 10, parent_id: null, name: '女生包包', icon_svg: null, icon_path: null, image_path: null, sort_order: 0 }
           ]
+        };
+      }
+
+      if (sql.includes('from sites') && sql.includes('where id = $1') && sql.includes('website_type')) {
+        return {
+          rows: [{
+            site_status: 'active',
+            member_verification: 'none',
+            website_type: options.websiteType ?? 'ecommerce',
+            default_country_code: 'TW',
+            product_load_mode: 'pagination',
+            return_days_allowed: 0,
+            icon_path: null
+          }]
         };
       }
 
@@ -4318,11 +4346,31 @@ test('repository returns theme shell context for design reference', async () => 
   assert.equal(context.product_categories.counts.total_items, 1);
   assert.equal(context.footer.counts.contact_items, 8);
   assert.deepEqual(context.theme_scope.root_elements, ['navbar', 'floating_actions', 'footer']);
+  assert.equal(context.storefront_actions.website_type, 'ecommerce');
+  assert.equal(context.storefront_actions.navbar_requirement, 'required');
+  assert.deepEqual(context.storefront_actions.required_navbar_actions, ['cart', 'register', 'login']);
+  assert.match(context.storefront_actions.appearance_rule, /appearance/i);
   assert.deepEqual(context.floating_actions.default_actions, ['scroll_top', 'ai_assistant']);
   assert.equal(context.floating_actions.ai_assistant_enabled, true);
   assert.equal(context.online_support, undefined);
   assert.equal(context.root_css.current_css, '.navbar{background:pink}\n.footer{background:mistyrose}\n');
   assert.equal(context.root_css.update_field, 'css');
+});
+
+test('repository makes commerce navbar actions optional only for brand sites', async () => {
+  const repository = new WeblessAccountRepository(designContextPool({ websiteType: 'brand' }), {
+    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+
+  const context = await repository.getThemeShellContext(11, {
+    site_id: 101,
+    theme_id: 22
+  });
+
+  assert.equal(context.storefront_actions.website_type, 'brand');
+  assert.equal(context.storefront_actions.navbar_requirement, 'optional');
+  assert.deepEqual(context.storefront_actions.required_navbar_actions, []);
 });
 
 test('repository accepts model-shaped theme id values for theme shell context', async () => {
