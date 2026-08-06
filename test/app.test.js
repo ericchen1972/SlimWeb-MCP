@@ -93,6 +93,14 @@ test('health endpoint reports service metadata', async () => {
     assert.match(body.instructions, /site logo/);
     assert.match(body.instructions, /product summary\/description/);
     assert.match(body.instructions, /Do not invent discounts/);
+    assert.match(body.instructions, /product assortment.*category tools only/i);
+    assert.match(body.instructions, /page.*external link.*nav-item tools only/i);
+    assert.match(body.instructions, /category placement.*settings update only/i);
+    assert.match(body.instructions, /category upsert.*must not imply.*nav-item upsert/i);
+    assert.match(body.instructions, /Theme.*all runtime states.*never.*live category.*nav data/i);
+    assert.match(body.instructions, /static HTML.*Blade.*PHP.*components.*bound attributes/i);
+    assert.match(body.instructions, /balanced tree.*div.*nav.*header.*structurally empty/i);
+    assert.match(body.instructions, /literal href.*#.*relative.*https?/i);
   });
 });
 
@@ -438,8 +446,13 @@ test('MCP tools list includes homepage editing contract tools', async () => {
     assert.equal(toolsByName.get('slimweb_site_theme_mode_update').inputSchema.properties.theme_mode.enum.includes('dark'), true);
     assert.equal(toolsByName.get('slimweb_site_select').inputSchema.required.includes('site_code'), true);
     const logoSchema = toolsByName.get('slimweb_settings_update').inputSchema.properties.logo;
+    const categoryNavigationModeSchema = toolsByName.get('slimweb_settings_update').inputSchema.properties.category_navigation_mode;
     assert.equal(toolsByName.get('slimweb_settings_update').inputSchema.properties.product_category_depth, undefined);
+    assert.deepEqual(categoryNavigationModeSchema.enum, ['category_menu', 'navbar_categories']);
+    assert.match(categoryNavigationModeSchema.description, /presentation only/i);
+    assert.match(categoryNavigationModeSchema.description, /never creates navigation items/i);
     assert.doesNotMatch(toolsByName.get('slimweb_settings_get').description, /category depth/i);
+    assert.match(toolsByName.get('slimweb_settings_get').description, /category_navigation_mode/);
     assert.equal(logoSchema.type, 'object');
     assert.equal(logoSchema.additionalProperties, false);
     assert.equal(logoSchema.properties.media_path.type, 'string');
@@ -455,17 +468,28 @@ test('MCP tools list includes homepage editing contract tools', async () => {
     assert.equal(toolsByName.get('slimweb_themes_activate').inputSchema.required.includes('theme_id'), true);
     assert.equal(toolsByName.get('slimweb_theme_shell_get_context').inputSchema.required.includes('theme_id'), true);
     assert.match(toolsByName.get('slimweb_theme_shell_get_context').description, /root_css\.current_css/);
+    assert.match(toolsByName.get('slimweb_theme_shell_get_context').description, /static HTML.*Blade.*PHP.*components.*bound attributes/i);
+    assert.match(toolsByName.get('slimweb_theme_shell_get_context').description, /balanced tree.*div.*nav.*header.*structurally empty/i);
+    assert.match(toolsByName.get('slimweb_theme_shell_get_context').description, /literal href.*#.*relative.*https?/i);
     assert.equal(toolsByName.get('slimweb_themes_update_root_elements').inputSchema.required.includes('theme_id'), true);
     assert.match(toolsByName.get('slimweb_themes_update_root_elements').description, /replaces the MCP-managed root-elements CSS file/);
     assert.match(toolsByName.get('slimweb_themes_update_root_elements').description, /floating_actions/);
     assert.match(toolsByName.get('slimweb_themes_update_root_elements').description, /explicitly requests it for that slot/);
     assert.match(toolsByName.get('slimweb_themes_update_root_elements').description, /another placement/);
-    assert.match(toolsByName.get('slimweb_themes_update_root_elements').description, /combined member-auth slot.*cart slot/i);
+    assert.match(toolsByName.get('slimweb_themes_update_root_elements').description, /primary navigation container slot.*combined member-auth slot.*cart slot/i);
+    assert.match(toolsByName.get('slimweb_themes_update_root_elements').description, /non-clickable primary navigation container slot/i);
+    assert.match(toolsByName.get('slimweb_themes_update_root_elements').description, /enabled button.*anchor with a safe nonblank href/i);
+    assert.match(toolsByName.get('slimweb_themes_update_root_elements').description, /static HTML.*Blade.*PHP.*components.*bound attributes/i);
+    assert.match(toolsByName.get('slimweb_themes_update_root_elements').description, /balanced tree.*div.*nav.*header.*structurally empty/i);
+    assert.match(toolsByName.get('slimweb_themes_update_root_elements').description, /literal href.*#.*relative.*https?/i);
     assert.match(toolsByName.get('slimweb_themes_update_root_elements').description, /every Theme navbar/i);
     assert.match(toolsByName.get('slimweb_themes_update_root_elements').description, /Webless runtime.*visibility/i);
     assert.match(toolsByName.get('slimweb_themes_update_root_elements').description, /appearance and layout/i);
     assert.doesNotMatch(toolsByName.get('slimweb_themes_update_root_elements').description, /website_type=brand/);
     assert.doesNotMatch(toolsByName.get('slimweb_themes_update_root_elements').description, /cart, registration, and login/i);
+    assert.match(toolsByName.get('slimweb_themes_update_root_elements').description, /runtime category.*navigation.*not serialized/i);
+    assert.match(toolsByName.get('slimweb_themes_update_root_elements').description, /when navbar markup or theme CSS is created or modified/i);
+    assert.match(toolsByName.get('slimweb_themes_update_root_elements').description, /footer-only.*does not require.*navigation CSS/i);
     assert.match(toolsByName.get('slimweb_themes_update_root_elements').inputSchema.properties.fragments.description, /floating_actions/);
     assert.doesNotMatch(toolsByName.get('slimweb_themes_update_root_elements').description, /online_support/);
     assert.equal(toolsByName.get('slimweb_theme_style_profile_upsert').inputSchema.required.includes('theme_id'), true);
@@ -591,6 +615,37 @@ assert.equal(toolsByName.get('slimweb_orders_profit_statistics').inputSchema.pro
     assert.equal(toolsByName.get('slimweb_nav_items_upsert').inputSchema.properties.icon_svg_base64.type, 'string');
     assert.match(toolsByName.get('slimweb_nav_items_upsert').inputSchema.properties.parent_id.description, /omit or pass null/);
   });
+});
+
+test('README documents category navigation presentation and Theme runtime boundaries', () => {
+  assert.match(README_TEXT, /category_navigation_mode/);
+  assert.match(README_TEXT, /category_menu/);
+  assert.match(README_TEXT, /navbar_categories/);
+  assert.match(README_TEXT, /data-storefront-primary-navigation-slot/);
+  assert.match(README_TEXT, /data-storefront-category-menu/);
+  assert.match(README_TEXT, /data-storefront-navbar-categories/);
+  assert.match(README_TEXT, /data-storefront-nav-items/);
+  assert.match(README_TEXT, /category.*nav item.*separate|分類.*導覽.*分開/i);
+  assert.match(README_TEXT, /labels.*URLs.*not.*Theme HTML|標籤.*URL.*不.*Theme HTML/i);
+
+  const toolRows = README_TEXT.split('\n');
+  const shellContextRow = toolRows.find((line) => line.startsWith('| `slimweb_theme_shell_get_context` |'));
+  const rootElementsRow = toolRows.find((line) => line.startsWith('| `slimweb_themes_update_root_elements` |'));
+  const settingsGetRow = toolRows.find((line) => line.startsWith('| `slimweb_settings_get` |'));
+  const settingsUpdateRow = toolRows.find((line) => line.startsWith('| `slimweb_settings_update` |'));
+
+  for (const row of [shellContextRow, rootElementsRow]) {
+    assert.match(row, /data-storefront-primary-navigation-slot/);
+    assert.match(row, /data-storefront-member-auth-slot/);
+    assert.match(row, /data-storefront-cart-slot/);
+  }
+  assert.match(settingsGetRow, /category_navigation_mode/);
+  assert.match(settingsUpdateRow, /category_navigation_mode/);
+  assert.match(README_TEXT, /When navbar markup or theme CSS is created or modified.*category_menu.*navbar_categories.*recursive ordinary navigation/i);
+  assert.match(README_TEXT, /Footer-only.*do not require rewriting navigation CSS/i);
+  assert.match(README_TEXT, /static HTML.*Blade.*PHP.*components.*bound attributes/i);
+  assert.match(README_TEXT, /balanced tree.*div.*nav.*header.*structurally empty/i);
+  assert.match(README_TEXT, /literal href.*#.*relative.*https?/i);
 });
 
 test('README page and article flow docs require ChatGPT users to attach missing images first', () => {

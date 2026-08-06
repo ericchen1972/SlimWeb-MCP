@@ -190,8 +190,8 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 | `slimweb_themes_create_from_default` | Available | content write | 建立新版型，並只複製 Default shell/root-element template；新版型作為每一頁的基底樣式，包含首頁。 |
 | `slimweb_themes_activate` | Available | content write | 將指定版型設為前台啟用版型；會影響實際前台呈現。 |
 | `slimweb_themes_delete` | Available | content write | 刪除非 Default 版型與其 template 內容；Default 不能刪除。 |
-| `slimweb_theme_shell_get_context` | Available | content read | 回傳設計用 reference-only JSON，包含固定的 navbar、floating_actions、footer slots、navbar 必備的 `member_auth` 與 `cart` 呈現插槽、實際 shell 資料、`website_type` 事實資料與目前 MCP-managed root CSS。 |
-| `slimweb_themes_update_root_elements` | Available | content write | 更新版型的 navbar、floating_actions、footer 與 root CSS；每個 Theme navbar 都必須各有一個可點擊的 `data-storefront-member-auth-slot` 與 `data-storefront-cart-slot`，外觀與配置可依參考網站調整，功能及是否顯示由 Webless runtime 決定。自訂內容只能加入使用者明確指定的 slot，不可挪用其他區域資料。`css` 會替換 MCP-managed root CSS 檔。Theme 不載入 JavaScript 或 `enabled_libraries`。 |
+| `slimweb_theme_shell_get_context` | Available | content read | 回傳設計用 reference-only JSON，包含固定的 navbar、floating_actions、footer slots、navbar 必備的 `data-storefront-primary-navigation-slot`、`data-storefront-member-auth-slot`、`data-storefront-cart-slot` 三個呈現插槽、實際 shell 資料、`website_type` 事實資料與目前 MCP-managed root CSS。 |
+| `slimweb_themes_update_root_elements` | Available | content write | 更新版型的 navbar、floating_actions、footer 與 root CSS；每個 Theme navbar 都必須各有一個容器型 `data-storefront-primary-navigation-slot`，以及可點擊的 `data-storefront-member-auth-slot` 與 `data-storefront-cart-slot`，外觀與配置可依參考網站調整，功能及是否顯示由 Webless runtime 決定。Navbar 必須是 static HTML；禁止 Blade、PHP、components 與 bound attributes，必須形成 balanced tree，primary slot 只能使用 div、nav 或 header 且須 structurally empty。每個 anchor 只能使用 literal href：`#`、relative/root path 或通過驗證的 http/https/protocol-relative URL。自訂內容只能加入使用者明確指定的 slot，不可挪用其他區域資料。`css` 會替換 MCP-managed root CSS 檔。Theme 不載入 JavaScript 或 `enabled_libraries`。 |
 | `slimweb_theme_style_profile_get` | Available | content read | 讀取版型風格摘要與需求歷史。 |
 | `slimweb_theme_style_profile_upsert` | Available | content write | 建立或更新版型風格摘要、色彩、字體、版面、插圖與避免事項。 |
 | `slimweb_theme_style_profile_append_request` | Available | content write | 追加一筆使用者風格需求或變更紀錄。 |
@@ -216,8 +216,8 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 | `slimweb_payment_logistics_get` | Available | payment/logistics read | 讀取 SlimWeb 目前支援的金物流供應商與站台設定。 |
 | `slimweb_payment_logistics_update` | Available | payment/logistics write | 更新支援的金物流資料與啟用狀態；線上刷卡金流只能啟用一家，LINE Pay 例外。 |
 | `slimweb_dashboard_summary` | Available | dashboard read | 讀取 KPI、最新訂單、最新會員、低庫存提醒等後台首頁摘要。 |
-| `slimweb_settings_get` | Available | settings read | 讀取網站狀態、Logo、國別、商品載入方式、允許退貨天數等基本設定，並回傳可給消費者安裝使用的站台專屬 MCP 網址。 |
-| `slimweb_settings_update` | Available | settings write | 更新允許由 MCP 修改的基本設定欄位，包含單一作用中的網站 Logo。 |
+| `slimweb_settings_get` | Available | settings read | 讀取網站狀態、Logo、國別、商品載入方式、允許退貨天數與 `category_navigation_mode` 等基本設定，並回傳可給消費者安裝使用的站台專屬 MCP 網址。 |
+| `slimweb_settings_update` | Available | settings write | 更新允許由 MCP 修改的基本設定欄位，包含 `category_navigation_mode` 與單一作用中的網站 Logo。 |
 | `slimweb_admins_list` | Available | admin read | 列出站台管理員與權限摘要；第一個 admin 為受保護系統管理員。 |
 | `slimweb_admins_upsert` | Available | admin write | 新增或更新站台管理員與權限；第一個 admin 永遠保留系統管理員。 |
 | `slimweb_admins_delete` | Available | admin write | 刪除站台管理員；第一個系統管理員不能刪除。 |
@@ -469,11 +469,11 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 狀態: Available
 - 權限: content read
 - Scope: active site and selected theme
-- 用途: 在建立或修改版型前，讓 AI 取得實際會接上的資料摘要 JSON，例如 nav item 數量/名稱/樹狀結構、商品分類數量/名稱、每個 Theme navbar 必備的 `member_auth`/`cart` 呈現插槽、`website_type` 事實資料與 footer 聯絡資訊數量。
+- 用途: 在建立或修改版型前，讓 AI 取得實際會接上的資料摘要 JSON，例如 nav item 數量/名稱/樹狀結構、商品分類數量/名稱、目前 `category_navigation_mode`、兩種 runtime states、canonical CSS hooks，以及每個 Theme navbar 必備的 `primary_navigation`/`member_auth`/`cart` 呈現插槽。
 - Input: `site_code`、`theme_id`
 - Output: `reference_only: true`、site summary、theme summary、`theme_scope`、`navbar`、`product_categories`、`storefront_actions`、`floating_actions`、`footer`
 - Side effects: none
-- 重要規則: 此 JSON 僅供設計參考，不可直接把 nav/footer/contact 寫死進 root element 或 page body。AI 應依此資料量預留版面、選擇 icon/spacing，實際資料仍由 Webless runtime 接上。
+- 重要規則: 此 JSON 僅供設計參考，不可直接把 nav/footer/contact 寫死進 root element 或 page body。Runtime category/nav labels and URLs are not serialized into Theme HTML；AI 只需提供插槽與 CSS，實際標籤、URL、樹狀資料與互動由 Webless runtime 注入。Navbar 必須是 static HTML；禁止 Blade、PHP、components 與 bound attributes。Markup 必須形成 balanced tree；primary slot 只能使用 div、nav 或 header，且必須 structurally empty。三個 required slots 必須位於不同元素且不可放在 interactive ancestor 內。
 - 是否需要 confirmation: no
 - 錯誤情境: site not found、theme not found、database read failed
 - Audit fields: request ID、user ID、account ID、site ID、theme ID
@@ -483,7 +483,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 狀態: Available
 - 權限: content write
 - Scope: active site and theme
-- 用途: 更新固定的 `navbar`、`floating_actions`、`footer` root elements 與 root-level CSS。每個 Theme navbar 都必須各有一個可點擊的 `data-storefront-member-auth-slot` 與 `data-storefront-cart-slot`；前者代表單一「註冊／登入」入口，不能拆成兩個連結。AI 可依參考網站調整兩個插槽的外觀、標籤、icon、badge、順序、間距與響應式配置，但不可加入 `data-storefront-auth-open`、`data-storefront-auth-modal`、`data-storefront-cart-root` 或 `data-cart-trigger` 等 Webless 保留的 runtime attributes。功能與是否顯示完全由 Webless runtime 依網站設定處理。只有使用者明確指定某個自訂 slot 時才加入對應內容，不可把 Footer、頁面或其他位置提供的資料自行挪用。`css` 不是局部 patch，會替換 `assets/root-elements/css/00-mcp-theme.css`。
+- 用途: 更新固定的 `navbar`、`floating_actions`、`footer` root elements 與 root-level CSS。每個 Theme navbar 都必須各有一個不可點擊的容器型 `data-storefront-primary-navigation-slot`、一個可點擊的 `data-storefront-member-auth-slot` 與一個可點擊的 `data-storefront-cart-slot`；primary slot 只能使用 div、nav 或 header 且須 structurally empty，後兩者必須是啟用的 button 或具有有效 href 的 anchor。Navbar 必須是 static HTML；禁止 Blade、PHP、components 與 bound attributes，且 markup 必須形成 balanced tree。三個 required slots 必須位於不同元素、不得在 interactive ancestor 內，member/cart 也不得位於 primary slot 內。Every anchor must use a literal href：`#`/fragment、relative/root path、`//host/path`，或通過驗證的 `http://`/`https://` URL；route helper、其他 scheme 與動態 URL expression 都會被拒絕。AI 可依參考網站調整插槽外觀與響應式配置，但不可加入 Webless 保留的 runtime attributes，也不可把 live category/nav labels 或 URLs 寫進 Theme HTML。功能、資料與是否顯示完全由 Webless runtime 依網站設定處理。When navbar markup or theme CSS is created or modified, CSS must style category_menu, navbar_categories, and recursive ordinary navigation through the canonical hooks. Footer-only fragment updates that do not modify CSS do not require rewriting navigation CSS. 只有使用者明確指定某個自訂 slot 時才加入對應內容，不可把 Footer、頁面或其他位置提供的資料自行挪用。`css` 不是局部 patch，會替換 `assets/root-elements/css/00-mcp-theme.css`。
 - Input: `site_code`、`theme_id`、optional `fragments.navbar`、`fragments.floating_actions`、`fragments.footer`、optional `css`
 - Output: write summary、theme summary、updated fragments、CSS updated flag、preview URL
 - Side effects: writes root element Blade fragments and replaces `assets/root-elements/css/00-mcp-theme.css`
@@ -491,6 +491,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 最小 navbar 插槽格式:
 
 ```html
+<div data-storefront-primary-navigation-slot></div>
 <div data-storefront-commerce-actions>
   <button type="button" data-storefront-member-auth-slot>註冊／登入</button>
   <button type="button" data-storefront-cart-slot aria-label="購物車">
@@ -499,6 +500,8 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
   </button>
 </div>
 ```
+
+- CSS runtime hooks: `[data-storefront-primary-navigation-runtime]`、`[data-storefront-primary-navigation]`、`[data-storefront-category-menu]`、`[data-storefront-navbar-categories]`、`[data-storefront-nav-items]`、`[data-storefront-nav-node]`、`[data-storefront-nav-trigger]`、`[data-storefront-nav-panel]`、`[data-storefront-nav-children]`、`[data-storefront-nav-depth]`。
 
 - 是否需要 confirmation: yes for customer-facing active theme
 - 錯誤情境: theme not found、unsafe HTML、storage adapter not configured
@@ -803,7 +806,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - Scope: active site
 - 用途: 讀取 AI 後台操作需要的站台基本設定、目前網站 Logo，並取得可放在首頁給消費者安裝使用的站台專屬 MCP 網址。
 - Input: optional fields list
-- Output: site status、website type、country、product loading mode、return days allowed、`logo`（`media_path`、`public_url`、`mime_type`）與 `client_mcp_url`
+- Output: site status、website type、country、product loading mode、return days allowed、`category_navigation_mode`、`logo`（`media_path`、`public_url`、`mime_type`）與 `client_mcp_url`
 - Side effects: none
 - 是否需要 confirmation: no
 - Consumer MCP guidance: `client_mcp_url` 是此站台的消費者端 MCP endpoint，可提供給支援 MCP 的 AI 工具，讓顧客連接後以 AI 查詢商品、會員、訂單與客服支援。AI 應向商家說明這個入口的用途，並建議把連結或安裝按鈕放在首頁、會員中心或客服區，讓消費者容易找到。
@@ -815,12 +818,13 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 狀態: Available
 - 權限: settings write
 - Scope: active site
-- 用途: 更新允許 MCP 修改的基本設定，並可直接更換網站唯一作用中的 Logo；不另開 Logo 專用 public tool。
-- Input: patch object，僅允許 allowlist 欄位，例如 site status、member verification、country、product loading mode、return days allowed，以及可選的 `logo`。`logo` 必須且只能提供 `media_path`（由 `slimweb_uploads_commit` 回傳的 PNG/JPEG/WebP）或 `svg_base64` 其中之一。
+- 用途: 更新允許 MCP 修改的基本設定，包含分類在前台導覽中的呈現模式，並可直接更換網站唯一作用中的 Logo；不另開 Logo 專用 public tool。
+- Input: patch object，僅允許 allowlist 欄位，例如 site status、member verification、country、product loading mode、return days allowed、`category_navigation_mode`，以及可選的 `logo`。`category_navigation_mode` 可為 `category_menu`（以單一「商品分類」入口呈現 grouped categories）或 `navbar_categories`（把 recursive category entries 排進 navbar）；此欄位只改呈現，絕不建立 nav item。`logo` 必須且只能提供 `media_path`（由 `slimweb_uploads_commit` 回傳的 PNG/JPEG/WebP）或 `svg_base64` 其中之一。
 - Output: updated settings summary、changed fields、warnings、audit ID
 - Side effects: modifies site settings
 - Logo rule: 點陣圖會轉為 WebP、保留透明背景、不放大、依比例將高度限制為最多 96px；SVG 會保留 SVG 格式並經安全清理，同樣依比例限制最高 96px。新 Logo 會覆蓋舊 Logo，且點陣圖的 committed 暫存檔會被移除，因此 Logo 不會進入素材庫或留下多份作用中檔案。
 - Rule: 若要把 `member_verification` 設成 `email`，必須先完成 SMTP 設定；若 SMTP 欄位未完整設定，tool 會拒絕更新。
+- Category/navigation intent rule: Category and nav item intents are separate；商品分類與 nav item 是分開的資料，分類建立/更新不得隱含建立導覽項目。只有使用者另外明確要求頁面、外部連結或選單項目時，才使用 nav-item tools。若只要求分類擺放方式，僅更新 `category_navigation_mode`。
 - 是否需要 confirmation: yes for disabling site、changing return policy、or settings that affect storefront behavior
 - 錯誤情境: validation failed、permission denied、unsupported field、conflict
 - Audit fields: request ID、user ID、account ID、site ID、changed fields
@@ -873,6 +877,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - Input: optional category ID、optional current name、new name、optional parent category ID、optional icon SVG base64、optional 16:9 image、optional sort order
 - Output: action (`created` / `updated`)、matched_by、changed fields、category summary
 - Side effects: creates or modifies category
+- Intent rule: 商品分類與 nav item 是分開的 semantic intents；分類 upsert 不會也不應自動呼叫 nav-item upsert，除非使用者另外明確要求導覽項目。
 - Rename rule: 使用者說「把 A 改名為 B」時，AI 必須先用 `slimweb_categories_list` 找到 category ID；若沒有 ID，傳 `current_name: "A"` 與 `name: "B"`，不可只傳新名稱後宣稱已更新舊分類。
 - Parent rule: 建立時使用者沒有明確指定父項目，AI 應省略 `parent_id` 或傳 `null`，表示 root category；例如「建立男裝類別」不應自行推斷到「服飾」底下。更新時省略 `parent_id` 會保留原父層，明確傳 `null` 才移到 root。
 - Icon rule: 建立分類時 AI 必須依照使用者文字生成 SVG icon，base64 encode 後放入 `icon_svg_base64`；使用者未指定顏色時使用 `#9ca3af`。更新時若要重畫 icon，再傳新的 `icon_svg_base64`。
@@ -1656,8 +1661,9 @@ AI Client 收到或引用的圖片預設是 reference-only。只有當 tool call
 - 使用 `slimweb_themes_list` 檢查是否已有同名或近似自訂版型；如果已有明確同名版型，立刻停止並告知使用者。
 - 如果使用者要求暗色、螢光、neon、高對比等明顯依賴明暗模式的風格，先使用 `slimweb_site_theme_mode_get` 確認目前色系；必要時使用 `slimweb_site_theme_mode_update` 切換 light / dark。
 - 使用 `slimweb_themes_create_from_default` 從 Default 建立新的自訂版型。
-- 使用 `slimweb_theme_shell_get_context` 取得 navbar、floating_actions、footer、分類、固定 `member_auth`/`cart` 插槽等真實 shell reference 資料，以及目前 MCP-managed root CSS。
-- 每個 Theme navbar 一律包含一個可點擊的 `data-storefront-member-auth-slot` 與一個可點擊的 `data-storefront-cart-slot`；參考網站與 `website_type` 只影響設計背景，不改變 Theme schema。Webless runtime 會自行決定兩個功能是否顯示。
+- 使用 `slimweb_theme_shell_get_context` 取得 navbar、floating_actions、footer、分類模式與 canonical hooks、固定 `primary_navigation`/`member_auth`/`cart` 插槽等真實 shell reference 資料，以及目前 MCP-managed root CSS。
+- 每個 Theme navbar 一律包含一個容器型 `data-storefront-primary-navigation-slot`、一個可點擊的 `data-storefront-member-auth-slot` 與一個可點擊的 `data-storefront-cart-slot`；參考網站與 `website_type` 只影響設計背景，不改變 Theme schema。
+- CSS 必須涵蓋 `[data-storefront-category-menu]`、`[data-storefront-navbar-categories]` 與 `[data-storefront-nav-items]` 的遞迴節點/trigger/panel/children/depth 狀態。Theme HTML 不複製 live category/nav labels、URLs 或樹狀資料，Webless runtime 會注入它們。
 - 使用 `slimweb_design_context_get` 取得目前網站設計摘要、色系與框架。
 - 依照使用者需求、網站色系、shell reference 與框架設計版型基底，包含 navbar、floating_actions、footer、root CSS、body background、全站視覺氛圍等。
 - 修改 `slimweb_theme_shell_get_context.root_css.current_css` 後，使用 `slimweb_themes_update_root_elements` 寫入新版型的 navbar、floating_actions、footer 與完整 root CSS；不可用此工具修改單一頁面內容。
@@ -1671,10 +1677,11 @@ AI Client 收到或引用的圖片預設是 reference-only。只有當 tool call
 - 修改版型前必須有 `theme_id` 或版型名稱，沒有就先詢問使用者。
 - 使用 `slimweb_themes_list` 找到目標自訂版型；如果找不到或有多個可能目標，立刻停止並請使用者確認。
 - 使用 `slimweb_theme_style_profile_get` 取得目前版型風格摘要與歷史需求。
-- 使用 `slimweb_theme_shell_get_context` 取得 navbar、floating_actions、footer、分類、登入、購物車等真實 shell reference 資料，以及目前 MCP-managed root CSS。
+- 使用 `slimweb_theme_shell_get_context` 取得 navbar、floating_actions、footer、分類模式、canonical hooks 與三個固定呈現插槽等真實 shell reference 資料，以及目前 MCP-managed root CSS。
 - 使用 `slimweb_design_context_get` 取得目前網站設計摘要、色系與框架。
 - 如果使用者要求暗色、螢光、neon、高對比等明顯依賴明暗模式的風格，先使用 `slimweb_site_theme_mode_get` 確認目前色系；必要時使用 `slimweb_site_theme_mode_update` 切換 light / dark。
 - 依照使用者需求、既有風格摘要、網站色系、shell reference 與框架修改版型基底，包含 navbar、floating_actions、footer、root CSS、body background、全站視覺氛圍等。
+- 保留唯一 `data-storefront-primary-navigation-slot` 容器與可點擊的 member/cart slots；CSS 同時保留 grouped categories、navbar categories 與 ordinary recursive navigation 的 styling，且不可把 live labels/URLs 寫進 Theme HTML。
 - 修改 `slimweb_theme_shell_get_context.root_css.current_css` 後，使用 `slimweb_themes_update_root_elements` 回存 navbar、floating_actions、footer 與完整 root CSS；不可用此工具修改單一頁面內容。
 - `slimweb_themes_update_root_elements.css` 會替換 MCP-managed root CSS 檔，不是 patch 單一 selector；修改局部視覺時要一併保留既有 navbar、floating_actions、footer、body background 等 root CSS。
 - 使用 `slimweb_theme_style_profile_upsert` 更新版型風格摘要。

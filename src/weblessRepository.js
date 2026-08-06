@@ -4,6 +4,7 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import ExcelJS from 'exceljs';
 import { Agent } from 'undici';
+import { validateThemeNavbar } from './themeNavbarValidator.js';
 
 const { Pool } = pg;
 const MAX_ASSET_BYTES = 10 * 1024 * 1024;
@@ -134,8 +135,22 @@ const BASIC_SETTINGS_COLUMNS = [
   'default_country_code',
   'product_load_mode',
   'return_days_allowed',
+  'category_navigation_mode',
   'icon_path'
 ];
+const CATEGORY_NAVIGATION_MODES = ['category_menu', 'navbar_categories'];
+const STOREFRONT_NAVIGATION_RUNTIME_HOOKS = {
+  runtime_container: 'data-storefront-primary-navigation-runtime',
+  primary_navigation: 'data-storefront-primary-navigation',
+  category_menu: 'data-storefront-category-menu',
+  navbar_categories: 'data-storefront-navbar-categories',
+  ordinary_navigation: 'data-storefront-nav-items',
+  node: 'data-storefront-nav-node',
+  trigger: 'data-storefront-nav-trigger',
+  panel: 'data-storefront-nav-panel',
+  children: 'data-storefront-nav-children',
+  depth: 'data-storefront-nav-depth'
+};
 const CONTACT_SETTINGS_COLUMNS = [
   'contact_email',
   'contact_line',
@@ -781,7 +796,9 @@ export class WeblessAccountRepository {
         root_elements: ['navbar', 'floating_actions', 'footer'],
         content_fallback: theme.is_default ? null : 'default',
         page_body_rule: 'Non-Default themes inherit Default page content unless a page-specific body is explicitly created.',
-        custom_fragment_rule: 'Each fixed root slot accepts user-defined HTML. Do not auto-bind custom markup to site contact fields or invent missing URLs.'
+        custom_fragment_rule: 'Each fixed root slot accepts user-defined HTML. Do not auto-bind custom markup to site contact fields or invent missing URLs.',
+        navbar_fragment_rule: 'Navbar markup must be static HTML; Blade, PHP, components, and bound attributes are forbidden. It must form a balanced tree, and the primary slot must use div, nav, or header and be structurally empty. The three required slots must be distinct and outside interactive ancestors.',
+        navbar_href_rule: 'Every anchor must use a literal href beginning with #, a relative or root path, or a validated http/https/protocol-relative URL.'
       },
       navbar: {
         counts: {
@@ -793,6 +810,10 @@ export class WeblessAccountRepository {
         tree: buildTree(navItems)
       },
       product_categories: {
+        navigation_mode: basicSettings.category_navigation_mode,
+        runtime_states: [...CATEGORY_NAVIGATION_MODES],
+        runtime_hooks: { ...STOREFRONT_NAVIGATION_RUNTIME_HOOKS },
+        serialization_rule: 'Runtime category and ordinary navigation labels and URLs are not serialized into Theme root HTML. Theme HTML provides presentation slots only; Webless injects the live trees and hooks.',
         counts: {
           total_items: categories.length,
           top_level_items: categories.filter((category) => category.parent_id === null).length,
@@ -805,13 +826,14 @@ export class WeblessAccountRepository {
       storefront_actions: {
         website_type: websiteType,
         theme_slot_requirement: 'required',
-        required_theme_slots: ['member_auth', 'cart'],
+        required_theme_slots: ['primary_navigation', 'member_auth', 'cart'],
         slot_attributes: {
+          primary_navigation: 'data-storefront-primary-navigation-slot',
           member_auth: 'data-storefront-member-auth-slot',
           cart: 'data-storefront-cart-slot'
         },
-        visibility_rule: 'Every Theme navbar contains both presentation slots. Webless runtime alone decides whether to resolve them for ecommerce or remove them for brand sites.',
-        appearance_rule: 'Reference-site styling may change the appearance, spacing, order, labels, icons, badges, and responsive layout of the two Theme slots without recreating their runtime behavior.',
+        visibility_rule: 'Every Theme navbar contains all three presentation slots. Webless runtime resolves primary navigation data and decides whether to resolve or remove commerce actions for ecommerce or brand sites.',
+        appearance_rule: 'Reference-site styling may change the appearance, spacing, order, labels, icons, badges, and responsive layout of the three Theme slots without recreating their runtime data or behavior.',
         member_auth_behavior: 'One combined registration/login entry backed by the canonical LINE/Google modal or signed-in member menu.',
         cart_behavior: 'Canonical cart storage, count badge, panel, validation, and checkout behavior.'
       },
@@ -2064,7 +2086,9 @@ export class WeblessAccountRepository {
     const current = await this.findBasicSettingsForSite(site.id);
     const next = normalizeBasicSettings(args, current);
     const existingColumns = await this.existingSiteColumns(BASIC_SETTINGS_COLUMNS);
-    const writableColumns = existingColumns.filter((column) => column !== 'icon_path');
+    const writableColumns = existingColumns.filter(
+      (column) => column !== 'icon_path' && Object.prototype.hasOwnProperty.call(args, column)
+    );
     const missingRequestedColumn = BASIC_SETTINGS_COLUMNS
       .filter((column) => column !== 'icon_path')
       .find((column) => Object.prototype.hasOwnProperty.call(args, column) && !existingColumns.includes(column));
@@ -2079,11 +2103,13 @@ export class WeblessAccountRepository {
     const logoInput = Object.prototype.hasOwnProperty.call(args, 'logo')
       ? normalizeBasicSettingsLogo(args.logo, site.id)
       : null;
-    const mailDeliverySettings = next.member_verification === 'email'
+    const explicitlyEnablesEmailVerification = Object.prototype.hasOwnProperty.call(args, 'member_verification')
+      && next.member_verification === 'email';
+    const mailDeliverySettings = explicitlyEnablesEmailVerification
       ? await this.findMailDeliverySettingsForSite(site.id)
       : null;
 
-    if (next.member_verification === 'email' && !isSmtpConfigured(mailDeliverySettings)) {
+    if (explicitlyEnablesEmailVerification && !isSmtpConfigured(mailDeliverySettings)) {
       throw codedError(
         'VALIDATION_FAILED',
         'SMTP settings must be fully configured before member_verification can be set to email.'
@@ -2113,12 +2139,17 @@ export class WeblessAccountRepository {
         'Unable to replace the site logo'
       )
       : null;
+    const updatedSettings = {
+      ...current,
+      ...Object.fromEntries(writableColumns.map((column) => [column, next[column]])),
+      ...(result.rows[0] ?? {})
+    };
 
     return {
       ok: true,
       site,
       settings: formatPublicBasicSettings(
-        result.rows[0] ?? next,
+        updatedSettings,
         this.publicSiteBaseUrl,
         logoPayload?.logo
       )
@@ -7367,45 +7398,11 @@ function normalizeRootFragments(value) {
 
     normalized[key] = extractSafeHtml(html, `fragments.${key}`);
     if (key === 'navbar') {
-      validateThemeNavbarSlots(normalized[key]);
+      validateThemeNavbar(normalized[key]);
     }
   }
 
   return normalized;
-}
-
-function validateThemeNavbarSlots(html) {
-  const requiredSlots = [
-    'data-storefront-member-auth-slot',
-    'data-storefront-cart-slot'
-  ];
-  const openingTags = Array.from(html.matchAll(/<([a-z][a-z0-9:-]*)\b[^>]*>/gi), (match) => ({
-    name: match[1].toLowerCase(),
-    html: match[0]
-  }));
-
-  for (const attribute of requiredSlots) {
-    const attributePattern = new RegExp(`\\b${escapeRegExp(attribute)}(?:\\s*=\\s*(?:"[^"]*"|'[^']*'|[^\\s>]+))?`, 'i');
-    const matches = openingTags.filter((tag) => attributePattern.test(tag.html));
-
-    if (matches.length !== 1 || !['a', 'button'].includes(matches[0]?.name)) {
-      throw codedError('VALIDATION_FAILED', `Theme navbar must contain exactly one clickable ${attribute} slot.`);
-    }
-  }
-
-  const reservedRuntimeAttributes = [
-    'data-storefront-auth-open',
-    'data-storefront-auth-modal',
-    'data-storefront-cart-root',
-    'data-cart-trigger'
-  ];
-
-  for (const attribute of reservedRuntimeAttributes) {
-    const attributePattern = new RegExp(`\\b${escapeRegExp(attribute)}(?:\\s|=|>)`, 'i');
-    if (attributePattern.test(html)) {
-      throw codedError('VALIDATION_FAILED', `Theme navbar contains reserved storefront runtime attribute: ${attribute}.`);
-    }
-  }
 }
 
 function normalizePageKey(value) {
@@ -8326,33 +8323,39 @@ function normalizeMailTemplateUpdates(value) {
 }
 
 function normalizeBasicSettings(args, current = {}) {
+  const supplied = (field) => Object.prototype.hasOwnProperty.call(args, field);
   const normalized = {
-    site_status: Object.prototype.hasOwnProperty.call(args, 'site_status') ? String(args.site_status ?? '').trim() : (current.site_status ?? 'active'),
-    member_verification: Object.prototype.hasOwnProperty.call(args, 'member_verification') ? String(args.member_verification ?? '').trim() : (current.member_verification ?? 'none'),
-    website_type: Object.prototype.hasOwnProperty.call(args, 'website_type') ? String(args.website_type ?? '').trim() : (current.website_type ?? 'ecommerce'),
-    default_country_code: Object.prototype.hasOwnProperty.call(args, 'default_country_code') ? String(args.default_country_code ?? '').trim().toUpperCase() : (current.default_country_code ?? 'TW'),
-    product_load_mode: Object.prototype.hasOwnProperty.call(args, 'product_load_mode') ? String(args.product_load_mode ?? '').trim() : (current.product_load_mode ?? 'pagination'),
-    return_days_allowed: Object.prototype.hasOwnProperty.call(args, 'return_days_allowed') ? requireNonNegativeAmount(args.return_days_allowed, 'return_days_allowed') : Number.parseInt(current.return_days_allowed ?? '0', 10)
+    site_status: supplied('site_status') ? String(args.site_status ?? '').trim() : (current.site_status ?? 'active'),
+    member_verification: supplied('member_verification') ? String(args.member_verification ?? '').trim() : (current.member_verification ?? 'none'),
+    website_type: supplied('website_type') ? String(args.website_type ?? '').trim() : (current.website_type ?? 'ecommerce'),
+    default_country_code: supplied('default_country_code') ? String(args.default_country_code ?? '').trim().toUpperCase() : (current.default_country_code ?? 'TW'),
+    product_load_mode: supplied('product_load_mode') ? String(args.product_load_mode ?? '').trim() : (current.product_load_mode ?? 'pagination'),
+    return_days_allowed: supplied('return_days_allowed') ? requireNonNegativeAmount(args.return_days_allowed, 'return_days_allowed') : Number.parseInt(current.return_days_allowed ?? '0', 10),
+    category_navigation_mode: supplied('category_navigation_mode') ? String(args.category_navigation_mode ?? '').trim() : (current.category_navigation_mode ?? 'category_menu')
   };
 
-  if (!['active', 'maintenance'].includes(normalized.site_status)) {
+  if (supplied('site_status') && !['active', 'maintenance'].includes(normalized.site_status)) {
     throw codedError('VALIDATION_FAILED', 'site_status must be active or maintenance.');
   }
 
-  if (!['none', 'email'].includes(normalized.member_verification)) {
+  if (supplied('member_verification') && !['none', 'email'].includes(normalized.member_verification)) {
     throw codedError('VALIDATION_FAILED', 'member_verification must be none or email.');
   }
 
-  if (!['ecommerce', 'brand'].includes(normalized.website_type)) {
+  if (supplied('website_type') && !['ecommerce', 'brand'].includes(normalized.website_type)) {
     throw codedError('VALIDATION_FAILED', 'website_type must be ecommerce or brand.');
   }
 
-  if (!['TW', 'JP', 'KR', 'SG', 'HK', 'CN', 'US', 'CA', 'GB', 'AU'].includes(normalized.default_country_code)) {
+  if (supplied('default_country_code') && !['TW', 'JP', 'KR', 'SG', 'HK', 'CN', 'US', 'CA', 'GB', 'AU'].includes(normalized.default_country_code)) {
     throw codedError('VALIDATION_FAILED', 'default_country_code is not supported.');
   }
 
-  if (!['pagination', 'dynamic'].includes(normalized.product_load_mode)) {
+  if (supplied('product_load_mode') && !['pagination', 'dynamic'].includes(normalized.product_load_mode)) {
     throw codedError('VALIDATION_FAILED', 'product_load_mode must be pagination or dynamic.');
+  }
+
+  if (supplied('category_navigation_mode') && !CATEGORY_NAVIGATION_MODES.includes(normalized.category_navigation_mode)) {
+    throw codedError('VALIDATION_FAILED', 'category_navigation_mode must be category_menu or navbar_categories.');
   }
 
   return normalized;
@@ -8366,6 +8369,7 @@ function formatBasicSettings(row) {
     default_country_code: row.default_country_code ?? 'TW',
     product_load_mode: row.product_load_mode ?? 'pagination',
     return_days_allowed: Number.parseInt(row.return_days_allowed ?? '0', 10),
+    category_navigation_mode: CATEGORY_NAVIGATION_MODES.includes(row.category_navigation_mode) ? row.category_navigation_mode : 'category_menu',
     icon_path: row.icon_path ?? null
   };
 }

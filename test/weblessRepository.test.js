@@ -325,6 +325,7 @@ function designContextPool(options = {}) {
             'default_country_code',
             'product_load_mode',
             'return_days_allowed',
+            'category_navigation_mode',
             'icon_path'
           ].map((column_name) => ({ column_name }))
         };
@@ -477,6 +478,7 @@ function designContextPool(options = {}) {
             default_country_code: 'TW',
             product_load_mode: 'pagination',
             return_days_allowed: 0,
+            category_navigation_mode: options.categoryNavigationMode,
             icon_path: null
           }]
         };
@@ -705,6 +707,7 @@ function readinessPool() {
     default_country_code: 'TW',
     product_load_mode: 'pagination',
     return_days_allowed: 0,
+    category_navigation_mode: 'navbar_categories',
     icon_path: 'sites/101/settings/logo-current.webp',
     callback_code: 'swcb_test101',
     seo_title: '',
@@ -756,6 +759,7 @@ function readinessPool() {
             'default_country_code',
             'product_load_mode',
             'return_days_allowed',
+            'category_navigation_mode',
             'icon_path'
           ].map((column_name) => ({ column_name }))
         };
@@ -2148,12 +2152,154 @@ test('repository includes consumer MCP URL in basic settings', async () => {
   const result = await repository.getBasicSettings(11, { site_id: 101 });
 
   assert.equal(result.settings.client_mcp_url, 'https://client-mcp.example.test/sites/swcb_test101/mcp');
+  assert.equal(result.settings.category_navigation_mode, 'navbar_categories');
   assert.equal(Object.hasOwn(result.settings, 'product_category_depth'), false);
   assert.deepEqual(result.settings.logo, {
     media_path: 'sites/101/settings/logo-current.webp',
     public_url: 'https://slimweb.tw/media/sites/101/settings/logo-current.webp',
     mime_type: 'image/webp'
   });
+});
+
+test('repository partially updates category navigation mode without overwriting unrelated settings', async () => {
+  const state = {
+    id: 101,
+    slug: 'site-1',
+    name: '測試網站',
+    domain: '',
+    callback_code: 'swcb_test101',
+    site_status: 'maintenance',
+    member_verification: 'none',
+    website_type: 'legacy_brand',
+    default_country_code: 'JP',
+    product_load_mode: 'legacy_scroll',
+    return_days_allowed: 14,
+    category_navigation_mode: 'category_menu',
+    icon_path: null
+  };
+  const settingsColumns = [
+    'site_status',
+    'member_verification',
+    'website_type',
+    'default_country_code',
+    'product_load_mode',
+    'return_days_allowed',
+    'category_navigation_mode',
+    'icon_path'
+  ];
+  const pool = {
+    async query(sql, params) {
+      if (sql.includes('from sites') && sql.includes('account_id = $1 and id = $2')) {
+        return { rows: [state] };
+      }
+      if (sql.includes('from information_schema.columns')) {
+        return { rows: settingsColumns.map((column_name) => ({ column_name })) };
+      }
+      if (sql.includes('select ') && sql.includes('from sites') && sql.includes('where id = $1')) {
+        return { rows: [state] };
+      }
+      if (sql.includes('update sites')) {
+        assert.match(sql, /category_navigation_mode = \$1/);
+        assert.doesNotMatch(sql, /site_status\s*=/);
+        assert.doesNotMatch(sql, /member_verification\s*=/);
+        assert.doesNotMatch(sql, /website_type\s*=/);
+        assert.doesNotMatch(sql, /default_country_code\s*=/);
+        assert.doesNotMatch(sql, /product_load_mode\s*=/);
+        assert.doesNotMatch(sql, /return_days_allowed\s*=/);
+        assert.deepEqual(params, ['navbar_categories', 101]);
+        state.category_navigation_mode = params[0];
+        return { rows: [state] };
+      }
+      throw new Error(`Unexpected query: ${sql}`);
+    }
+  };
+  const repository = new WeblessAccountRepository(pool);
+
+  const result = await repository.updateBasicSettings(11, {
+    site_id: 101,
+    category_navigation_mode: 'navbar_categories'
+  });
+
+  assert.equal(result.settings.category_navigation_mode, 'navbar_categories');
+  assert.equal(result.settings.site_status, 'maintenance');
+  assert.equal(result.settings.website_type, 'legacy_brand');
+  assert.equal(result.settings.product_load_mode, 'legacy_scroll');
+  assert.equal(result.settings.default_country_code, 'JP');
+  assert.equal(result.settings.return_days_allowed, 14);
+});
+
+test('repository does not revalidate SMTP for an unrelated basic-settings patch when email verification is already enabled', async () => {
+  const state = {
+    id: 101,
+    slug: 'site-1',
+    name: '測試網站',
+    domain: '',
+    callback_code: 'swcb_test101',
+    site_status: 'active',
+    member_verification: 'email',
+    website_type: 'ecommerce',
+    default_country_code: 'TW',
+    product_load_mode: 'pagination',
+    return_days_allowed: 0,
+    category_navigation_mode: 'category_menu',
+    icon_path: null
+  };
+  const settingsColumns = [
+    'site_status',
+    'member_verification',
+    'website_type',
+    'default_country_code',
+    'product_load_mode',
+    'return_days_allowed',
+    'category_navigation_mode',
+    'icon_path'
+  ];
+  const pool = {
+    async query(sql, params) {
+      if (sql.includes('from sites') && sql.includes('account_id = $1 and id = $2')) {
+        return { rows: [state] };
+      }
+      if (sql.includes('from information_schema.columns')) {
+        return { rows: settingsColumns.map((column_name) => ({ column_name })) };
+      }
+      if (sql.includes('notification_smtp_host')) {
+        throw new Error('SMTP settings must not be queried for an unrelated patch');
+      }
+      if (sql.includes('select ') && sql.includes('from sites') && sql.includes('where id = $1')) {
+        return { rows: [state] };
+      }
+      if (sql.includes('update sites')) {
+        assert.match(sql, /category_navigation_mode = \$1/);
+        assert.doesNotMatch(sql, /member_verification\s*=/);
+        assert.deepEqual(params, ['navbar_categories', 101]);
+        state.category_navigation_mode = params[0];
+        return { rows: [state] };
+      }
+      throw new Error(`Unexpected query: ${sql}`);
+    }
+  };
+  const repository = new WeblessAccountRepository(pool);
+
+  const result = await repository.updateBasicSettings(11, {
+    site_id: 101,
+    category_navigation_mode: 'navbar_categories'
+  });
+
+  assert.equal(result.settings.category_navigation_mode, 'navbar_categories');
+  assert.equal(result.settings.member_verification, 'email');
+});
+
+test('repository rejects an invalid explicit category navigation mode', async () => {
+  const repository = new WeblessAccountRepository(readinessPool());
+
+  await assert.rejects(
+    () => repository.updateBasicSettings(11, {
+      site_id: 101,
+      category_navigation_mode: 'automatic'
+    }),
+    (error) => error?.code === 'VALIDATION_FAILED'
+      && error.message === 'category_navigation_mode must be category_menu or navbar_categories.'
+  );
 });
 
 test('repository replaces the site logo through the Webless basic-settings bridge', async () => {
@@ -2294,6 +2440,7 @@ test('repository reads basic settings when older sites table lacks newer columns
 
   assert.equal(result.settings.website_type, 'brand');
   assert.equal(result.settings.member_verification, 'none');
+  assert.equal(result.settings.category_navigation_mode, 'category_menu');
   assert.equal(result.settings.client_mcp_url, 'https://client-mcp.example.test/sites/swcb_test101/mcp');
 });
 
@@ -2324,14 +2471,15 @@ test('repository updates basic settings when older sites table lacks newer colum
 
       if (sql.includes('select ') && sql.includes('from sites') && sql.includes('where id = $1')) {
         assert.doesNotMatch(sql, /member_verification/);
+        assert.doesNotMatch(sql, /category_navigation_mode/);
         return { rows: [site] };
       }
 
       if (sql.includes('update sites')) {
         assert.doesNotMatch(sql, /member_verification/);
         assert.match(sql, /site_status = \$1/);
-        assert.match(sql, /website_type = \$2/);
-        assert.deepEqual(params, ['maintenance', 'brand', 101]);
+        assert.doesNotMatch(sql, /website_type\s*=/);
+        assert.deepEqual(params, ['maintenance', 101]);
         site.site_status = params[0];
         return { rows: [site] };
       }
@@ -2348,6 +2496,7 @@ test('repository updates basic settings when older sites table lacks newer colum
 
   assert.equal(result.settings.site_status, 'maintenance');
   assert.equal(result.settings.member_verification, 'none');
+  assert.equal(result.settings.category_navigation_mode, 'category_menu');
 });
 
 test('repository rejects an explicitly requested basic setting missing from the sites table', async () => {
@@ -2387,6 +2536,15 @@ test('repository rejects an explicitly requested basic setting missing from the 
       return_days_allowed: 7
     }),
     /return_days_allowed is not available/
+  );
+
+  await assert.rejects(
+    () => repository.updateBasicSettings(11, {
+      site_id: 101,
+      category_navigation_mode: 'navbar_categories'
+    }),
+    (error) => error?.code === 'VALIDATION_FAILED'
+      && error.message === 'category_navigation_mode is not available in the current sites table schema.'
   );
 });
 
@@ -4325,7 +4483,7 @@ test('repository activates a selected theme for a site', async () => {
 
 test('repository returns theme shell context for design reference', async () => {
   const storageRoot = await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-'));
-  const repository = new WeblessAccountRepository(designContextPool(), {
+  const repository = new WeblessAccountRepository(designContextPool({ categoryNavigationMode: 'navbar_categories' }), {
     storageRoot,
     publicSiteBaseUrl: 'https://slimweb.tw'
   });
@@ -4346,11 +4504,30 @@ test('repository returns theme shell context for design reference', async () => 
   assert.equal(context.product_categories.counts.total_items, 1);
   assert.equal(context.footer.counts.contact_items, 8);
   assert.deepEqual(context.theme_scope.root_elements, ['navbar', 'floating_actions', 'footer']);
+  assert.match(context.theme_scope.navbar_fragment_rule, /static HTML.*Blade.*PHP.*components.*bound attributes/i);
+  assert.match(context.theme_scope.navbar_fragment_rule, /balanced tree.*div.*nav.*header.*structurally empty/i);
+  assert.match(context.theme_scope.navbar_href_rule, /literal href.*#.*relative.*https?/i);
   assert.equal(context.storefront_actions.website_type, 'ecommerce');
   assert.equal(context.storefront_actions.theme_slot_requirement, 'required');
-  assert.deepEqual(context.storefront_actions.required_theme_slots, ['member_auth', 'cart']);
+  assert.deepEqual(context.storefront_actions.required_theme_slots, ['primary_navigation', 'member_auth', 'cart']);
+  assert.equal(context.storefront_actions.slot_attributes.primary_navigation, 'data-storefront-primary-navigation-slot');
   assert.equal(context.storefront_actions.slot_attributes.member_auth, 'data-storefront-member-auth-slot');
   assert.equal(context.storefront_actions.slot_attributes.cart, 'data-storefront-cart-slot');
+  assert.equal(context.product_categories.navigation_mode, 'navbar_categories');
+  assert.deepEqual(context.product_categories.runtime_states, ['category_menu', 'navbar_categories']);
+  assert.deepEqual(context.product_categories.runtime_hooks, {
+    runtime_container: 'data-storefront-primary-navigation-runtime',
+    primary_navigation: 'data-storefront-primary-navigation',
+    category_menu: 'data-storefront-category-menu',
+    navbar_categories: 'data-storefront-navbar-categories',
+    ordinary_navigation: 'data-storefront-nav-items',
+    node: 'data-storefront-nav-node',
+    trigger: 'data-storefront-nav-trigger',
+    panel: 'data-storefront-nav-panel',
+    children: 'data-storefront-nav-children',
+    depth: 'data-storefront-nav-depth'
+  });
+  assert.match(context.product_categories.serialization_rule, /labels.*URLs.*not.*serialized.*Theme root HTML/i);
   assert.match(context.storefront_actions.visibility_rule, /Webless runtime/i);
   assert.equal(context.storefront_actions.required_navbar_actions, undefined);
   assert.match(context.storefront_actions.appearance_rule, /appearance/i);
@@ -4374,10 +4551,26 @@ test('repository requires the same navbar presentation slots for brand sites', a
 
   assert.equal(context.storefront_actions.website_type, 'brand');
   assert.equal(context.storefront_actions.theme_slot_requirement, 'required');
-  assert.deepEqual(context.storefront_actions.required_theme_slots, ['member_auth', 'cart']);
+  assert.deepEqual(context.storefront_actions.required_theme_slots, ['primary_navigation', 'member_auth', 'cart']);
+  assert.equal(context.storefront_actions.slot_attributes.primary_navigation, 'data-storefront-primary-navigation-slot');
   assert.equal(context.storefront_actions.slot_attributes.member_auth, 'data-storefront-member-auth-slot');
   assert.equal(context.storefront_actions.slot_attributes.cart, 'data-storefront-cart-slot');
   assert.match(context.storefront_actions.visibility_rule, /Webless runtime/i);
+});
+
+test('repository theme shell context falls back to category menu navigation mode', async () => {
+  const repository = new WeblessAccountRepository(designContextPool(), {
+    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+
+  const context = await repository.getThemeShellContext(11, {
+    site_id: 101,
+    theme_id: 22
+  });
+
+  assert.equal(context.product_categories.navigation_mode, 'category_menu');
+  assert.deepEqual(context.product_categories.runtime_states, ['category_menu', 'navbar_categories']);
 });
 
 test('repository accepts model-shaped theme id values for theme shell context', async () => {
@@ -4496,7 +4689,7 @@ test('repository updates root element fragments and css for a custom theme', asy
     site_id: 101,
     theme_id: 22,
     fragments: {
-      navbar: '<nav class="cute-nav"><div data-storefront-commerce-actions><button data-storefront-member-auth-slot>註冊／登入</button><button data-storefront-cart-slot>購物車</button></div></nav>',
+      navbar: '<nav class="cute-nav"><div data-storefront-primary-navigation-slot></div><div data-storefront-commerce-actions><button data-storefront-member-auth-slot>註冊／登入</button><button data-storefront-cart-slot>購物車</button></div></nav>',
       floating_actions: '<div class="cute-actions"><button>LINE</button></div>',
       footer: '<footer>Cute footer</footer>'
     },
@@ -4511,7 +4704,7 @@ test('repository updates root element fragments and css for a custom theme', asy
   );
   assert.equal(
     await readFile(path.join(storageRoot, 'sites/101/templates/schemes/22/root-elements/navbar.blade.php'), 'utf8'),
-    '<nav class="cute-nav"><div data-storefront-commerce-actions><button data-storefront-member-auth-slot>註冊／登入</button><button data-storefront-cart-slot>購物車</button></div></nav>\n'
+    '<nav class="cute-nav"><div data-storefront-primary-navigation-slot></div><div data-storefront-commerce-actions><button data-storefront-member-auth-slot>註冊／登入</button><button data-storefront-cart-slot>購物車</button></div></nav>\n'
   );
   assert.equal(
     await readFile(path.join(storageRoot, 'sites/101/templates/schemes/22/root-elements/footer.blade.php'), 'utf8'),
@@ -4526,7 +4719,7 @@ test('repository updates root element fragments and css for a custom theme', asy
     site_id: 101,
     theme_id: 7,
     fragments: {
-      navbar: '<nav class="default-nav"><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>',
+      navbar: '<nav class="default-nav"><div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>',
       floating_actions: '<button data-scroll-top>Top</button>',
       footer: '<footer class="default-footer">Default footer</footer>'
     },
@@ -4540,7 +4733,7 @@ test('repository updates root element fragments and css for a custom theme', asy
   );
   assert.equal(
     await readFile(path.join(storageRoot, 'sites/101/templates/default/root-elements/navbar.blade.php'), 'utf8'),
-    '<nav class="default-nav"><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>\n'
+    '<nav class="default-nav"><div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>\n'
   );
   assert.equal(
     await readFile(path.join(storageRoot, 'sites/101/templates/default/root-elements/footer.blade.php'), 'utf8'),
@@ -4552,17 +4745,19 @@ test('repository updates root element fragments and css for a custom theme', asy
   );
 });
 
-test('repository rejects navbar fragments without exactly one clickable member and cart slot', async () => {
+test('repository rejects navbar fragments without exactly one primary container and clickable member and cart slots', async () => {
   const repository = new WeblessAccountRepository(themeMutationPool(), {
     storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
     publicSiteBaseUrl: 'https://slimweb.tw'
   });
 
   for (const navbar of [
-    '<nav><button data-storefront-member-auth-slot>Member</button></nav>',
-    '<nav><button data-storefront-cart-slot>Cart</button></nav>',
-    '<nav><div data-storefront-member-auth-slot>Member</div><button data-storefront-cart-slot>Cart</button></nav>',
-    '<nav><button data-storefront-member-auth-slot>One</button><button data-storefront-member-auth-slot>Two</button><button data-storefront-cart-slot>Cart</button></nav>'
+    '<nav><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>',
+    '<nav><div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button></nav>',
+    '<nav><div data-storefront-primary-navigation-slot></div><button data-storefront-cart-slot>Cart</button></nav>',
+    '<nav><div data-storefront-primary-navigation-slot></div><div data-storefront-member-auth-slot>Member</div><button data-storefront-cart-slot>Cart</button></nav>',
+    '<nav><div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>One</button><button data-storefront-member-auth-slot>Two</button><button data-storefront-cart-slot>Cart</button></nav>',
+    '<nav><div data-storefront-primary-navigation-slot></div><section data-storefront-primary-navigation-slot></section><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>'
   ]) {
     await assert.rejects(
       repository.updateThemeRootElements(11, {
@@ -4575,7 +4770,537 @@ test('repository rejects navbar fragments without exactly one clickable member a
   }
 });
 
-test('repository rejects reserved storefront runtime attributes in theme navbar fragments', async () => {
+test('repository rejects clickable primary navigation slots', async () => {
+  const repository = new WeblessAccountRepository(themeMutationPool(), {
+    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+
+  for (const primarySlot of [
+    '<a href="#" data-storefront-primary-navigation-slot>Navigation</a>',
+    '<button type="button" data-storefront-primary-navigation-slot>Navigation</button>'
+  ]) {
+    await assert.rejects(
+      repository.updateThemeRootElements(11, {
+        site_id: 101,
+        theme_id: 22,
+        fragments: {
+          navbar: `<nav>${primarySlot}<button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>`
+        }
+      }),
+      /primary-navigation-slot.*supported structural container/i
+    );
+  }
+});
+
+test('repository rejects void and inherently interactive elements as primary navigation containers', async () => {
+  const repository = new WeblessAccountRepository(themeMutationPool(), {
+    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+
+  for (const primarySlot of [
+    '<select data-storefront-primary-navigation-slot><option>Navigation</option></select>',
+    '<textarea data-storefront-primary-navigation-slot>Navigation</textarea>',
+    '<label data-storefront-primary-navigation-slot>Navigation</label>',
+    '<details data-storefront-primary-navigation-slot><summary>Navigation</summary></details>',
+    '<img src="navigation.webp" alt="" data-storefront-primary-navigation-slot>',
+    '<input type="hidden" data-storefront-primary-navigation-slot>',
+    '<br data-storefront-primary-navigation-slot>'
+  ]) {
+    await assert.rejects(
+      repository.updateThemeRootElements(11, {
+        site_id: 101,
+        theme_id: 22,
+        fragments: {
+          navbar: `<nav>${primarySlot}<button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>`
+        }
+      }),
+      /primary-navigation-slot.*supported structural container/i
+    );
+  }
+});
+
+for (const [element, primarySlot] of [
+  ['audio', '<audio controls data-storefront-primary-navigation-slot></audio>'],
+  ['video', '<video controls data-storefront-primary-navigation-slot></video>'],
+  ['iframe', '<iframe src="about:blank" data-storefront-primary-navigation-slot></iframe>'],
+  ['object', '<object data="about:blank" data-storefront-primary-navigation-slot></object>']
+]) {
+  test(`repository rejects ${element} as a primary navigation container`, async () => {
+    const repository = new WeblessAccountRepository(themeMutationPool(), {
+      storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+      publicSiteBaseUrl: 'https://slimweb.tw'
+    });
+
+    await assert.rejects(
+      repository.updateThemeRootElements(11, {
+        site_id: 101,
+        theme_id: 22,
+        fragments: {
+          navbar: `<nav>${primarySlot}<button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>`
+        }
+      }),
+      /primary-navigation-slot.*supported structural container|HTML content cannot include/i
+    );
+  });
+}
+
+test('repository accepts structural primary navigation containers', async () => {
+  for (const element of ['div', 'nav', 'header']) {
+    const repository = new WeblessAccountRepository(themeMutationPool(), {
+      storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+      publicSiteBaseUrl: 'https://slimweb.tw'
+    });
+    const result = await repository.updateThemeRootElements(11, {
+      site_id: 101,
+      theme_id: 22,
+      fragments: {
+        navbar: `<nav><${element} data-storefront-primary-navigation-slot></${element}><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>`
+      }
+    });
+
+    assert.deepEqual(result.updated_fragments, ['navbar']);
+  }
+});
+
+test('repository rejects malformed or unbalanced navbar trees and self-closing HTML containers', async () => {
+  const navbars = [
+    '<nav><div data-storefront-primary-navigation-slot></nav><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button>',
+    '<nav><div data-storefront-primary-navigation-slot /><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>',
+    '<nav><div><span></div></span><div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>'
+  ];
+
+  for (const navbar of navbars) {
+    const repository = new WeblessAccountRepository(themeMutationPool(), {
+      storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+      publicSiteBaseUrl: 'https://slimweb.tw'
+    });
+    await assert.rejects(
+      repository.updateThemeRootElements(11, {
+        site_id: 101,
+        theme_id: 22,
+        fragments: { navbar }
+      }),
+      (error) => error?.code === 'VALIDATION_FAILED'
+        && /HTML parse error.*(unclosed|self closing|trailing solidus|unexpected|duplicate|end tag)/i.test(error.message)
+    );
+  }
+});
+
+test('repository requires an empty non-inline primary slot outside interactive ancestors', async () => {
+  const navbars = [
+    '<nav><span data-storefront-primary-navigation-slot></span><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>',
+    '<nav><div data-storefront-primary-navigation-slot>Runtime goes here</div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>',
+    '<nav><div data-storefront-primary-navigation-slot><span>child</span></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>',
+    '<nav><button><div data-storefront-primary-navigation-slot></div></button><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>',
+    '<nav><div data-storefront-primary-navigation-slot><button data-storefront-member-auth-slot>Member</button></div><button data-storefront-cart-slot>Cart</button></nav>'
+  ];
+
+  for (const navbar of navbars) {
+    const repository = new WeblessAccountRepository(themeMutationPool(), {
+      storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+      publicSiteBaseUrl: 'https://slimweb.tw'
+    });
+    await assert.rejects(
+      repository.updateThemeRootElements(11, {
+        site_id: 101,
+        theme_id: 22,
+        fragments: { navbar }
+      }),
+      (error) => error?.code === 'VALIDATION_FAILED'
+        && /primary-navigation-slot|interactive ancestor|structurally empty/i.test(error.message)
+    );
+  }
+});
+
+test('repository requires three distinct required-slot elements outside interactive ancestors', async () => {
+  const navbars = [
+    '<nav><div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot data-storefront-cart-slot>Actions</button></nav>',
+    '<nav><div data-storefront-primary-navigation-slot></div><a href="#"><button data-storefront-member-auth-slot>Member</button></a><button data-storefront-cart-slot>Cart</button></nav>'
+  ];
+
+  for (const navbar of navbars) {
+    const repository = new WeblessAccountRepository(themeMutationPool(), {
+      storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+      publicSiteBaseUrl: 'https://slimweb.tw'
+    });
+    await assert.rejects(
+      repository.updateThemeRootElements(11, {
+        site_id: 101,
+        theme_id: 22,
+        fragments: { navbar }
+      }),
+      (error) => error?.code === 'VALIDATION_FAILED'
+        && /distinct|required.*slot|interactive ancestor/i.test(error.message)
+    );
+  }
+});
+
+test('repository accepts a balanced static navbar tree with wrappers, comments, and SVG icons', async () => {
+  const repository = new WeblessAccountRepository(themeMutationPool(), {
+    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+  const result = await repository.updateThemeRootElements(11, {
+    site_id: 101,
+    theme_id: 22,
+    fragments: {
+      navbar: '<nav><div class="navigation-wrap"><header data-storefront-primary-navigation-slot> <!-- runtime --> </header><div class="actions"><button data-storefront-member-auth-slot><svg viewBox="0 0 24 24"><path d="M1 1h2" /></svg>Member</button><a href="/cart" data-storefront-cart-slot><span>Cart</span></a></div></div></nav>'
+    }
+  });
+
+  assert.deepEqual(result.updated_fragments, ['navbar']);
+});
+
+test('repository reports HTML5 parse errors with source locations', async () => {
+  const slots = '<div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button>';
+  const navbars = [
+    `<nav><!-->${slots}</nav>`,
+    '<nav><div data-storefront-primary-navigation-slot></nav><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button>',
+    `<nav><div data-storefront-primary-navigation-slot />${slots.slice(slots.indexOf('<button'))}</nav>`,
+    `<nav><div data-storefront-primary-navigation-slot data-storefront-primary-navigation-slot></div>${slots.slice(slots.indexOf('<button'))}</nav>`
+  ];
+
+  for (const navbar of navbars) {
+    const repository = new WeblessAccountRepository(themeMutationPool(), {
+      storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+      publicSiteBaseUrl: 'https://slimweb.tw'
+    });
+    await assert.rejects(
+      repository.updateThemeRootElements(11, {
+        site_id: 101,
+        theme_id: 22,
+        fragments: { navbar }
+      }),
+      (error) => error?.code === 'VALIDATION_FAILED'
+        && /line 1, column \d+/i.test(error.message)
+        && /HTML parse error/i.test(error.message)
+    );
+  }
+});
+
+test('repository follows HTML5 unquoted slash semantics while preserving valid SVG and comments', async () => {
+  const repository = new WeblessAccountRepository(themeMutationPool(), {
+    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+  const result = await repository.updateThemeRootElements(11, {
+    site_id: 101,
+    theme_id: 22,
+    fragments: {
+      navbar: '<nav><!-- static --><header data-storefront-primary-navigation-slot></header><a href=/member/ data-storefront-member-auth-slot><svg viewBox="0 0 10 10"><path d="M0 0h1" /></svg>Member</a><button data-storefront-cart-slot>Cart</button><a href=/help/>Help</a></nav>'
+    }
+  });
+
+  assert.deepEqual(result.updated_fragments, ['navbar']);
+});
+
+test('repository rejects document wrapper tags that HTML5 fragment parsing would discard', async () => {
+  const slots = '<div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button>';
+
+  for (const wrapper of ['html', 'head', 'body']) {
+    for (const navbar of [`<${wrapper}>${slots}</${wrapper}>`, `<${wrapper}>${slots}`]) {
+      const repository = new WeblessAccountRepository(themeMutationPool(), {
+        storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+        publicSiteBaseUrl: 'https://slimweb.tw'
+      });
+      await assert.rejects(
+        repository.updateThemeRootElements(11, {
+          site_id: 101,
+          theme_id: 22,
+          fragments: { navbar }
+        }),
+        (error) => error?.code === 'VALIDATION_FAILED'
+          && new RegExp(`document wrapper <${wrapper}>`, 'i').test(error.message)
+          && /line 1, column 1/i.test(error.message)
+      );
+    }
+  }
+});
+
+test('repository rejects wrapper start tags after an ordinary fragment element', async () => {
+  const slots = '<div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button>';
+
+  for (const wrapper of ['html', 'head', 'body']) {
+    for (const navbar of [`<nav>${slots}</nav><${wrapper}></${wrapper}>`, `<nav>${slots}</nav><${wrapper}>`]) {
+      const repository = new WeblessAccountRepository(themeMutationPool(), {
+        storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+        publicSiteBaseUrl: 'https://slimweb.tw'
+      });
+      await assert.rejects(
+        repository.updateThemeRootElements(11, {
+          site_id: 101,
+          theme_id: 22,
+          fragments: { navbar }
+        }),
+        (error) => error?.code === 'VALIDATION_FAILED'
+          && new RegExp(`document wrapper <${wrapper}>`, 'i').test(error.message)
+          && /line 1, column \d+/i.test(error.message)
+      );
+    }
+  }
+});
+
+test('repository accepts wrapper-shaped text inside comments and quoted attributes', async () => {
+  const repository = new WeblessAccountRepository(themeMutationPool(), {
+    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+  const result = await repository.updateThemeRootElements(11, {
+    site_id: 101,
+    theme_id: 22,
+    fragments: {
+      navbar: '<nav title="literal <html> text" data-note=\'literal <body> text\'><!-- literal <head> text --><div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>'
+    }
+  });
+
+  assert.deepEqual(result.updated_fragments, ['navbar']);
+});
+
+test('repository accepts wrapper-shaped text inside style and title raw text', async () => {
+  const repository = new WeblessAccountRepository(themeMutationPool(), {
+    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+  const result = await repository.updateThemeRootElements(11, {
+    site_id: 101,
+    theme_id: 22,
+    fragments: {
+      navbar: '<nav><style>.sample::before { content: "<html><body>"; }</style><title>literal <head> text</title><div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>'
+    }
+  });
+
+  assert.deepEqual(result.updated_fragments, ['navbar']);
+});
+
+test('repository requires every navbar anchor to have exactly one valued safe nonblank href', async () => {
+  const hrefForms = ['', ' href', ' href=""', ' href="   "', ' href="/one" href="/two"'];
+
+  for (const href of hrefForms) {
+    const repository = new WeblessAccountRepository(themeMutationPool(), {
+      storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+      publicSiteBaseUrl: 'https://slimweb.tw'
+    });
+    await assert.rejects(
+      repository.updateThemeRootElements(11, {
+        site_id: 101,
+        theme_id: 22,
+        fragments: {
+          navbar: `<nav><div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button><a${href}>Ordinary</a></nav>`
+        }
+      }),
+      (error) => error?.code === 'VALIDATION_FAILED'
+        && /every.*anchor|anchor.*exactly one.*href|duplicate attribute/i.test(error.message)
+    );
+  }
+});
+
+test('repository rejects unavailable required slots and accepts explicitly available controls', async () => {
+  const unavailable = [
+    '<nav><div hidden data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>',
+    '<nav inert><div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>',
+    '<nav aria-hidden="true"><div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>',
+    '<nav><div data-storefront-primary-navigation-slot></div><button aria-disabled="true" data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>',
+    '<nav aria-disabled="true"><div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>',
+    '<nav><div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><span hidden><button data-storefront-cart-slot>Cart</button></span></nav>',
+    '<nav><div data-storefront-primary-navigation-slot></div><fieldset disabled><button data-storefront-member-auth-slot>Member</button></fieldset><button data-storefront-cart-slot>Cart</button></nav>'
+  ];
+
+  for (const navbar of unavailable) {
+    const repository = new WeblessAccountRepository(themeMutationPool(), {
+      storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+      publicSiteBaseUrl: 'https://slimweb.tw'
+    });
+    await assert.rejects(
+      repository.updateThemeRootElements(11, {
+        site_id: 101,
+        theme_id: 22,
+        fragments: { navbar }
+      }),
+      (error) => error?.code === 'VALIDATION_FAILED'
+        && /required slot|primary-navigation-slot|member-auth-slot|cart-slot/i.test(error.message)
+        && /available|hidden|inert|disabled/i.test(error.message)
+    );
+  }
+
+  const repository = new WeblessAccountRepository(themeMutationPool(), {
+    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+  const result = await repository.updateThemeRootElements(11, {
+    site_id: 101,
+    theme_id: 22,
+    fragments: {
+      navbar: '<nav aria-hidden="false"><div data-storefront-primary-navigation-slot></div><fieldset><button aria-disabled="false" data-storefront-member-auth-slot>Member</button></fieldset><a href="/cart" aria-disabled="false" data-storefront-cart-slot>Cart</a><a href="help">Help</a></nav>'
+    }
+  });
+  assert.deepEqual(result.updated_fragments, ['navbar']);
+});
+
+test('repository rejects required slots on foreign-namespace SVG and MathML elements', async () => {
+  const navbars = [
+    '<nav><div data-storefront-primary-navigation-slot></div><svg><a href="#member" data-storefront-member-auth-slot>Member</a><button data-storefront-cart-slot>Cart</button></svg></nav>',
+    '<nav><div data-storefront-primary-navigation-slot></div><math><a href="#member" data-storefront-member-auth-slot>Member</a><button data-storefront-cart-slot>Cart</button></math></nav>',
+    '<nav><svg><nav data-storefront-primary-navigation-slot></nav></svg><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>',
+    '<nav><math><nav data-storefront-primary-navigation-slot></nav></math><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>'
+  ];
+
+  for (const navbar of navbars) {
+    const repository = new WeblessAccountRepository(themeMutationPool(), {
+      storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+      publicSiteBaseUrl: 'https://slimweb.tw'
+    });
+    await assert.rejects(
+      repository.updateThemeRootElements(11, {
+        site_id: 101,
+        theme_id: 22,
+        fragments: { navbar }
+      }),
+      (error) => error?.code === 'VALIDATION_FAILED' && /required.*HTML namespace|slot.*HTML namespace/i.test(error.message)
+    );
+  }
+});
+
+test('repository rejects elements outside the primary navigation structural allowlist', async () => {
+  for (const element of ['style', 'template', 'canvas', 'meter', 'progress', 'svg']) {
+    const repository = new WeblessAccountRepository(themeMutationPool(), {
+      storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+      publicSiteBaseUrl: 'https://slimweb.tw'
+    });
+
+    await assert.rejects(
+      repository.updateThemeRootElements(11, {
+        site_id: 101,
+        theme_id: 22,
+        fragments: {
+          navbar: `<nav><${element} data-storefront-primary-navigation-slot></${element}><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>`
+        }
+      }),
+      (error) => error?.code === 'VALIDATION_FAILED'
+        && (
+          /primary-navigation-slot.*supported structural container/i.test(error.message)
+          || /primary-navigation-slot.*HTML namespace/i.test(error.message)
+          || (element === 'template' && /does not allow the template element/i.test(error.message))
+        )
+    );
+  }
+});
+
+test('repository rejects disabled member and cart buttons', async () => {
+  const repository = new WeblessAccountRepository(themeMutationPool(), {
+    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+
+  for (const [attribute, label] of [
+    ['data-storefront-member-auth-slot', 'Member'],
+    ['data-storefront-cart-slot', 'Cart']
+  ]) {
+    await assert.rejects(
+      repository.updateThemeRootElements(11, {
+        site_id: 101,
+        theme_id: 22,
+        fragments: {
+          navbar: `<nav><div data-storefront-primary-navigation-slot></div><button ${attribute} disabled>${label}</button>${attribute.includes('member') ? '<button data-storefront-cart-slot>Cart</button>' : '<button data-storefront-member-auth-slot>Member</button>'}</nav>`
+        }
+      }),
+      (error) => error?.code === 'VALIDATION_FAILED'
+        && new RegExp(`${attribute}.*enabled button`, 'i').test(error.message)
+    );
+  }
+});
+
+test('repository rejects member and cart anchors without a usable href', async () => {
+  const repository = new WeblessAccountRepository(themeMutationPool(), {
+    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+
+  for (const href of ['', ' href=""', ' href="   "']) {
+    for (const attribute of ['data-storefront-member-auth-slot', 'data-storefront-cart-slot']) {
+      const otherSlot = attribute.includes('member')
+        ? '<button data-storefront-cart-slot>Cart</button>'
+        : '<button data-storefront-member-auth-slot>Member</button>';
+
+      await assert.rejects(
+        repository.updateThemeRootElements(11, {
+          site_id: 101,
+          theme_id: 22,
+          fragments: {
+            navbar: `<nav><div data-storefront-primary-navigation-slot></div><a ${attribute}${href}>Action</a>${otherSlot}</nav>`
+          }
+        }),
+        (error) => error?.code === 'VALIDATION_FAILED'
+          && new RegExp(`${attribute}.*usable href`, 'i').test(error.message)
+      );
+    }
+  }
+});
+
+test('repository accepts enabled buttons and anchors with usable static hrefs', async () => {
+  for (const [memberSlot, cartSlot] of [
+    ['<button data-storefront-member-auth-slot>Member</button>', '<button type="button" data-storefront-cart-slot>Cart</button>'],
+    ['<a href="#member" data-storefront-member-auth-slot>Member</a>', '<a href="/cart" data-storefront-cart-slot>Cart</a>']
+  ]) {
+    const repository = new WeblessAccountRepository(themeMutationPool(), {
+      storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+      publicSiteBaseUrl: 'https://slimweb.tw'
+    });
+    const result = await repository.updateThemeRootElements(11, {
+      site_id: 101,
+      theme_id: 22,
+      fragments: {
+        navbar: `<nav><div data-storefront-primary-navigation-slot></div>${memberSlot}${cartSlot}</nav>`
+      }
+    });
+
+    assert.deepEqual(result.updated_fragments, ['navbar']);
+  }
+});
+
+test('repository rejects unsafe or unsupported hrefs on required-slot and ordinary Theme anchors', async () => {
+  const unsafeHrefs = [
+    'javascript:alert(1)',
+    'JaVaScRiPt:alert(1)',
+    'java\tscript:alert(1)',
+    'java&#x0a;script&colon;alert(1)',
+    '&#106;avascript&#58;alert(1)',
+    'data:text/plain,unsafe',
+    'vbscript:msgbox(1)',
+    'ftp://example.test/file'
+  ];
+
+  for (const href of unsafeHrefs) {
+    for (const placement of ['member', 'cart', 'ordinary']) {
+      const repository = new WeblessAccountRepository(themeMutationPool(), {
+        storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+        publicSiteBaseUrl: 'https://slimweb.tw'
+      });
+      const memberSlot = placement === 'member'
+        ? `<a href="${href}" data-storefront-member-auth-slot>Member</a>`
+        : '<button data-storefront-member-auth-slot>Member</button>';
+      const cartSlot = placement === 'cart'
+        ? `<a href="${href}" data-storefront-cart-slot>Cart</a>`
+        : '<button data-storefront-cart-slot>Cart</button>';
+      const ordinaryAnchor = placement === 'ordinary' ? `<a href="${href}">Other</a>` : '';
+
+      await assert.rejects(
+        repository.updateThemeRootElements(11, {
+          site_id: 101,
+          theme_id: 22,
+          fragments: {
+            navbar: `<nav><div data-storefront-primary-navigation-slot></div>${memberSlot}${cartSlot}${ordinaryAnchor}</nav>`
+          }
+        }),
+        (error) => error?.code === 'VALIDATION_FAILED'
+          && /anchor has an unsafe or unsupported href/i.test(error.message)
+      );
+    }
+  }
+});
+
+test('repository rejects Blade route helpers now that navbar hrefs must be literal', async () => {
   const repository = new WeblessAccountRepository(themeMutationPool(), {
     storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
     publicSiteBaseUrl: 'https://slimweb.tw'
@@ -4586,11 +5311,794 @@ test('repository rejects reserved storefront runtime attributes in theme navbar 
       site_id: 101,
       theme_id: 22,
       fragments: {
-        navbar: '<nav><button data-storefront-member-auth-slot data-storefront-auth-open>Member</button><button data-storefront-cart-slot>Cart</button></nav>'
+        navbar: '<nav><div data-storefront-primary-navigation-slot></div><a href="{{ route(\'member.login\') }}" data-storefront-member-auth-slot>Member</a><button data-storefront-cart-slot>Cart</button></nav>'
       }
     }),
-    /reserved storefront runtime attribute/i
+    (error) => error?.code === 'VALIDATION_FAILED'
+      && /static HTML|server-template|Blade syntax/i.test(error.message)
   );
+});
+
+test('repository accepts safe literal hrefs on all Theme anchors', async () => {
+  const safeHrefs = [
+    '#fragment',
+    'account',
+    'account/profile?tab=orders',
+    '?view=compact',
+    '/account',
+    './account',
+    '../account',
+    '//shop.example.test/account',
+    'http://shop.example.test/account',
+    'https://shop.example.test/account'
+  ];
+
+  for (const href of safeHrefs) {
+    const repository = new WeblessAccountRepository(themeMutationPool(), {
+      storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+      publicSiteBaseUrl: 'https://slimweb.tw'
+    });
+    const result = await repository.updateThemeRootElements(11, {
+      site_id: 101,
+      theme_id: 22,
+      fragments: {
+        navbar: `<nav><div data-storefront-primary-navigation-slot></div><a href="${href}" data-storefront-member-auth-slot>Member</a><button data-storefront-cart-slot>Cart</button><a href="${href}">Other</a></nav>`
+      }
+    });
+
+    assert.deepEqual(result.updated_fragments, ['navbar']);
+  }
+});
+
+test('repository ignores required slots that exist only inside HTML comments', async () => {
+  const repository = new WeblessAccountRepository(themeMutationPool(), {
+    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+
+  await assert.rejects(
+    repository.updateThemeRootElements(11, {
+      site_id: 101,
+      theme_id: 22,
+      fragments: {
+        navbar: `<nav>
+          <!--
+            <div data-storefront-primary-navigation-slot></div>
+            <button data-storefront-member-auth-slot>Member</button>
+            <button data-storefront-cart-slot>Cart</button>
+          -->
+        </nav>`
+      }
+    }),
+    /navbar.*slot|slot.*navbar/i
+  );
+});
+
+test('repository ignores duplicate slot markers in well-formed HTML comments and rejects unterminated comments', async () => {
+  const repository = new WeblessAccountRepository(themeMutationPool(), {
+    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+  const liveSlots = '<div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button>';
+
+  const result = await repository.updateThemeRootElements(11, {
+    site_id: 101,
+    theme_id: 22,
+    fragments: { navbar: `<nav aria-label="Navigation > <!-- label text -->">${liveSlots}<!-- <div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot></button><button data-storefront-cart-slot></button> --></nav>` }
+  });
+  assert.deepEqual(result.updated_fragments, ['navbar']);
+
+  await assert.rejects(
+    repository.updateThemeRootElements(11, {
+      site_id: 101,
+      theme_id: 22,
+      fragments: { navbar: `<nav>${liveSlots}<!-- unterminated</nav>` }
+    }),
+    /HTML parse error.*eof in comment/i
+  );
+});
+
+test('repository ignores reserved runtime attributes that exist only inside comments', async () => {
+  const repository = new WeblessAccountRepository(themeMutationPool(), {
+    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+
+  const result = await repository.updateThemeRootElements(11, {
+    site_id: 101,
+    theme_id: 22,
+    fragments: {
+      navbar: '<nav><div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button><!-- <div data-storefront-nav-node></div> --></nav>'
+    }
+  });
+
+  assert.deepEqual(result.updated_fragments, ['navbar']);
+});
+
+test('repository rejects executable Blade syntax inside ordinary HTML comments', async () => {
+  const liveSlots = '<div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button>';
+  const commentBodies = [
+    '{{ system("id") }}',
+    '{!! system("id") !!}',
+    '@php system("id"); @endphp'
+  ];
+
+  for (const commentBody of commentBodies) {
+    const repository = new WeblessAccountRepository(themeMutationPool(), {
+      storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+      publicSiteBaseUrl: 'https://slimweb.tw'
+    });
+
+    await assert.rejects(
+      repository.updateThemeRootElements(11, {
+        site_id: 101,
+        theme_id: 22,
+        fragments: {
+          navbar: `<nav>${liveSlots}<!-- ${commentBody} --></nav>`
+        }
+      }),
+      (error) => error?.code === 'VALIDATION_FAILED'
+        && /HTML comments.*Blade|static slot structure.*Blade/i.test(error.message)
+    );
+  }
+});
+
+test('repository rejects server-template syntax inside Blade comments', async () => {
+  const repository = new WeblessAccountRepository(themeMutationPool(), {
+    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+  await assert.rejects(
+    repository.updateThemeRootElements(11, {
+      site_id: 101,
+      theme_id: 22,
+      fragments: {
+        navbar: `<nav><div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button>{{-- {{ system("id") }} --}}</nav>`
+      }
+    }),
+    /static HTML|Blade syntax/i
+  );
+});
+
+test('repository rejects unterminated Blade comments instead of ignoring executable tails', async () => {
+  const liveSlots = '<div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button>';
+  const unterminatedComments = [
+    '{{-- {!! system("id") !!}',
+    '{{-- @php system("id"); @endphp'
+  ];
+
+  for (const comment of unterminatedComments) {
+    const repository = new WeblessAccountRepository(themeMutationPool(), {
+      storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+      publicSiteBaseUrl: 'https://slimweb.tw'
+    });
+
+    await assert.rejects(
+      repository.updateThemeRootElements(11, {
+        site_id: 101,
+        theme_id: 22,
+        fragments: {
+          navbar: `<nav>${liveSlots}${comment}</nav>`
+        }
+      }),
+      (error) => error?.code === 'VALIDATION_FAILED'
+        && /static HTML|Blade syntax/i.test(error.message)
+    );
+  }
+});
+
+test('repository ignores required slots that exist only inside Blade comments', async () => {
+  const repository = new WeblessAccountRepository(themeMutationPool(), {
+    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+
+  await assert.rejects(
+    repository.updateThemeRootElements(11, {
+      site_id: 101,
+      theme_id: 22,
+      fragments: {
+        navbar: `<nav>
+          {{--
+            <div data-storefront-primary-navigation-slot></div>
+            <button data-storefront-member-auth-slot>Member</button>
+            <button data-storefront-cart-slot>Cart</button>
+          --}}
+        </nav>`
+      }
+    }),
+    /static HTML|Blade syntax/i
+  );
+});
+
+test('repository rejects duplicate slot markers inside Blade comments as server-template syntax', async () => {
+  const repository = new WeblessAccountRepository(themeMutationPool(), {
+    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+
+  await assert.rejects(
+    repository.updateThemeRootElements(11, {
+      site_id: 101,
+      theme_id: 22,
+      fragments: {
+        navbar: '<nav><div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button>{{-- duplicate slots --}}</nav>'
+      }
+    }),
+    /static HTML|Blade syntax/i
+  );
+});
+
+test('repository ignores tag-shaped slot and reserved text inside style raw text', async () => {
+  const repository = new WeblessAccountRepository(themeMutationPool(), {
+    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+
+  const result = await repository.updateThemeRootElements(11, {
+    site_id: 101,
+    theme_id: 22,
+    fragments: {
+      navbar: `<nav>
+        <style>.example::before { content: "<div data-storefront-primary-navigation-slot data-storefront-nav-node>ignored ></div>"; }</style>
+        <div data-storefront-primary-navigation-slot></div>
+        <button data-storefront-member-auth-slot>Member</button>
+        <button data-storefront-cart-slot>Cart</button>
+      </nav>`
+    }
+  });
+
+  assert.deepEqual(result.updated_fragments, ['navbar']);
+});
+
+test('repository rejects every server-template construct in navbar HTML', async () => {
+  const liveSlots = '<div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button>';
+  const navbars = [
+    `<nav><?php system('id'); ?>${liveSlots}</nav>`,
+    `<nav>{{ $value }}${liveSlots}</nav>`,
+    `<nav>{!! $markup !!}${liveSlots}</nav>`,
+    `<nav>@if(true)${liveSlots}@endif</nav>`,
+    `<nav>{{-- ${liveSlots} --}}${liveSlots}</nav>`,
+    `<nav><!-- <?php system('id'); ?> -->${liveSlots}</nav>`,
+    `<nav><style>.x{content:"<?php system('id'); ?>"}</style>${liveSlots}</nav>`,
+    `<nav title="<?php system('id'); ?>">${liveSlots}</nav>`,
+    `<nav><x-navigation>${liveSlots}</x-navigation></nav>`,
+    `<nav><x-slot:actions>${liveSlots}</x-slot:actions></nav>`,
+    `<nav :class="$classes">${liveSlots}</nav>`,
+    `<nav x-bind:class="$classes">${liveSlots}</nav>`
+  ];
+
+  for (const navbar of navbars) {
+    const repository = new WeblessAccountRepository(themeMutationPool(), {
+      storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+      publicSiteBaseUrl: 'https://slimweb.tw'
+    });
+    await assert.rejects(
+      repository.updateThemeRootElements(11, {
+        site_id: 101,
+        theme_id: 22,
+        fragments: { navbar }
+      }),
+      (error) => error?.code === 'VALIDATION_FAILED'
+        && /static HTML|server-template|Blade syntax/i.test(error.message)
+    );
+  }
+});
+
+test('repository rejects inert or parser-changing elements in Theme navbar fragments', async () => {
+  const repository = new WeblessAccountRepository(themeMutationPool(), {
+    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+  const cases = [
+    {
+      element: 'noscript',
+      navbar: '<nav><noscript><div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></noscript></nav>'
+    },
+    {
+      element: 'noscript',
+      navbar: '<nav><div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button><noscript><div data-storefront-primary-navigation-slot data-storefront-nav-node></div></noscript></nav>'
+    },
+    {
+      element: 'plaintext',
+      navbar: '<nav><plaintext>fallback <div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>'
+    },
+    {
+      element: 'template',
+      navbar: '<nav><template><div title="quoted </template> text"><div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></div></template></nav>'
+    },
+    {
+      element: 'noscript',
+      navbar: '<nav><div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></noscript></nav>'
+    }
+  ];
+
+  for (const { element, navbar } of cases) {
+    await assert.rejects(
+      repository.updateThemeRootElements(11, {
+        site_id: 101,
+        theme_id: 22,
+        fragments: { navbar }
+      }),
+      (error) => error?.code === 'VALIDATION_FAILED'
+        && (
+          new RegExp(`Theme navbar does not allow the ${element} element`, 'i').test(error.message)
+          || /HTML parse error/i.test(error.message)
+        )
+    );
+  }
+});
+
+test('repository rejects malformed tags instead of scanning nested required or reserved markers', async () => {
+  const repository = new WeblessAccountRepository(themeMutationPool(), {
+    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+  const malformedNavbars = [
+    '<nav><div title="unterminated <div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>',
+    '<nav><div class=broken <span data-storefront-nav-node></span><div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>'
+  ];
+
+  for (const navbar of malformedNavbars) {
+    await assert.rejects(
+      repository.updateThemeRootElements(11, {
+        site_id: 101,
+        theme_id: 22,
+        fragments: { navbar }
+      }),
+      (error) => error?.code === 'VALIDATION_FAILED' && /HTML parse error.*(eof|attribute|tag)/i.test(error.message)
+    );
+  }
+});
+
+test('repository rejects standalone Blade constructs inside opening tags', async () => {
+  const repository = new WeblessAccountRepository(themeMutationPool(), {
+    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+  const navbars = [
+    '<nav {{ $attrs }}><div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>',
+    '<nav><div {!! $attrs !!} data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>',
+    '<nav><div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot @disabled($locked)>Member</button><button data-storefront-cart-slot>Cart</button></nav>',
+    '<nav><div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot @class($classes)>Cart</button></nav>',
+    '<nav class={{ $class }}><div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>'
+  ];
+
+  for (const navbar of navbars) {
+    await assert.rejects(
+      repository.updateThemeRootElements(11, {
+        site_id: 101,
+        theme_id: 22,
+        fragments: { navbar }
+      }),
+      (error) => error?.code === 'VALIDATION_FAILED'
+        && /does not allow dynamic Blade attributes inside opening tags/i.test(error.message)
+    );
+  }
+});
+
+test('repository accepts a literal member href with otherwise static navbar markup', async () => {
+  const repository = new WeblessAccountRepository(themeMutationPool(), {
+    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+
+  const result = await repository.updateThemeRootElements(11, {
+    site_id: 101,
+    theme_id: 22,
+    fragments: {
+      navbar: '<nav class="site-nav"><div data-storefront-primary-navigation-slot></div><a href="/member/login" data-storefront-member-auth-slot>Member</a><a href="/cart" class="cart-link" data-storefront-cart-slot>Cart</a></nav>'
+    }
+  });
+
+  assert.deepEqual(result.updated_fragments, ['navbar']);
+});
+
+test('repository rejects Blade constructs anywhere inside unquoted attribute values', async () => {
+  const repository = new WeblessAccountRepository(themeMutationPool(), {
+    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+  const navbars = [
+    '<nav class=foo{{ $class }}><div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>',
+    '<nav class=foo{!! $class !!}><div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>',
+    '<nav class=prefix@disabled($locked)><div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>',
+    '<nav data-state=prefix@class($classes)suffix><div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>'
+  ];
+
+  for (const navbar of navbars) {
+    await assert.rejects(
+      repository.updateThemeRootElements(11, {
+        site_id: 101,
+        theme_id: 22,
+        fragments: { navbar }
+      }),
+      (error) => error?.code === 'VALIDATION_FAILED'
+        && /does not allow dynamic Blade attributes inside opening tags/i.test(error.message)
+    );
+  }
+});
+
+test('repository permits ordinary at signs in safe quoted and unquoted values', async () => {
+  const repository = new WeblessAccountRepository(themeMutationPool(), {
+    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+
+  const result = await repository.updateThemeRootElements(11, {
+    site_id: 101,
+    theme_id: 22,
+    fragments: {
+      navbar: '<nav class="site-nav" data-handle="support@slimweb"><div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button><a href=https://user@example.test/path data-label=user@example.test>Other</a></nav>'
+    }
+  });
+
+  assert.deepEqual(result.updated_fragments, ['navbar']);
+});
+
+test('repository rejects required slots hidden inside a false Blade branch', async () => {
+  const repository = new WeblessAccountRepository(themeMutationPool(), {
+    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+
+  await assert.rejects(
+    repository.updateThemeRootElements(11, {
+      site_id: 101,
+      theme_id: 22,
+      fragments: {
+        navbar: '<nav>@if(false)<div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button>@endif</nav>'
+      }
+    }),
+    (error) => error?.code === 'VALIDATION_FAILED'
+      && /static slot structure.*does not allow.*Blade/i.test(error.message)
+  );
+});
+
+test('repository rejects mutually exclusive Blade slot branches with a static-structure error', async () => {
+  const repository = new WeblessAccountRepository(themeMutationPool(), {
+    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+  const branch = '<div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button>';
+
+  await assert.rejects(
+    repository.updateThemeRootElements(11, {
+      site_id: 101,
+      theme_id: 22,
+      fragments: {
+        navbar: `<nav>@if($compact)${branch}@else${branch}@endif</nav>`
+      }
+    }),
+    (error) => error?.code === 'VALIDATION_FAILED'
+      && /static slot structure.*does not allow.*Blade/i.test(error.message)
+      && !/duplicate/i.test(error.message)
+  );
+});
+
+test('repository rejects raw Blade output in text and quoted attribute values', async () => {
+  const repository = new WeblessAccountRepository(themeMutationPool(), {
+    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+  const liveSlots = '<div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button>';
+
+  for (const navbar of [
+    `<nav>{!! $runtimeMarkup !!}${liveSlots}</nav>`,
+    `<nav data-runtime="{!! $attrs !!}">${liveSlots}</nav>`
+  ]) {
+    await assert.rejects(
+      repository.updateThemeRootElements(11, {
+        site_id: 101,
+        theme_id: 22,
+        fragments: { navbar }
+      }),
+      (error) => error?.code === 'VALIDATION_FAILED'
+        && /static slot structure.*does not allow.*Blade/i.test(error.message)
+    );
+  }
+});
+
+test('repository rejects unapproved escaped Blade expressions in text and quoted attributes', async () => {
+  const expressions = [
+    '{{ system("id") }}',
+    '{{ new App\\RuntimeMarkup }}',
+    '{{ RuntimeMarkup::make() }}',
+    '{{ $site->render() }}',
+    '{{ $left . $right }}',
+    '{{ $items[0] }}',
+    '{{ call_user_func($handler) }}',
+    '{{ new Illuminate\\Support\\HtmlString($runtimeMarkup) }}',
+    '{{ $runtimeMarkup }}',
+    '{{ $class }}',
+    '{{ $site->name }}'
+  ];
+  const liveSlots = '<div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button>';
+
+  for (const expression of expressions) {
+    for (const navbar of [
+      `<nav>${expression}${liveSlots}</nav>`,
+      `<nav title='${expression}'>${liveSlots}</nav>`
+    ]) {
+      const repository = new WeblessAccountRepository(themeMutationPool(), {
+        storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+        publicSiteBaseUrl: 'https://slimweb.tw'
+      });
+
+      await assert.rejects(
+        repository.updateThemeRootElements(11, {
+          site_id: 101,
+          theme_id: 22,
+          fragments: { navbar }
+        }),
+        (error) => error?.code === 'VALIDATION_FAILED'
+          && /escaped Blade expression.*not allowed/i.test(error.message)
+      );
+    }
+  }
+});
+
+test('repository rejects unclosed or malformed escaped Blade echoes', async () => {
+  const liveSlots = '<div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button>';
+  const navbars = [
+    `<nav>{{ $name ${liveSlots}</nav>`,
+    `<nav title="{{ $class">${liveSlots}</nav>`,
+    `<nav>{{ }}${liveSlots}</nav>`
+  ];
+
+  for (const navbar of navbars) {
+    const repository = new WeblessAccountRepository(themeMutationPool(), {
+      storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+      publicSiteBaseUrl: 'https://slimweb.tw'
+    });
+
+    await assert.rejects(
+      repository.updateThemeRootElements(11, {
+        site_id: 101,
+        theme_id: 22,
+        fragments: { navbar }
+      }),
+      (error) => error?.code === 'VALIDATION_FAILED'
+        && /malformed escaped Blade expression|escaped Blade expression.*not allowed/i.test(error.message)
+    );
+  }
+});
+
+test('repository rejects structural and output-capable Blade directives in navbar text', async () => {
+  const repository = new WeblessAccountRepository(themeMutationPool(), {
+    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+  const liveSlots = '<div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button>';
+  const directives = [
+    '@if($visible)', '@elseif($compact)', '@else', '@endif',
+    '@foreach($items as $item)', '@endforeach', '@for($i = 0; $i < 1; $i++)', '@endfor',
+    '@while($visible)', '@endwhile', '@forelse($items as $item)', '@empty', '@endforelse',
+    "@include('nav.part')", "@component('nav.part')", '@endcomponent',
+    '@php', '@endphp', '@verbatim', '@endverbatim', '@auth', '@endauth',
+    "@can('edit')", '@endcan', '@isset($value)', '@endisset', '@empty($value)', '@endempty',
+    "@section('navbar')", '@endsection', "@yield('navbar')", "@push('navbar')", '@endpush', "@stack('navbar')"
+  ];
+
+  for (const directive of directives) {
+    await assert.rejects(
+      repository.updateThemeRootElements(11, {
+        site_id: 101,
+        theme_id: 22,
+        fragments: { navbar: `<nav>${directive}${liveSlots}</nav>` }
+      }),
+      (error) => error?.code === 'VALIDATION_FAILED'
+        && /static slot structure.*does not allow.*Blade/i.test(error.message)
+    );
+  }
+});
+
+test('repository rejects standalone no-parenthesis and custom Blade directives generically', async () => {
+  const repository = new WeblessAccountRepository(themeMutationPool(), {
+    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+  const liveSlots = '<div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button>';
+  const directives = ['@break', '@continue', '@enderror', '@stop', '@overwrite', '@admin', '@endadmin'];
+
+  for (const directive of directives) {
+    await assert.rejects(
+      repository.updateThemeRootElements(11, {
+        site_id: 101,
+        theme_id: 22,
+        fragments: { navbar: `<nav>${directive} protected content ${liveSlots}</nav>` }
+      }),
+      (error) => error?.code === 'VALIDATION_FAILED'
+        && /static slot structure.*does not allow.*Blade/i.test(error.message)
+    );
+  }
+});
+
+test('repository rejects Laravel directives after dot, plus, and minus boundaries', async () => {
+  const liveSlots = '<div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button>';
+  const navbars = [
+    `<nav>.@if(false)${liveSlots}</nav>`,
+    `<nav>+@if(false)${liveSlots}</nav>`,
+    `<nav>-@if(false)${liveSlots}</nav>`,
+    `<nav>.@php system('id'); .@endphp${liveSlots}</nav>`,
+    `<nav>+@php system('id'); +@endphp${liveSlots}</nav>`,
+    `<nav>-@break${liveSlots}</nav>`
+  ];
+
+  for (const navbar of navbars) {
+    const repository = new WeblessAccountRepository(themeMutationPool(), {
+      storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+      publicSiteBaseUrl: 'https://slimweb.tw'
+    });
+
+    await assert.rejects(
+      repository.updateThemeRootElements(11, {
+        site_id: 101,
+        theme_id: 22,
+        fragments: { navbar }
+      }),
+      (error) => error?.code === 'VALIDATION_FAILED'
+        && /static slot structure.*does not allow.*Blade/i.test(error.message)
+    );
+  }
+});
+
+test('repository rejects embedded directive calls inside quoted attribute values', async () => {
+  const repository = new WeblessAccountRepository(themeMutationPool(), {
+    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+
+  await assert.rejects(
+    repository.updateThemeRootElements(11, {
+      site_id: 101,
+      theme_id: 22,
+      fragments: {
+        navbar: '<nav title="prefix@admin($user)"><div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>'
+      }
+    }),
+    (error) => error?.code === 'VALIDATION_FAILED'
+      && /static slot structure.*does not allow.*Blade/i.test(error.message)
+  );
+});
+
+test('repository rejects Blade attribute-generating directives on slot elements', async () => {
+  const directives = [
+    '@class($classes)', '@style($styles)', '@checked($checked)', '@selected($selected)',
+    '@disabled($disabled)', '@readonly($readonly)', '@required($required)'
+  ];
+
+  for (const directive of directives) {
+    const repository = new WeblessAccountRepository(themeMutationPool(), {
+      storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+      publicSiteBaseUrl: 'https://slimweb.tw'
+    });
+
+    await assert.rejects(
+      repository.updateThemeRootElements(11, {
+        site_id: 101,
+        theme_id: 22,
+        fragments: {
+          navbar: `<nav><div ${directive} data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>`
+        }
+      }),
+      (error) => error?.code === 'VALIDATION_FAILED'
+        && /static slot structure.*does not allow.*Blade/i.test(error.message)
+    );
+  }
+});
+
+test('repository keeps email addresses and encoded leading-at handles in harmless text', async () => {
+  const repository = new WeblessAccountRepository(themeMutationPool(), {
+    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+
+  const result = await repository.updateThemeRootElements(11, {
+    site_id: 101,
+    theme_id: 22,
+    fragments: {
+      navbar: '<nav title="Contact hello@example.test or &#64;slimweb" data-handle="support@slimweb"><div data-storefront-primary-navigation-slot></div><span>Welcome — hello@example.test &#64;slimweb</span><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>'
+    }
+  });
+
+  assert.deepEqual(result.updated_fragments, ['navbar']);
+});
+
+test('repository requires exact required-slot attribute names', async () => {
+  const repository = new WeblessAccountRepository(themeMutationPool(), {
+    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+  const navbars = [
+    '<nav><div x-data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>',
+    '<nav><div data-storefront-primary-navigation-slot></div><button x-data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>',
+    '<nav><div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button x-data-storefront-cart-slot>Cart</button></nav>'
+  ];
+
+  for (const navbar of navbars) {
+    await assert.rejects(
+      repository.updateThemeRootElements(11, {
+        site_id: 101,
+        theme_id: 22,
+        fragments: { navbar }
+      }),
+      /navbar.*slot|slot.*navbar/i
+    );
+  }
+});
+
+test('repository counts duplicate required-slot attributes on the same opening tag', async () => {
+  const repository = new WeblessAccountRepository(themeMutationPool(), {
+    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+  const navbars = [
+    '<nav><div data-storefront-primary-navigation-slot data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>',
+    '<nav><div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>',
+    '<nav><div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot data-storefront-cart-slot>Cart</button></nav>'
+  ];
+
+  for (const navbar of navbars) {
+    await assert.rejects(
+      repository.updateThemeRootElements(11, {
+        site_id: 101,
+        theme_id: 22,
+        fragments: { navbar }
+      }),
+      /HTML parse error.*duplicate attribute/i
+    );
+  }
+});
+
+test('repository rejects reserved storefront runtime navigation attributes in theme navbar fragments', async () => {
+  const repository = new WeblessAccountRepository(themeMutationPool(), {
+    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+
+  for (const attribute of [
+    'data-storefront-auth-open',
+    'data-storefront-primary-navigation-runtime',
+    'data-storefront-primary-navigation',
+    'data-storefront-category-menu',
+    'data-storefront-navbar-categories',
+    'data-storefront-nav-items',
+    'data-storefront-nav-node',
+    'data-storefront-nav-trigger',
+    'data-storefront-nav-panel',
+    'data-storefront-nav-children',
+    'data-storefront-nav-depth'
+  ]) {
+    await assert.rejects(
+      repository.updateThemeRootElements(11, {
+        site_id: 101,
+        theme_id: 22,
+        fragments: {
+          navbar: `<nav ${attribute}><div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>`
+        }
+      }),
+      (error) => error?.code === 'VALIDATION_FAILED'
+        && error.message === `Theme navbar contains reserved storefront runtime attribute: ${attribute}.`
+    );
+  }
+});
+
+test('repository does not treat a prefixed runtime attribute as an exact reserved attribute', async () => {
+  const repository = new WeblessAccountRepository(themeMutationPool(), {
+    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
+    publicSiteBaseUrl: 'https://slimweb.tw'
+  });
+
+  const result = await repository.updateThemeRootElements(11, {
+    site_id: 101,
+    theme_id: 22,
+    fragments: {
+      navbar: '<nav x-data-storefront-nav-node><div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>'
+    }
+  });
+
+  assert.deepEqual(result.updated_fragments, ['navbar']);
 });
 
 test('repository allows non-navbar root fragment updates without repeating navbar slots', async () => {

@@ -12,6 +12,8 @@
   },
   "dependencies": {
     "exceljs": "^4.4.0",
+    "parse5": "^7.3.0",
+    "parse5-sax-parser": "^7.0.0",
     "pg": "^8.21.0",
     "undici": "^6.27.0"
   }
