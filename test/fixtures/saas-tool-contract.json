@@ -1,0 +1,4868 @@
+{
+  "count": 125,
+  "sha256": "d6de40eb08a55927c199ae1b227fc29b7bf4010e0bc70a87b14d4d3ed1be6871",
+  "tools": [
+    {
+      "name": "slimweb_media_library_stats",
+      "description": "Return media-library total count and size plus unused count and size. Optionally includes unused committed asset details; usage is checked across content, products, settings, newsletters, categories, and templates.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "include_unused_assets": {
+            "type": "boolean"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_media_library_delete_unused",
+      "description": "Delete only committed media assets that are unused. Rechecks every asset immediately before deletion, skips newly referenced assets, never accepts a force flag, and needs no second confirmation.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_orders_get_waybill_url",
+      "description": "Return a printable forward-logistics waybill URL for one or more selected orders. For requests such as print unshipped orders, first query orders and pass the returned order numbers; user-supplied numbers are not required because this is a read/print operation.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "order_numbers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 100
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "order_numbers"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_returns_get_waybill_url",
+      "description": "Return a printable return-logistics waybill URL for selected return orders. Query-selected sets are allowed. MCP returns a URL and never controls a printer.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "order_numbers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 100
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "order_numbers"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_orders_update_status",
+      "description": "Update top-level order status. Every complete order number must appear explicitly in the current user instruction; never infer targets from a previous list or phrases such as these orders.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "order_numbers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 100
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "confirmed",
+              "returning",
+              "returned"
+            ]
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "order_numbers",
+          "status"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_orders_update_recipient",
+      "description": "Update recipient names for explicitly named orders. Every complete order number must appear in the current user instruction.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "orders": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "type": "object",
+              "properties": {
+                "order_no": {
+                  "type": "string"
+                },
+                "recipient_name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "order_no",
+                "recipient_name"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "orders"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_orders_delete",
+      "description": "Permanently delete orders only when the current user instruction explicitly supplies every complete order number. Do not accept contextual references such as these orders or all orders listed above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "order_numbers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 100
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "order_numbers"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_notion_pages_search",
+      "description": "Search Notion pages authorized for the configured integration by title. Returns exact and partial matches plus existing import state; import and update share this resolver.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "title"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_notion_page_get_content",
+      "description": "Read one authorized Notion page as safe HTML without importing it. If a cover image is needed, first use a user-provided usable image; otherwise capable runtimes upload generated bytes directly, while Remote MCP runtimes must wait for the user to reattach the generated image.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "notion_page_id": {
+            "type": "string"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "notion_page_id"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_external_assets_list",
+      "description": "List external CSS or JavaScript assets configured for pages and themes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_external_assets_delete",
+      "description": "Delete one external page or theme asset by stable asset_id.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "asset_id": {
+            "type": "integer"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "asset_id"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_articles_delete",
+      "description": "Delete one article by stable article_id, using the same site scope as Web admin.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "article_id": {
+            "type": "integer"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "article_id"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_members_delete",
+      "description": "Delete one storefront member by stable member_id.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "member_id": {
+            "type": "integer"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "member_id"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_members_coupons_revoke",
+      "description": "Revoke one issued member coupon. This matches Web admin delete behavior without erasing its history.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "member_id": {
+            "type": "integer"
+          },
+          "member_coupon_id": {
+            "type": "integer"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "member_id",
+          "member_coupon_id"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_newsletters_list",
+      "description": "List existing newsletter records so the AI can select a stable newsletter_id.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer"
+          },
+          "per_page": {
+            "type": "integer"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_newsletters_get",
+      "description": "Read one existing newsletter and its selected recipients.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "newsletter_id": {
+            "type": "integer"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "newsletter_id"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_newsletters_update",
+      "description": "Patch one existing newsletter. Omitted content and scheduling fields remain unchanged.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "newsletter_id": {
+            "type": "integer"
+          },
+          "recipient_scope": {
+            "type": "string",
+            "enum": [
+              "members",
+              "all_members"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "html_content": {
+            "type": "string"
+          },
+          "scheduled_at": {
+            "type": "string"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "newsletter_id"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_newsletters_delete",
+      "description": "Delete one existing newsletter by stable newsletter_id.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "newsletter_id": {
+            "type": "integer"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "newsletter_id"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_discount_codes_delete",
+      "description": "Delete one discount code by stable discount_code_id.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "discount_code_id": {
+            "type": "integer"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "discount_code_id"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_member_tiers_delete",
+      "description": "Delete one member tier by stable member_tier_id.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "member_tier_id": {
+            "type": "integer"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "member_tier_id"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_threshold_gifts_delete",
+      "description": "Delete one threshold gift rule by stable threshold_gift_id.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "threshold_gift_id": {
+            "type": "integer"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "threshold_gift_id"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_product_add_ons_delete",
+      "description": "Delete one product add-on rule by stable product_add_on_id.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "product_add_on_id": {
+            "type": "integer"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "product_add_on_id"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_customer_service_logs_delete",
+      "description": "Delete one AI customer-service log by stable customer_service_log_id.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "customer_service_log_id": {
+            "type": "integer"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "customer_service_log_id"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_auth_status",
+      "description": "Return the authenticated SlimWeb MCP account status.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_sites_list",
+      "description": "List SlimWeb sites available to the authenticated account. Always call this first before any other SlimWeb MCP action.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_site_select",
+      "description": "Validate and return a SlimWeb site selected from slimweb_sites_list. Use this to confirm the target site before any site-scoped tool call.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_themes_list",
+      "description": "List custom page style schemes/themes for a SlimWeb site. Default is intentionally omitted from this public list. Color mode is site-level; call slimweb_site_theme_mode_get/update for light or dark.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_site_theme_mode_get",
+      "description": "Read the site-level storefront color mode. This is the single light/dark source for Default and every custom style scheme.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_design_context_get",
+      "description": "Return the active storefront visual design context before any page design, theme design, illustration, or drawing work. Reads the current theme design summary, the site light/dark mode, and always reports Tailwind as the framework.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_site_theme_mode_update",
+      "description": "Update the site-level storefront color mode to light or dark. Use before theme/page design when the user wants neon, fluorescent, dark-first, or light-first visual language.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "theme_mode": {
+            "type": "string",
+            "enum": [
+              "light",
+              "dark"
+            ],
+            "description": "Site-level storefront color mode."
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "theme_mode"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_themes_create_from_default",
+      "description": "Create a new non-Default theme/page style scheme by copying only Default shell/root-element template files. The theme acts as the base styling layer for every page, including the homepage. Do not choose light/dark here; the style scheme inherits site-level color mode.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Human-readable theme name, such as 可愛版型."
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "name"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_themes_activate",
+      "description": "Set a theme/page style scheme as the active storefront theme after user confirmation. This affects the live storefront presentation.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "theme_id": {
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Theme ID to activate, or default."
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "theme_id"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_themes_delete",
+      "description": "Delete a non-Default theme/page style scheme and its stored template contents. The Default theme cannot be deleted.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "theme_id": {
+            "type": "integer"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "theme_id"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_theme_shell_get_context",
+      "description": "Return reference-only JSON describing the fixed navbar, floating_actions, and footer theme slots, real storefront shell data, the mandatory primary-navigation, member-auth, and cart presentation slots, current category navigation mode, both runtime states, canonical CSS hooks, factual website_type context, and the current MCP-managed root CSS. Every Theme navbar uses the same three slots. Navbar markup must be static HTML; Blade, PHP, components, and bound attributes are forbidden. It must form a balanced tree, and the primary slot must use div, nav, or header and be structurally empty. Every anchor must use a literal href beginning with #, a relative or root path, or a validated http/https/protocol-relative URL. Webless runtime owns visibility, navigation data, and behavior while the Theme may follow reference-site appearance and layout. Custom slot markup is user-defined and is not automatically bound to contact fields. Call before creating or modifying visual theme elements; edit root_css.current_css and pass the complete CSS back to slimweb_themes_update_root_elements.css.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "theme_id": {
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Target theme ID or default."
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "theme_id"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_themes_update_root_elements",
+      "description": "Update the fixed navbar, floating_actions, and footer root fragments plus theme-level CSS. Every Theme navbar must contain exactly one non-clickable primary navigation container slot using data-storefront-primary-navigation-slot, one combined member-auth slot using data-storefront-member-auth-slot, and one cart slot using data-storefront-cart-slot. Each member-auth and cart slot must use an enabled button or an anchor with a safe nonblank href. Navbar markup must be static HTML; Blade, PHP, components, and bound attributes are forbidden. It must form a balanced tree, and the primary slot must use div, nav, or header and be structurally empty. Every anchor must use a literal href beginning with #, a relative or root path, or a validated http/https/protocol-relative URL. Webless runtime owns their behavior, visibility, category mode, and navigation data; runtime category and ordinary navigation labels and URLs are not serialized into Theme HTML. When navbar markup or theme CSS is created or modified, Theme CSS must style category_menu, navbar_categories, and recursive ordinary navigation through the canonical hooks returned by slimweb_theme_shell_get_context. A footer-only update that does not modify CSS does not require rewriting navigation CSS. Theme markup may change appearance and layout to follow a reference site but must not recreate reserved runtime attributes or split registration and login into separate entries. Add custom content to a slot only when the user explicitly requests it for that slot; data supplied for another placement does not authorize reusing it here. Custom fragment HTML is rendered as supplied; do not auto-bind it to contact data or invent missing links. Theme JavaScript and theme-level libraries are not supported. Do not use this to overwrite page body content. The css field replaces the MCP-managed root-elements CSS file, so include every MCP-managed root style that should remain, including footer/background rules.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "theme_id": {
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Target theme ID."
+          },
+          "fragments": {
+            "type": "object",
+            "description": "Optional root element HTML fragments keyed only by navbar, floating_actions, or footer. When navbar is present it must contain exactly one non-clickable data-storefront-primary-navigation-slot container, one clickable data-storefront-member-auth-slot, and one clickable data-storefront-cart-slot."
+          },
+          "css": {
+            "type": "string",
+            "description": "Optional theme CSS stored under root-elements assets."
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "theme_id"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_theme_style_profile_get",
+      "description": "Read the editable style summary/profile for a theme so visual design can stay consistent with prior user requests.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "theme_id": {
+            "type": [
+              "integer",
+              "string"
+            ]
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "theme_id"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_theme_style_profile_upsert",
+      "description": "Create or update a theme style summary/profile with user intent, visual keywords, color, typography, layout, illustration, and avoid notes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "theme_id": {
+            "type": [
+              "integer",
+              "string"
+            ]
+          },
+          "summary": {
+            "type": "string"
+          },
+          "target_audience": {
+            "type": "string"
+          },
+          "visual_keywords": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "color_notes": {
+            "type": "string"
+          },
+          "typography_notes": {
+            "type": "string"
+          },
+          "layout_notes": {
+            "type": "string"
+          },
+          "illustration_notes": {
+            "type": "string"
+          },
+          "avoid_notes": {
+            "type": "string"
+          },
+          "user_request": {
+            "type": "string"
+          },
+          "user_requests": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "ai_design_notes": {
+            "type": "string"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "theme_id"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_theme_style_profile_append_request",
+      "description": "Append one user request/change note to a theme style profile history without replacing the existing profile.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "theme_id": {
+            "type": [
+              "integer",
+              "string"
+            ]
+          },
+          "request": {
+            "type": "string"
+          },
+          "ai_notes": {
+            "type": "string"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "theme_id",
+          "request"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_site_readiness_get",
+      "description": "Read a site readiness report listing incomplete or missing setup areas so AI can proactively tell the user what still needs to be configured.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "include_optional": {
+            "type": "boolean",
+            "description": "When true, include optional growth/marketing gaps such as coupons and discount codes. Defaults to false."
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_site_launch_progress_get",
+      "description": "Read launch progress from blank ecommerce site to go-live, grouped into required setup, recommended improvements, growth tasks, and the next user-friendly action.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "include_optional": {
+            "type": "boolean",
+            "description": "When true, include optional growth and marketing tasks. Defaults to false."
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_seo_settings_get",
+      "description": "Read site-level SEO, AEO, and GEO settings that are also visible in the SlimWeb admin SEO settings page.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_seo_settings_update",
+      "description": "Update site-level SEO, AEO, GEO, Google Analytics traffic tracking, and social preview settings. Use this when a user asks the AI to configure search, answer-engine, generative-engine, llms.txt, GA4 Measurement ID, or social preview metadata.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "seo_title": {
+            "type": "string"
+          },
+          "seo_description": {
+            "type": "string"
+          },
+          "seo_keywords": {
+            "type": "string"
+          },
+          "google_analytics_measurement_id": {
+            "type": "string",
+            "pattern": "^G-[A-Z0-9-]+$",
+            "description": "GA4 web data stream Measurement ID for storefront traffic tracking, such as G-ABC1234567. Do not provide full script tags."
+          },
+          "canonical_url": {
+            "type": "string"
+          },
+          "robots_policy": {
+            "type": "string",
+            "enum": [
+              "index,follow",
+              "noindex,follow",
+              "noindex,nofollow"
+            ]
+          },
+          "og_title": {
+            "type": "string"
+          },
+          "og_description": {
+            "type": "string"
+          },
+          "og_image_url": {
+            "type": "string"
+          },
+          "llms_txt": {
+            "type": "string",
+            "description": "Plain-text llms.txt summary for AI crawlers and answer engines."
+          },
+          "aeo_business_summary": {
+            "type": "string",
+            "description": "Concise business/entity summary for answer-engine responses."
+          },
+          "aeo_target_audience": {
+            "type": "string",
+            "description": "Primary audience and buyer intent."
+          },
+          "aeo_products_services": {
+            "type": "string",
+            "description": "Core products or services that answer engines should associate with this site."
+          },
+          "aeo_customer_questions": {
+            "type": "string",
+            "description": "Common customer questions, one per line when possible."
+          },
+          "aeo_answer_style": {
+            "type": "string",
+            "description": "Preferred answer style, tone, and constraints for AI answers."
+          },
+          "aeo_entity_facts": {
+            "type": "string",
+            "description": "Stable factual claims about brand, service area, shipping, returns, or contact points."
+          },
+          "geo_citation_targets": {
+            "type": "string",
+            "description": "Pages, policies, articles, and assets that generative engines should use as citation targets."
+          },
+          "geo_verifiable_claims": {
+            "type": "string",
+            "description": "Verifiable claims that AI-generated answers may repeat only when supported by site content."
+          },
+          "geo_trust_signals": {
+            "type": "string",
+            "description": "Trust signals such as company identity, support channels, policies, reviews, certifications, or guarantees."
+          },
+          "geo_same_as_profiles": {
+            "type": "string",
+            "description": "Official same-as URLs and profiles, one per line when possible."
+          },
+          "geo_comparison_positioning": {
+            "type": "string",
+            "description": "How the site should be positioned in AI comparisons against alternatives."
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_facebook_settings_get",
+      "description": "Read the Facebook integration fields shown in the SlimWeb admin settings, including member-login App ID, Page ID, and Facebook comments toggles.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_facebook_settings_update",
+      "description": "Update the Facebook integration fields shown in the SlimWeb admin settings, including App ID, Page ID, and Facebook comments toggles.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "facebook_app_id": {
+            "type": "string"
+          },
+          "facebook_page_id": {
+            "type": "string"
+          },
+          "facebook_comment_on_products": {
+            "type": "boolean"
+          },
+          "facebook_comment_on_posts": {
+            "type": "boolean"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_notion_settings_get",
+      "description": "Read the Notion API token field shown in the SlimWeb admin settings.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_notion_settings_update",
+      "description": "Update the Notion API token field shown in the SlimWeb admin settings.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "notion_token": {
+            "type": "string"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_contact_settings_get",
+      "description": "Read every storefront contact field editable in SlimWeb Web admin.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_contact_settings_update",
+      "description": "Patch storefront contact settings. Omitted fields stay unchanged; pass null to clear a field.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "contact_email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "contact_line": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "contact_wechat": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "contact_telegram": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "contact_twitter": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "contact_instagram": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "contact_facebook_page": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "contact_store_address": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "contact_phone": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_mail_delivery_settings_get",
+      "description": "Read SlimWeb mail delivery settings, including SMTP server fields and order/reminder notification options shown in the admin mail settings page.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_mail_delivery_settings_update",
+      "description": "Update SlimWeb mail delivery settings, including SMTP server fields and order/reminder notification options shown in the admin mail settings page.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "notification_new_order_sms_numbers": {
+            "type": "string"
+          },
+          "notification_sms_on_shipped": {
+            "type": "boolean"
+          },
+          "notification_auto_send_reminder_sms": {
+            "type": "boolean"
+          },
+          "notification_reminder_sms_content": {
+            "type": "string"
+          },
+          "notification_smtp_host": {
+            "type": "string"
+          },
+          "notification_smtp_username": {
+            "type": "string"
+          },
+          "notification_smtp_password": {
+            "type": "string"
+          },
+          "notification_smtp_port": {
+            "type": [
+              "string",
+              "integer"
+            ]
+          },
+          "notification_smtp_from_email": {
+            "type": "string"
+          },
+          "notification_smtp_ssl": {
+            "type": "boolean"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_mail_templates_get",
+      "description": "Read SlimWeb event-specific email subjects and contents. These contents are rendered inside the single shared email layout.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_mail_templates_update",
+      "description": "Update event-specific email subjects, HTML contents, or enabled state. Do not use this for the shared layout wrapper.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "templates": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "trigger_event": {
+                  "type": "string",
+                  "enum": [
+                    "order_created",
+                    "order_shipped",
+                    "store_arrived",
+                    "return_requested",
+                    "return_logistics",
+                    "registration_code",
+                    "password_reset"
+                  ]
+                },
+                "subject": {
+                  "type": "string"
+                },
+                "content": {
+                  "type": "string"
+                },
+                "is_active": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "trigger_event"
+              ]
+            }
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "templates"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_mail_layout_get",
+      "description": "Read the single shared SlimWeb email layout wrapper. Every event-specific mail content is inserted into {content}.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_mail_layout_update",
+      "description": "Update the single shared SlimWeb email layout wrapper. Before calling this tool, always call slimweb_mail_layout_get for the same site_id and modify the returned current/default html so existing logo, site text, footer, placeholders, and content structure are preserved. The html must preserve {content}, {site_name}, {site_url}, and {logo_url}.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "html": {
+            "type": "string"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "html",
+          "is_active"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_payment_logistics_get",
+      "description": "Read supported SlimWeb payment/logistics providers and current site settings. Use this to answer SlimWeb-specific payment/logistics questions from supported providers only.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_payment_logistics_update",
+      "description": "Update supported SlimWeb payment/logistics provider credentials and enabled state. Only ECPay or NewebPay can be the enabled online card provider at one time; LINE Pay is exempt.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "payments": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "provider": {
+                  "type": "string",
+                  "enum": [
+                    "ecpay",
+                    "newebpay",
+                    "linepay"
+                  ]
+                },
+                "mode": {
+                  "type": "string",
+                  "enum": [
+                    "test",
+                    "production"
+                  ]
+                },
+                "is_enabled": {
+                  "type": "boolean"
+                },
+                "merchant_id": {
+                  "type": "string"
+                },
+                "hash_key": {
+                  "type": "string"
+                },
+                "hash_iv": {
+                  "type": "string"
+                },
+                "language": {
+                  "type": "string",
+                  "enum": [
+                    "zh-tw",
+                    "zh-cn",
+                    "en",
+                    "jp",
+                    "ko",
+                    "th"
+                  ]
+                }
+              },
+              "required": [
+                "provider"
+              ]
+            }
+          },
+          "logistics": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "provider": {
+                  "type": "string",
+                  "enum": [
+                    "ecpay",
+                    "newebpay",
+                    "hct"
+                  ]
+                },
+                "mode": {
+                  "type": "string",
+                  "enum": [
+                    "test",
+                    "production"
+                  ]
+                },
+                "is_enabled": {
+                  "type": "boolean",
+                  "description": "HCT only. ECPay and NewebPay logistics follow the same payment provider enabled state."
+                },
+                "merchant_id": {
+                  "type": "string"
+                },
+                "password": {
+                  "type": "string",
+                  "description": "HCT only. Encrypted after save."
+                },
+                "customer_id": {
+                  "type": "string",
+                  "description": "HCT only. Optional customer ID."
+                },
+                "sender_name": {
+                  "type": "string"
+                },
+                "sender_phone": {
+                  "type": "string"
+                },
+                "sender_zip": {
+                  "type": "string"
+                },
+                "sender_address": {
+                  "type": "string"
+                },
+                "store_types": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "seven",
+                      "family",
+                      "hilife",
+                      "ok"
+                    ]
+                  },
+                  "description": "ECPay supports seven/family/hilife/ok. NewebPay supports seven/family/hilife only."
+                },
+                "logistics_type": {
+                  "type": "string",
+                  "enum": [
+                    "c2c",
+                    "b2c"
+                  ],
+                  "description": "ECPay only. Must match ECPay backend setting. Use b2c for reverse logistics."
+                },
+                "collect_payment_enabled": {
+                  "type": "boolean",
+                  "description": "HCT only. Shows cash on delivery on checkout when enabled."
+                }
+              },
+              "required": [
+                "provider"
+              ]
+            }
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_orders_list",
+      "description": "Search normal SlimWeb orders with the same admin filters. For \"unhandled/pending orders\", use logistics_status=pending, which means payment completed and logistics not completed. If total exceeds 20, tell the user there are too many results and ask them to use the admin backend.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "search_order_no": {
+            "type": "string"
+          },
+          "search_field": {
+            "type": "string",
+            "enum": [
+              "order_no",
+              "buyer_name",
+              "buyer_phone",
+              "buyer_email",
+              "recipient_name",
+              "recipient_phone",
+              "product_name",
+              "date_range",
+              "amount_range",
+              "payment_incomplete"
+            ]
+          },
+          "search_value": {
+            "type": "string"
+          },
+          "fuzzy": {
+            "type": "boolean"
+          },
+          "date_from": {
+            "type": "string"
+          },
+          "date_to": {
+            "type": "string"
+          },
+          "amount_min": {
+            "type": "integer"
+          },
+          "amount_max": {
+            "type": "integer"
+          },
+          "logistics_status": {
+            "type": "string",
+            "enum": [
+              "pending"
+            ],
+            "description": "Use pending for the admin pending-order button: payment is completed but logistics is not completed."
+          },
+          "statuses": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "confirmed",
+                "returning",
+                "returned",
+                "cancelled"
+              ]
+            }
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "offset": {
+            "type": "integer"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_orders_profit_statistics",
+      "description": "Calculate store net profit for paid non-cancelled orders. Use no date filters for questions like \"how much money has our website made\"; for \"this month\", fill date_from/date_to with the current month range. Formula: order grand total minus product cost total minus free-shipping cost; discounts are already included in grand total.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "date_from": {
+            "type": "string",
+            "description": "optional YYYY-MM-DD start date. Omit date_from and date_to to calculate all paid non-cancelled orders."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "optional YYYY-MM-DD end date. For \"this month\", the AI should fill the first and last calendar date of the month."
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_orders_get",
+      "description": "Get one SlimWeb order by order_id or order_no, including line items and available_actions.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer"
+          },
+          "order_no": {
+            "type": "string"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_orders_create_logistics",
+      "description": "Create a forward logistics order only when the exact provider/store_type appears in available_actions.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer"
+          },
+          "order_no": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "ecpay",
+              "newebpay",
+              "hct"
+            ]
+          },
+          "store_type": {
+            "type": "string",
+            "enum": [
+              "seven",
+              "family",
+              "hilife",
+              "ok"
+            ]
+          },
+          "temperature": {
+            "type": "string",
+            "enum": [
+              "normal",
+              "refrigerated",
+              "frozen"
+            ]
+          },
+          "carrier": {
+            "type": "string",
+            "enum": [
+              "tcat",
+              "post"
+            ]
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "provider"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_orders_mark_shipped",
+      "description": "Manually mark an order as shipped/completed when no logistics order was created.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer"
+          },
+          "order_no": {
+            "type": "string"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_returns_pending_list",
+      "description": "List active return orders that still need handling. Each return includes available_actions.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "search_order_no": {
+            "type": "string"
+          },
+          "search_field": {
+            "type": "string",
+            "enum": [
+              "order_no",
+              "buyer_name",
+              "buyer_phone",
+              "buyer_email",
+              "recipient_name",
+              "recipient_phone",
+              "product_name",
+              "date_range",
+              "amount_range",
+              "payment_incomplete"
+            ]
+          },
+          "search_value": {
+            "type": "string"
+          },
+          "fuzzy": {
+            "type": "boolean"
+          },
+          "date_from": {
+            "type": "string"
+          },
+          "date_to": {
+            "type": "string"
+          },
+          "amount_min": {
+            "type": "integer"
+          },
+          "amount_max": {
+            "type": "integer"
+          },
+          "logistics_status": {
+            "type": "string",
+            "enum": [
+              "pending"
+            ],
+            "description": "Use pending for the admin pending-order button: payment is completed but logistics is not completed."
+          },
+          "statuses": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "confirmed",
+                "returning",
+                "returned",
+                "cancelled"
+              ]
+            }
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "offset": {
+            "type": "integer"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_returns_create_logistics",
+      "description": "Create reverse logistics only when the exact provider/type appears in available_actions.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer"
+          },
+          "order_no": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "ecpay",
+              "newebpay",
+              "hct"
+            ]
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "home_delivery",
+              "cvs"
+            ]
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "provider"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_returns_cancel",
+      "description": "Cancel an active return and move it back to a normal completed order.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer"
+          },
+          "order_no": {
+            "type": "string"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_returns_complete",
+      "description": "Manually mark a return completed when no reverse logistics exists.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer"
+          },
+          "order_no": {
+            "type": "string"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_refunds_complete",
+      "description": "Manually mark an order as refunded for offline/manual refunds.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer"
+          },
+          "order_no": {
+            "type": "string"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_refunds_create",
+      "description": "Create an online card refund request for ECPay or NewebPay only when available_actions includes create_refund.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer"
+          },
+          "order_no": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "ecpay",
+              "newebpay"
+            ]
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "provider"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_dashboard_summary",
+      "description": "Read dashboard KPI summary, recent orders, recent members, and low-stock products for a SlimWeb site.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_settings_get",
+      "description": "Read the SlimWeb site name and basic settings such as status, website type, default country, product load mode, return days, category_navigation_mode, the single active site logo, and the consumer MCP URL for shoppers to install or connect supported AI clients.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_settings_update",
+      "description": "Update the SlimWeb site display name and basic settings, including the category navigation presentation mode and single active site logo. Renaming changes only the display name, not the slug, site_code, callback code, or domain. Only send fields the user explicitly provided or confirmed.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255,
+            "description": "Site display name. Renaming does not change the slug, site_code, callback code, or domain."
+          },
+          "site_status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "maintenance"
+            ]
+          },
+          "member_verification": {
+            "type": "string",
+            "enum": [
+              "none",
+              "email"
+            ],
+            "description": "email requires complete SMTP settings first; configure them through slimweb_mail_delivery_settings_update before enabling email verification."
+          },
+          "website_type": {
+            "type": "string",
+            "enum": [
+              "ecommerce",
+              "brand"
+            ]
+          },
+          "default_country_code": {
+            "type": "string",
+            "enum": [
+              "TW",
+              "JP",
+              "KR",
+              "SG",
+              "HK",
+              "CN",
+              "US",
+              "CA",
+              "GB",
+              "AU"
+            ]
+          },
+          "product_load_mode": {
+            "type": "string",
+            "enum": [
+              "pagination",
+              "dynamic"
+            ]
+          },
+          "return_days_allowed": {
+            "type": "integer"
+          },
+          "category_navigation_mode": {
+            "type": "string",
+            "enum": [
+              "category_menu",
+              "navbar_categories"
+            ],
+            "description": "Presentation only: category_menu groups categories under one category entry; navbar_categories places recursive category entries in the navbar. This setting never creates navigation items."
+          },
+          "logo": {
+            "type": "object",
+            "description": "Replace the single active site logo. Use media_path from slimweb_uploads_commit for PNG, JPEG, or WebP; Webless converts raster input to WebP, preserves transparency, proportionally limits height to 96px without upscaling, removes the committed staging object, and does not add the logo to the media library. Or send svg_base64 for a sanitized SVG whose height is proportionally limited to 96px.",
+            "properties": {
+              "media_path": {
+                "type": "string",
+                "description": "Site-owned committed PNG, JPEG, or WebP media_path."
+              },
+              "svg_base64": {
+                "type": "string",
+                "description": "Base64-encoded SVG markup. Do not include a data URL prefix."
+              }
+            },
+            "oneOf": [
+              {
+                "required": [
+                  "media_path"
+                ],
+                "not": {
+                  "required": [
+                    "svg_base64"
+                  ]
+                }
+              },
+              {
+                "required": [
+                  "svg_base64"
+                ],
+                "not": {
+                  "required": [
+                    "media_path"
+                  ]
+                }
+              }
+            ],
+            "additionalProperties": false
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_admins_list",
+      "description": "List site admins and permission keys. The first admin is the protected system administrator.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_admins_upsert",
+      "description": "Create or update a site admin. The first admin always keeps system_admin permission.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "admin_id": {
+            "type": "integer"
+          },
+          "google_email": {
+            "type": "string",
+            "description": "Google account email allowed to access this site admin."
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "google_email",
+          "permissions"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_admins_delete",
+      "description": "Delete a site admin. The first system administrator cannot be deleted.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "admin_id": {
+            "type": "integer"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "admin_id"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_images_import_chatgpt_attachment",
+      "description": "Import one image from a ChatGPT web/desktop conversation attachment using OpenAI fileParams. Use this only when you are ChatGPT and the image was uploaded in the conversation. Codex, Hermes, Gemini, Claude, Grok, DeepSeek, and clients that can read image bytes should use slimweb_uploads_create plus slimweb_uploads_commit instead.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "target_usage": {
+            "type": "string",
+            "enum": [
+              "product_image",
+              "article_image",
+              "page_asset",
+              "theme_asset",
+              "brand_asset",
+              "reference"
+            ]
+          },
+          "filename": {
+            "type": "string",
+            "description": "Optional desired filename. If omitted, the OpenAI file name is used."
+          },
+          "image": {
+            "type": "object",
+            "description": "OpenAI fileParams object supplied by ChatGPT. Expected fields include download_url or download_link, file_id/id, name or file_name, mime_type, and size. GPT Actions-style { openaiFileIdRefs: [{ id, name, mime_type, download_link }] } is also accepted.",
+            "additionalProperties": true
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "target_usage",
+          "image"
+        ]
+      },
+      "_meta": {
+        "openai/fileParams": [
+          "image"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_debug_attachment_refs",
+      "description": "Debug what ChatGPT Remote MCP actually passes for conversation image attachments. This tool does not download, upload, or write assets; it returns a redacted shape summary of attachment-related arguments so SlimWeb can diagnose fileParams changes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "image": {
+            "description": "Attachment parameter that ChatGPT should populate through OpenAI fileParams. May be an object, string file ID, or null depending on ChatGPT runtime behavior."
+          },
+          "images": {
+            "type": "array",
+            "items": {},
+            "description": "Optional array of attachment-like values if ChatGPT exposes multiple files."
+          },
+          "openaiFileIdRefs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "description": "Optional GPT Actions-style file refs if the runtime provides them directly."
+          },
+          "attachments": {
+            "type": "array",
+            "items": {},
+            "description": "Optional attachment list if the runtime exposes one."
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "additionalProperties": true
+      },
+      "_meta": {
+        "openai/fileParams": [
+          "image"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_uploads_create",
+      "description": "Create a short-lived Webless signed upload URL for an image. After this call, a capable AI runtime must PUT the raw image bytes to upload_url with the returned headers, then call slimweb_uploads_commit. This replaces base64 image transport. Before using signed image upload, the AI must identify its own runtime. Continue only when the runtime can both read the source image bytes and make outbound HTTPS PUT requests, such as Codex or Hermes with local/code execution access. In ChatGPT Remote MCP, conversation attachments, /mnt/data paths, and hidden attachment rewrite are not reliable for remote MCP tools; if no downloadable URL or accessible local file bytes are available, explain that this client cannot upload the image and ask the user to use Codex/Hermes or provide a directly downloadable image URL.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "filename": {
+            "type": "string",
+            "description": "Original or desired image filename, such as product-main.png."
+          },
+          "mime_type": {
+            "type": "string",
+            "enum": [
+              "image/png",
+              "image/jpeg",
+              "image/jpg",
+              "image/webp"
+            ]
+          },
+          "size_bytes": {
+            "type": "integer",
+            "description": "Exact source image byte size before upload."
+          },
+          "target_usage": {
+            "type": "string",
+            "enum": [
+              "product_image",
+              "article_image",
+              "page_asset",
+              "theme_asset",
+              "brand_asset",
+              "reference"
+            ]
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "filename",
+          "mime_type",
+          "size_bytes",
+          "target_usage"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_uploads_commit",
+      "description": "Commit a completed signed image upload. Call only after a capable AI runtime has PUT the image bytes to upload_url. Returns media_path/public_url for products, articles, page assets, and generated images.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "upload_id": {
+            "type": "string"
+          },
+          "upload_token": {
+            "type": "string"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "upload_id",
+          "upload_token"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_articles_list",
+      "description": "List articles for a SlimWeb site so the AI can choose an article to edit or avoid duplicates. Use this for article content, not page content.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer"
+          },
+          "per_page": {
+            "type": "integer"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_articles_check_title",
+      "description": "Check whether an article title already exists within the active SlimWeb site. Use this before creating a new article so the AI can stop on duplicates and avoid title collisions.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "title"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_articles_get_content",
+      "description": "Read a single article by article_id before editing it. Use this to load the current article state, including the rendered body and cover image metadata.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "article_id": {
+            "type": "integer"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "article_id"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_articles_create",
+      "description": "Create a new article. A 16:9 cover image is mandatory, and optional content images may be attached for the article body. Use slimweb_articles_check_title first and generate or import the approved cover image before calling this tool. In ChatGPT Remote MCP, if a page or article request needs an image but no usable attached image or directly downloadable image URL is available, stop the task and ask the user to paste or re-upload the image before continuing.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "notion_page_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "content_html": {
+            "type": "string",
+            "description": "Safe article body HTML. Do not include the article title as an h1 because SlimWeb renders title separately. Do not include script/link/iframe tags or inline event handlers."
+          },
+          "cover_image": {
+            "type": "object",
+            "description": "Required when creating a new article. Use a 16:9 main image media_path returned by slimweb_uploads_commit or slimweb_images_import_chatgpt_attachment. If the image was generated or refined in ChatGPT, ask the user to paste or re-upload the approved image first so fileParams can import it.",
+            "properties": {
+              "media_path": {
+                "type": "string",
+                "description": "Committed media path returned by slimweb_uploads_commit, such as sites/1/mcp-uploads/committed/<upload_id>.webp. Existing SlimWeb /media/sites/<site_id>/mcp-uploads/committed/<file> URLs can be converted to this path form."
+              }
+            },
+            "anyOf": [
+              {
+                "required": [
+                  "media_path"
+                ]
+              }
+            ],
+            "additionalProperties": false
+          },
+          "content_images": {
+            "type": "array",
+            "description": "Optional reusable content images for the article body.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "type": "object",
+                  "description": "Committed SlimWeb media source. First call slimweb_uploads_create, use a capable AI runtime to PUT the uploaded or generated image bytes to upload_url, then call slimweb_uploads_commit and pass the returned media_path here. If the user already provides a SlimWeb media URL like /media/sites/<site_id>/mcp-uploads/committed/<file>, use the matching media_path directly instead of uploading again. Before using signed image upload, the AI must identify its own runtime. Continue only when the runtime can both read the source image bytes and make outbound HTTPS PUT requests, such as Codex or Hermes with local/code execution access. In ChatGPT Remote MCP, conversation attachments, /mnt/data paths, and hidden attachment rewrite are not reliable for remote MCP tools; if no downloadable URL or accessible local file bytes are available, explain that this client cannot upload the image and ask the user to use Codex/Hermes or provide a directly downloadable image URL. Do not pass base64, external URLs, /mnt/data paths, local sandbox paths, attachment handles, or invented placeholder URLs.",
+                  "properties": {
+                    "media_path": {
+                      "type": "string",
+                      "description": "Committed media path returned by slimweb_uploads_commit, such as sites/1/mcp-uploads/committed/<upload_id>.webp. Existing SlimWeb /media/sites/<site_id>/mcp-uploads/committed/<file> URLs can be converted to this path form."
+                    }
+                  },
+                  "anyOf": [
+                    {
+                      "required": [
+                        "media_path"
+                      ]
+                    }
+                  ],
+                  "additionalProperties": false
+                },
+                "suggested_filename": {
+                  "type": "string"
+                },
+                "alt_text": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "source"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "title",
+          "content_html",
+          "cover_image"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_articles_update",
+      "description": "Update an existing article by article_id. Use slimweb_articles_get_content first to read the current article state; a cover image can be replaced or left unchanged, and optional content images may be updated as needed. In ChatGPT Remote MCP, if a page or article request needs an image but no usable attached image or directly downloadable image URL is available, stop the task and ask the user to paste or re-upload the image before continuing.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "article_id": {
+            "type": "integer"
+          },
+          "notion_page_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "content_html": {
+            "type": "string",
+            "description": "Safe article body HTML. Do not include the article title as an h1 because SlimWeb renders title separately. Do not include script/link/iframe tags or inline event handlers."
+          },
+          "cover_image": {
+            "type": "object",
+            "description": "Optional replacement for the article cover image. If you replace it with a ChatGPT-generated image, ask the user to paste or re-upload the approved image first so fileParams can import it.",
+            "properties": {
+              "media_path": {
+                "type": "string",
+                "description": "Committed media path returned by slimweb_uploads_commit, such as sites/1/mcp-uploads/committed/<upload_id>.webp. Existing SlimWeb /media/sites/<site_id>/mcp-uploads/committed/<file> URLs can be converted to this path form."
+              }
+            },
+            "anyOf": [
+              {
+                "required": [
+                  "media_path"
+                ]
+              }
+            ],
+            "additionalProperties": false
+          },
+          "content_images": {
+            "type": "array",
+            "description": "Optional reusable content images for the article body.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "type": "object",
+                  "description": "Committed SlimWeb media source. First call slimweb_uploads_create, use a capable AI runtime to PUT the uploaded or generated image bytes to upload_url, then call slimweb_uploads_commit and pass the returned media_path here. If the user already provides a SlimWeb media URL like /media/sites/<site_id>/mcp-uploads/committed/<file>, use the matching media_path directly instead of uploading again. Before using signed image upload, the AI must identify its own runtime. Continue only when the runtime can both read the source image bytes and make outbound HTTPS PUT requests, such as Codex or Hermes with local/code execution access. In ChatGPT Remote MCP, conversation attachments, /mnt/data paths, and hidden attachment rewrite are not reliable for remote MCP tools; if no downloadable URL or accessible local file bytes are available, explain that this client cannot upload the image and ask the user to use Codex/Hermes or provide a directly downloadable image URL. Do not pass base64, external URLs, /mnt/data paths, local sandbox paths, attachment handles, or invented placeholder URLs.",
+                  "properties": {
+                    "media_path": {
+                      "type": "string",
+                      "description": "Committed media path returned by slimweb_uploads_commit, such as sites/1/mcp-uploads/committed/<upload_id>.webp. Existing SlimWeb /media/sites/<site_id>/mcp-uploads/committed/<file> URLs can be converted to this path form."
+                    }
+                  },
+                  "anyOf": [
+                    {
+                      "required": [
+                        "media_path"
+                      ]
+                    }
+                  ],
+                  "additionalProperties": false
+                },
+                "suggested_filename": {
+                  "type": "string"
+                },
+                "alt_text": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "source"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "article_id"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_content_seo_update",
+      "description": "Update content-level SEO/AEO/GEO metadata only as part of a page/article create or edit workflow. Do not call this tool as a standalone SEO task; use slimweb_seo_settings_update for site-wide SEO settings. For pages, call after slimweb_pages_create or slimweb_pages_update. For articles, call after slimweb_articles_create or slimweb_articles_update.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "content_type": {
+            "type": "string",
+            "enum": [
+              "page",
+              "article"
+            ],
+            "description": "Target content type. Use page after slimweb_pages_create/slimweb_pages_update, or article after slimweb_articles_create/slimweb_articles_update."
+          },
+          "workflow_context": {
+            "type": "string",
+            "enum": [
+              "page_create",
+              "page_update",
+              "article_create",
+              "article_update"
+            ],
+            "description": "Required proof that this tool is being called as part of a page/article create or edit workflow. This tool must not be used standalone."
+          },
+          "page_name": {
+            "type": "string",
+            "description": "Required for content_type=page. Page title or page key returned by the page create/update flow."
+          },
+          "page_key": {
+            "type": "string",
+            "description": "Optional page key for content_type=page."
+          },
+          "article_id": {
+            "type": "integer",
+            "description": "Required for content_type=article. Article ID returned or resolved by the article create/update flow."
+          },
+          "seo_title": {
+            "type": "string"
+          },
+          "seo_description": {
+            "type": "string"
+          },
+          "seo_keywords": {
+            "type": "string"
+          },
+          "canonical_url": {
+            "type": "string"
+          },
+          "robots_policy": {
+            "type": "string",
+            "enum": [
+              "index,follow",
+              "noindex,follow",
+              "noindex,nofollow"
+            ]
+          },
+          "og_title": {
+            "type": "string"
+          },
+          "og_description": {
+            "type": "string"
+          },
+          "og_image_url": {
+            "type": "string"
+          },
+          "llms_txt": {
+            "type": "string"
+          },
+          "aeo_business_summary": {
+            "type": "string"
+          },
+          "aeo_target_audience": {
+            "type": "string"
+          },
+          "aeo_products_services": {
+            "type": "string"
+          },
+          "aeo_customer_questions": {
+            "type": "string"
+          },
+          "aeo_answer_style": {
+            "type": "string"
+          },
+          "aeo_entity_facts": {
+            "type": "string"
+          },
+          "geo_citation_targets": {
+            "type": "string"
+          },
+          "geo_verifiable_claims": {
+            "type": "string"
+          },
+          "geo_trust_signals": {
+            "type": "string"
+          },
+          "geo_same_as_profiles": {
+            "type": "string"
+          },
+          "geo_comparison_positioning": {
+            "type": "string"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "content_type",
+          "workflow_context"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_categories_list",
+      "description": "List product categories as a tree for a SlimWeb site. Use this before creating categories or assigning a product to a category.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_categories_upsert",
+      "description": "Create or update a product category using site_categories fields. Category names are unique across the whole site. List categories first: a unique exact name may be updated, partial or multiple matches require user confirmation, and create only when absent. New categories require both icon_svg_base64 and a committed 16:9 category image. Prefer a usable user-provided image. Capable runtimes upload generated bytes directly; Remote MCP runtimes must wait for the user to reattach the generated image. Updates preserve unspecified assets.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "integer",
+            "description": "Existing category ID when updating. Omit to create."
+          },
+          "current_name": {
+            "type": "string",
+            "description": "Existing category name to update when category_id is not available. Use this for rename requests like \"change 網頁設計 to 網站設計\"; name is the new category name."
+          },
+          "parent_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Parent category ID. When creating, omit or pass null for a root category. When updating, omit to keep the current parent, or pass null to move to root."
+          },
+          "name": {
+            "type": "string"
+          },
+          "icon_svg_base64": {
+            "type": "string",
+            "description": "Base64-encoded SVG markup generated by the AI for this category icon. Required when creating a category. If the user did not specify a color, use #9ca3af."
+          },
+          "image": {
+            "type": "object",
+            "description": "Required when creating; optional replacement when updating. Use a committed media_path or directly downloadable image_url. Never use placeholders, base64, local paths, or hidden attachment handles.",
+            "properties": {
+              "media_path": {
+                "type": "string",
+                "description": "Committed media path returned by slimweb_uploads_commit, such as sites/1/mcp-uploads/committed/<upload_id>.webp. Existing SlimWeb /media/sites/<site_id>/mcp-uploads/committed/<file> URLs can be converted to this path form."
+              },
+              "image_url": {
+                "type": "string",
+                "description": "Directly downloadable http/https image URL to import into this SlimWeb site before use."
+              },
+              "filename": {
+                "type": "string",
+                "description": "Optional filename to use when importing image_url."
+              },
+              "mime_type": {
+                "type": "string",
+                "description": "Optional image MIME type for image_url, such as image/png, image/jpeg, or image/webp."
+              }
+            },
+            "anyOf": [
+              {
+                "required": [
+                  "media_path"
+                ]
+              },
+              {
+                "required": [
+                  "image_url"
+                ]
+              }
+            ],
+            "additionalProperties": false
+          },
+          "sort_order": {
+            "type": "integer"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "name"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_categories_delete",
+      "description": "Delete a product category only when it and its child categories contain no products.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "integer"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "category_id"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_nav_items_list",
+      "description": "List storefront navigation items as a tree for a SlimWeb site, including item type, URL, icon state, and children.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_nav_items_upsert",
+      "description": "Create or update a storefront navigation item. When creating, the AI must generate a semantic SVG icon from the user wording and pass it as icon_svg_base64. If the user did not specify a color, use #9ca3af.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "nav_item_id": {
+            "type": "integer",
+            "description": "Existing navigation item ID when updating. Omit to create."
+          },
+          "parent_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Parent dropdown item ID. When creating, omit or pass null for a root item. When updating, omit to keep the current parent, or pass null to move to root."
+          },
+          "name": {
+            "type": "string"
+          },
+          "item_type": {
+            "type": "string",
+            "enum": [
+              "dropdown",
+              "link"
+            ]
+          },
+          "url": {
+            "type": "string",
+            "description": "Required when item_type is link. Ignored for dropdown items."
+          },
+          "icon_svg_base64": {
+            "type": "string",
+            "description": "Base64-encoded SVG markup generated by the AI. Required when creating a navigation item; pass a new value to redraw the icon."
+          },
+          "sort_order": {
+            "type": "integer"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "name",
+          "item_type"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_nav_items_delete",
+      "description": "Delete a storefront navigation item and its child navigation items.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "nav_item_id": {
+            "type": "integer"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "nav_item_id"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_products_list",
+      "description": "List products by category, status, keyword, or low stock so the AI can avoid duplicate products or choose a product to edit.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "integer"
+          },
+          "keyword": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "all",
+              "active",
+              "hidden",
+              "sold_out"
+            ]
+          },
+          "max_stock": {
+            "type": "integer"
+          },
+          "page": {
+            "type": "integer"
+          },
+          "per_page": {
+            "type": "integer"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_products_get",
+      "description": "Read one product including images, variants, and quantity discounts.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "integer"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "product_id"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_product_image_reference_prepare",
+      "description": "Prepare one existing product image as an experimental ChatGPT visual reference for image-edit or related image-generation tasks. Use only when ChatGPT needs to see a product image returned by slimweb_products_get; Codex, Hermes, and clients that can fetch image bytes should inspect the image directly in their own runtime. This tool does not save assets or guarantee that ChatGPT can attach the returned reference as image-edit input.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "image_url": {
+            "type": "string",
+            "description": "Public http/https product image URL returned by slimweb_products_get."
+          },
+          "media_path": {
+            "type": "string",
+            "description": "SlimWeb media path returned by slimweb_products_get. Use this instead of image_url when available."
+          },
+          "product_id": {
+            "type": "integer",
+            "description": "Optional product id for trace context."
+          },
+          "product_image_id": {
+            "type": "integer",
+            "description": "Optional product image id for trace context."
+          },
+          "purpose": {
+            "type": "string",
+            "enum": [
+              "image_edit_reference",
+              "generate_more_product_images",
+              "visual_judgement",
+              "other"
+            ],
+            "description": "Why ChatGPT needs to see this product image. Defaults to image_edit_reference."
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_products_upsert",
+      "description": "Create or update one product using Webless product database fields. The AI must call slimweb_categories_list first and ask the user to choose an existing leaf category when category is not explicitly specified. Do not create an inferred category for a product unless the user confirms it through slimweb_categories_upsert. A product must have at least one primary image. If name, site_category_id, base_price, or primary image is missing, ask the user before calling.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "integer"
+          },
+          "site_category_id": {
+            "type": "integer",
+            "description": "Leaf product category ID."
+          },
+          "sku": {
+            "type": "string",
+            "description": "Optional. If omitted when creating, MCP generates an import-style SKU."
+          },
+          "name": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "base_price": {
+            "type": "integer"
+          },
+          "sale_price": {
+            "type": "integer"
+          },
+          "sale_ends_at": {
+            "type": "string"
+          },
+          "cost_price": {
+            "type": "integer"
+          },
+          "stock": {
+            "type": "integer"
+          },
+          "buy_limit": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "hidden",
+              "sold_out"
+            ]
+          },
+          "is_service": {
+            "type": "boolean"
+          },
+          "gift_coupon_template_id": {
+            "type": "integer"
+          },
+          "variant_mode": {
+            "type": "string",
+            "enum": [
+              "none",
+              "different_price"
+            ],
+            "description": "Optional. Defaults to different_price when variants are provided, otherwise none."
+          },
+          "replace_image_by_variant": {
+            "type": "boolean"
+          },
+          "primary_images": {
+            "type": "array",
+            "description": "Required with at least one entry when creating. When updating, primary_images_mode controls whether these images append to or replace the existing primary image list. Use source.media_path values returned by slimweb_uploads_commit. Before using signed image upload, the AI must identify its own runtime. Continue only when the runtime can both read the source image bytes and make outbound HTTPS PUT requests, such as Codex or Hermes with local/code execution access. In ChatGPT Remote MCP, conversation attachments, /mnt/data paths, and hidden attachment rewrite are not reliable for remote MCP tools; if no downloadable URL or accessible local file bytes are available, explain that this client cannot upload the image and ask the user to use Codex/Hermes or provide a directly downloadable image URL. Never pass base64, URLs, /mnt/data paths, attachment handles, or invented placeholder URLs.",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "description": "Product image entry. Use source.media_path from slimweb_uploads_commit. Uploaded user images and AI-generated images use the same signed upload flow when the AI runtime can access the image bytes. Before using signed image upload, the AI must identify its own runtime. Continue only when the runtime can both read the source image bytes and make outbound HTTPS PUT requests, such as Codex or Hermes with local/code execution access. In ChatGPT Remote MCP, conversation attachments, /mnt/data paths, and hidden attachment rewrite are not reliable for remote MCP tools; if no downloadable URL or accessible local file bytes are available, explain that this client cannot upload the image and ask the user to use Codex/Hermes or provide a directly downloadable image URL.",
+                  "properties": {
+                    "source": {
+                      "type": "object",
+                      "description": "Committed SlimWeb media source. First call slimweb_uploads_create, use a capable AI runtime to PUT the uploaded or generated image bytes to upload_url, then call slimweb_uploads_commit and pass the returned media_path here. If the user already provides a SlimWeb media URL like /media/sites/<site_id>/mcp-uploads/committed/<file>, use the matching media_path directly instead of uploading again. Before using signed image upload, the AI must identify its own runtime. Continue only when the runtime can both read the source image bytes and make outbound HTTPS PUT requests, such as Codex or Hermes with local/code execution access. In ChatGPT Remote MCP, conversation attachments, /mnt/data paths, and hidden attachment rewrite are not reliable for remote MCP tools; if no downloadable URL or accessible local file bytes are available, explain that this client cannot upload the image and ask the user to use Codex/Hermes or provide a directly downloadable image URL. Do not pass base64, external URLs, /mnt/data paths, local sandbox paths, attachment handles, or invented placeholder URLs.",
+                      "properties": {
+                        "media_path": {
+                          "type": "string",
+                          "description": "Committed media path returned by slimweb_uploads_commit, such as sites/1/mcp-uploads/committed/<upload_id>.webp. Existing SlimWeb /media/sites/<site_id>/mcp-uploads/committed/<file> URLs can be converted to this path form."
+                        }
+                      },
+                      "anyOf": [
+                        {
+                          "required": [
+                            "media_path"
+                          ]
+                        }
+                      ],
+                      "additionalProperties": false
+                    },
+                    "suggested_filename": {
+                      "type": "string",
+                      "description": "Optional filename such as product-main.png."
+                    },
+                    "alt_text": {
+                      "type": "string",
+                      "description": "Optional image alt text."
+                    }
+                  },
+                  "required": [
+                    "source"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "primary_images_mode": {
+            "type": "string",
+            "enum": [
+              "append",
+              "replace"
+            ],
+            "description": "Only applies when primary_images is provided. append preserves existing primary images and adds these after them, skipping image paths that already exist; replace removes existing primary images first. Defaults to append when updating an existing product and replace when creating."
+          },
+          "content_images": {
+            "type": "array",
+            "description": "Optional product content/detail images. content_images_mode controls whether these images append to or replace the existing content image list. Use the same image source rules as primary_images.",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "description": "Product image entry. Use source.media_path from slimweb_uploads_commit. Uploaded user images and AI-generated images use the same signed upload flow when the AI runtime can access the image bytes. Before using signed image upload, the AI must identify its own runtime. Continue only when the runtime can both read the source image bytes and make outbound HTTPS PUT requests, such as Codex or Hermes with local/code execution access. In ChatGPT Remote MCP, conversation attachments, /mnt/data paths, and hidden attachment rewrite are not reliable for remote MCP tools; if no downloadable URL or accessible local file bytes are available, explain that this client cannot upload the image and ask the user to use Codex/Hermes or provide a directly downloadable image URL.",
+                  "properties": {
+                    "source": {
+                      "type": "object",
+                      "description": "Committed SlimWeb media source. First call slimweb_uploads_create, use a capable AI runtime to PUT the uploaded or generated image bytes to upload_url, then call slimweb_uploads_commit and pass the returned media_path here. If the user already provides a SlimWeb media URL like /media/sites/<site_id>/mcp-uploads/committed/<file>, use the matching media_path directly instead of uploading again. Before using signed image upload, the AI must identify its own runtime. Continue only when the runtime can both read the source image bytes and make outbound HTTPS PUT requests, such as Codex or Hermes with local/code execution access. In ChatGPT Remote MCP, conversation attachments, /mnt/data paths, and hidden attachment rewrite are not reliable for remote MCP tools; if no downloadable URL or accessible local file bytes are available, explain that this client cannot upload the image and ask the user to use Codex/Hermes or provide a directly downloadable image URL. Do not pass base64, external URLs, /mnt/data paths, local sandbox paths, attachment handles, or invented placeholder URLs.",
+                      "properties": {
+                        "media_path": {
+                          "type": "string",
+                          "description": "Committed media path returned by slimweb_uploads_commit, such as sites/1/mcp-uploads/committed/<upload_id>.webp. Existing SlimWeb /media/sites/<site_id>/mcp-uploads/committed/<file> URLs can be converted to this path form."
+                        }
+                      },
+                      "anyOf": [
+                        {
+                          "required": [
+                            "media_path"
+                          ]
+                        }
+                      ],
+                      "additionalProperties": false
+                    },
+                    "suggested_filename": {
+                      "type": "string",
+                      "description": "Optional filename such as product-main.png."
+                    },
+                    "alt_text": {
+                      "type": "string",
+                      "description": "Optional image alt text."
+                    }
+                  },
+                  "required": [
+                    "source"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "content_images_mode": {
+            "type": "string",
+            "enum": [
+              "append",
+              "replace"
+            ],
+            "description": "Only applies when content_images is provided. append preserves existing content images and adds these after them, skipping image paths that already exist; replace removes existing content images first. Defaults to append when updating an existing product and replace when creating."
+          },
+          "videos": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "variants": {
+            "type": "array",
+            "description": "商品規格. Each row may include name, price or base_price, optional sale_price, and stock.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "quantity_discounts": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "confirmation_token": {
+            "type": "string"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "site_category_id",
+          "name",
+          "base_price"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_products_delete",
+      "description": "Delete one product and its stored product images.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "integer"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "product_id"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_products_import_inspect",
+      "description": "Parse a CSV, XLSX, or SQL product import source and return columns, sample rows, category context, and target schema for the AI client to create a mapping. This tool does not call OpenAI and does not write products.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "object",
+            "description": "Import source. Provide data_base64, file_url, or image_url/file-like URL plus filename/original_name and mime_type when available.",
+            "properties": {
+              "data_base64": {
+                "type": "string"
+              },
+              "file_url": {
+                "type": "string"
+              },
+              "image_url": {
+                "type": "string"
+              },
+              "mime_type": {
+                "type": "string"
+              },
+              "filename": {
+                "type": "string"
+              },
+              "original_name": {
+                "type": "string"
+              }
+            }
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "source"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_products_import_validate",
+      "description": "Validate AI-client generated product import mapping against parsed CSV, XLSX, or SQL rows. If validation is not convertible, return failure reasons for the AI to explain to the user.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "object"
+          },
+          "mapping": {
+            "type": "object",
+            "description": "AI-generated mapping with field_mapping and image_mapping. Required field_mapping keys include name and base_price."
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "source",
+          "mapping"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_products_import_commit",
+      "description": "Import products using an AI-client generated mapping after user confirmation. This uses the same product import rules as the admin import flow, without backend OpenAI analysis.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "object"
+          },
+          "mapping": {
+            "type": "object",
+            "description": "Confirmed mapping produced by the AI client and validated by slimweb_products_import_validate."
+          },
+          "confirmation_token": {
+            "type": "string",
+            "description": "Optional AI-side marker that user confirmed the import."
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "source",
+          "mapping"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_coupon_templates_list",
+      "description": "List coupon templates visible in the SlimWeb admin coupon page. Use this before editing or issuing coupons.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "issue_trigger": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "all_members",
+              "order_threshold",
+              "birthday",
+              "product_bundle"
+            ]
+          },
+          "keyword": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "all",
+              "active",
+              "expired"
+            ]
+          },
+          "page": {
+            "type": "integer"
+          },
+          "per_page": {
+            "type": "integer"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_coupon_templates_upsert",
+      "description": "Create or update a SlimWeb coupon template using the same issue_trigger rules as the admin UI. Ask the user before calling when the coupon type is unclear, when manual vs all-members targeting is unclear, or when date range is missing for non-birthday coupons.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "coupon_template_id": {
+            "type": "integer",
+            "description": "Existing coupon template ID when updating. Omit to create."
+          },
+          "name": {
+            "type": "string"
+          },
+          "discount_amount": {
+            "type": "integer",
+            "description": "Fixed discount amount. Must be greater than 0."
+          },
+          "minimum_spend": {
+            "type": "integer",
+            "description": "Minimum spend. Ignored and stored as 0 for product_bundle coupons."
+          },
+          "issue_trigger": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "all_members",
+              "order_threshold",
+              "birthday",
+              "product_bundle"
+            ],
+            "description": "manual=手動發放給個別會員, all_members=發給所有會員, order_threshold=消費滿額自動送, birthday=生日禮券, product_bundle=搭配商品."
+          },
+          "trigger_amount": {
+            "type": "integer",
+            "description": "Required for order_threshold coupons."
+          },
+          "starts_at": {
+            "type": "string",
+            "description": "YYYY-MM-DD. Required for every issue_trigger except birthday."
+          },
+          "ends_at": {
+            "type": "string",
+            "description": "YYYY-MM-DD. Required for every issue_trigger except birthday."
+          },
+          "confirmation_token": {
+            "type": "string",
+            "description": "Optional AI-side confirmation marker after the user confirms campaign details."
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "name",
+          "discount_amount",
+          "issue_trigger"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_members_coupons_issue",
+      "description": "Assign an active manual coupon template to one member. Use only after the user confirms the target member and coupon; do not use for all-members, birthday, order-threshold, or product-bundle coupons.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "member_id": {
+            "type": "integer"
+          },
+          "coupon_template_id": {
+            "type": "integer"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Optional note; stored as manual by current SlimWeb rules."
+          },
+          "confirmation_token": {
+            "type": "string"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "member_id",
+          "coupon_template_id"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_members_list",
+      "description": "List storefront members by keyword, status, tier, or spending range.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "keyword": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "all",
+              "active",
+              "disabled"
+            ]
+          },
+          "min_spent": {
+            "type": "integer"
+          },
+          "max_spent": {
+            "type": "integer"
+          },
+          "page": {
+            "type": "integer"
+          },
+          "per_page": {
+            "type": "integer"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_members_get",
+      "description": "Read one member summary with recent orders and active manual coupons.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "member_id": {
+            "type": "integer"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "member_id"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_newsletters_create",
+      "description": "Create a SlimWeb newsletter record for all members or selected members. This tool stores the newsletter for Webless admin scheduling and does not send email directly. If scheduled_at is omitted, SlimWeb-MCP sets it to the current time plus 5 minutes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "recipient_scope": {
+            "type": "string",
+            "enum": [
+              "members",
+              "all_members"
+            ],
+            "description": "Use members for explicit named recipients. Use all_members only when the user clearly asked to create a newsletter for every member."
+          },
+          "title": {
+            "type": "string"
+          },
+          "member_names": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Optional recipient names. When only names are provided, SlimWeb-MCP looks up members one by one and may return candidate emails when a name matches multiple members."
+          },
+          "member_emails": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Optional recipient emails. When member_names and member_emails are both provided with the same length, the tool stores the newsletter recipients directly without member lookup."
+          },
+          "html_content": {
+            "type": "string",
+            "description": "AI-composed HTML body. script, iframe, and inline event handlers are rejected/removed before storing."
+          },
+          "scheduled_at": {
+            "type": "string",
+            "description": "Optional future date or datetime. Omit when the user did not specify a send time; SlimWeb-MCP will use now + 5 minutes."
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "recipient_scope",
+          "title",
+          "html_content"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_posters_create",
+      "description": "Create a durable AI-generated ecommerce poster using up to five product names, the site name/logo, product names, product primary images as image-edit references, and the user drawing request. The generated poster is stored as a media asset and returned with image_url plus asset.media_path. If any product name fuzzy search matches multiple products, stop and return candidates for user confirmation.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "product_names": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 5,
+            "description": "Product names mentioned by the user. SlimWeb-MCP fuzzy-searches each name and stops for confirmation if any name matches more than one product."
+          },
+          "aspect_ratio": {
+            "type": "string",
+            "enum": [
+              "9:16",
+              "1:1",
+              "16:9"
+            ],
+            "description": "Poster aspect ratio. Defaults to 9:16 when omitted."
+          },
+          "drawing_prompt": {
+            "type": "string",
+            "description": "Poster drawing requirements, promotion copy, style direction, and layout request."
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "product_names",
+          "drawing_prompt"
+        ]
+      },
+      "_meta": {
+        "ui": {
+          "resourceUri": "ui://slimweb/poster-preview.html",
+          "visibility": [
+            "model",
+            "app"
+          ]
+        },
+        "openai/outputTemplate": "ui://slimweb/poster-preview.html",
+        "openai/widgetAccessible": true,
+        "openai/toolInvocation/invoking": "正在產生海報...",
+        "openai/toolInvocation/invoked": "海報已產生"
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_discount_codes_list",
+      "description": "List discount codes for campaign tracking and storefront checkout rules.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "keyword": {
+            "type": "string"
+          },
+          "platform": {
+            "type": "string"
+          },
+          "page": {
+            "type": "integer"
+          },
+          "per_page": {
+            "type": "integer"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_discount_codes_upsert",
+      "description": "Create or update one discount code. discount_percent is the charged discount ratio, for example 0.05 means 5% off.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "discount_code_id": {
+            "type": "integer"
+          },
+          "code": {
+            "type": "string"
+          },
+          "discount_percent": {
+            "type": "number"
+          },
+          "platform": {
+            "type": "string"
+          },
+          "confirmation_token": {
+            "type": "string"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "code",
+          "discount_percent"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_member_tiers_list",
+      "description": "List member tiers and spending thresholds.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_member_tiers_upsert",
+      "description": "Create or update one member tier.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "member_tier_id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "threshold_amount": {
+            "type": "integer"
+          },
+          "min_spend": {
+            "type": "integer"
+          },
+          "discount_percent": {
+            "type": "number"
+          },
+          "confirmation_token": {
+            "type": "string"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "name"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_threshold_gifts_list",
+      "description": "List threshold gift rules and linked service products.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "is_active": {
+            "type": "boolean"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_threshold_gifts_upsert",
+      "description": "Create or update a threshold gift rule. product_id should reference a service product.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "threshold_gift_id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "threshold_amount": {
+            "type": "integer"
+          },
+          "product_id": {
+            "type": "integer"
+          },
+          "sort_order": {
+            "type": "integer"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "confirmation_token": {
+            "type": "string"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "threshold_amount"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_product_add_ons_list",
+      "description": "List single-product add-on rules.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "integer"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_product_add_ons_upsert",
+      "description": "Create or update one single-product add-on rule.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "product_add_on_id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "product_id": {
+            "type": "integer"
+          },
+          "add_on_product_id": {
+            "type": "integer"
+          },
+          "add_on_price": {
+            "type": "integer"
+          },
+          "max_quantity": {
+            "type": "integer"
+          },
+          "sort_order": {
+            "type": "integer"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "confirmation_token": {
+            "type": "string"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "product_id",
+          "add_on_product_id"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_customer_service_logs_list",
+      "description": "List recent AI customer-service logs with member context when available.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "member_id": {
+            "type": "integer"
+          },
+          "keyword": {
+            "type": "string"
+          },
+          "page": {
+            "type": "integer"
+          },
+          "per_page": {
+            "type": "integer"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_customer_service_settings_get",
+      "description": "Read AI customer-service settings for a SlimWeb site.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_customer_service_settings_update",
+      "description": "Update AI customer-service settings. Only send fields the user explicitly confirmed.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "use_ai_customer_service": {
+            "type": "boolean"
+          },
+          "ai_customer_service_question_limit": {
+            "type": "integer"
+          },
+          "ai_customer_service_retention_days": {
+            "type": "integer"
+          },
+          "ai_customer_service_prompt": {
+            "type": "string"
+          },
+          "confirmation_token": {
+            "type": "string"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_exports_create",
+      "description": "Create an immediate structured export for members, orders, or returns. The MCP response includes rows and export metadata.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "export_type": {
+            "type": "string",
+            "enum": [
+              "members",
+              "orders",
+              "returns"
+            ]
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "json",
+              "csv"
+            ]
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "export_type"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_audit_list",
+      "description": "List recent MCP tool execution records when the audit table exists, otherwise return an empty audit list with availability metadata.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tool_name": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_assets_upload",
+      "description": "Register a committed reusable asset such as an image for page, theme, product, or site use. Image bytes must already be uploaded through slimweb_uploads_create and slimweb_uploads_commit; use returned URLs/paths in page content instead of embedding file bytes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "object",
+            "description": "Committed SlimWeb media source, SlimWeb media URL, or directly downloadable external image URL. Prefer media_path when available. If the user provides an external http/https image URL, pass image_url so SlimWeb can import it into committed media before use. Do not pass base64, /mnt/data paths, local sandbox paths, attachment handles, or invented placeholder URLs.",
+            "properties": {
+              "media_path": {
+                "type": "string",
+                "description": "Committed media path returned by slimweb_uploads_commit, such as sites/1/mcp-uploads/committed/<upload_id>.webp. Existing SlimWeb /media/sites/<site_id>/mcp-uploads/committed/<file> URLs can be converted to this path form."
+              },
+              "image_url": {
+                "type": "string",
+                "description": "Directly downloadable http/https image URL to import into this SlimWeb site before use."
+              },
+              "filename": {
+                "type": "string",
+                "description": "Optional filename to use when importing image_url."
+              },
+              "mime_type": {
+                "type": "string",
+                "description": "Optional image MIME type for image_url, such as image/png, image/jpeg, or image/webp."
+              }
+            },
+            "anyOf": [
+              {
+                "required": [
+                  "media_path"
+                ]
+              },
+              {
+                "required": [
+                  "image_url"
+                ]
+              }
+            ],
+            "additionalProperties": false
+          },
+          "theme_id": {
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Optional target theme/page scheme. Omit to use the active theme."
+          },
+          "target_usage": {
+            "type": "string",
+            "enum": [
+              "reference",
+              "home_page",
+              "custom_page",
+              "theme_asset",
+              "product_image",
+              "brand_asset"
+            ]
+          },
+          "asset_scope": {
+            "type": "string",
+            "enum": [
+              "site",
+              "theme",
+              "page",
+              "product"
+            ]
+          },
+          "target_id": {
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Optional stable target ID, such as page ID, theme ID, or product ID."
+          },
+          "suggested_filename": {
+            "type": "string"
+          },
+          "alt_text": {
+            "type": "string"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "source",
+          "target_usage",
+          "asset_scope"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_pages_list",
+      "description": "List all fixed and custom site pages. Use this when you need the site-wide page inventory before a read, create, update, or navigation task.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "theme_id": {
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Optional preview theme for page links. Use this when the caller wants page URLs rendered under a selected non-active theme."
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_pages_check_title",
+      "description": "Check whether a page title already exists for the selected site. Matching is trim + case-insensitive, and fixed pages also compare their English aliases. Use this before creating a page and stop if any match already exists.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Human-readable page title to check for collisions."
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "title"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_pages_get_content",
+      "description": "Read an editable page by page_name and return its content plus metadata. This includes custom pages and the homepage index; other fixed template pages are not editable. Use this before editing a page or when the AI needs the current page state.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "page_name": {
+            "type": "string",
+            "description": "Page title or page key to look up."
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "page_name"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_pages_create",
+      "description": "Create a new custom page. The AI must already have checked title collisions with slimweb_pages_check_title and should use slimweb_design_context_get plus image tools before sending single-page HTML/CSS/page-scoped JavaScript. The AI may choose enabled_libraries from animate_css, aos, swiper, gsap, scrolltrigger, or scrollsmoother when useful, and must pass [] when none are used. In ChatGPT Remote MCP, if a page or article request needs an image but no usable attached image or directly downloadable image URL is available, stop the task and ask the user to paste or re-upload the image before continuing.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Human-readable page title."
+          },
+          "content": {
+            "type": "object",
+            "description": "Structured single-page body. Provide content.html or content.body_html containing this page HTML, custom CSS, and page-scoped inline JavaScript when needed. Do not include external script/link/iframe tags or inline event handlers. Select external visual libraries through enabled_libraries."
+          },
+          "enabled_libraries": {
+            "type": "array",
+            "description": "Required page-scoped external visual support list. Pass [] when no external library is used. Supported keys: animate_css (CSS animation classes), aos (JS+CSS scroll reveal), swiper (JS+CSS sliders), gsap (advanced animation core), scrolltrigger (GSAP scroll animations; also enables gsap), scrollsmoother (GSAP smooth scrolling; also enables gsap and scrolltrigger). Do not include library CDN tags in content.html; SlimWeb injects fixed CDN assets from this allowlist.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "animate_css",
+                "aos",
+                "swiper",
+                "gsap",
+                "scrolltrigger",
+                "scrollsmoother"
+              ]
+            }
+          },
+          "page_key": {
+            "type": "string",
+            "description": "Optional custom page slug. If omitted, the server generates one from the title."
+          },
+          "confirmation_token": {
+            "type": "string"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "title",
+          "content",
+          "enabled_libraries"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_pages_update",
+      "description": "Update an existing editable page by page_name. This includes custom pages and the homepage index; other fixed template pages are not editable. Use slimweb_pages_get_content first to fetch the current page state, including enabled_libraries. Use uploaded media_path URLs for reusable images; do not embed base64 images. Custom CSS and page-scoped inline JavaScript are allowed in page HTML; external libraries must be selected through the required enabled_libraries array. In ChatGPT Remote MCP, if a page or article request needs an image but no usable attached image or directly downloadable image URL is available, stop the task and ask the user to paste or re-upload the image before continuing.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "page_name": {
+            "type": "string",
+            "description": "Page title or page key to update."
+          },
+          "title": {
+            "type": "string",
+            "description": "Optional new page title. If omitted, the existing title is preserved."
+          },
+          "content": {
+            "type": "object",
+            "description": "Structured single-page body. Provide content.html or content.body_html containing this page HTML, custom CSS, and page-scoped inline JavaScript when needed. Do not include external script/link/iframe tags or inline event handlers. Select external visual libraries through enabled_libraries."
+          },
+          "enabled_libraries": {
+            "type": "array",
+            "description": "Required page-scoped external visual support list. Pass [] when no external library is used. Supported keys: animate_css (CSS animation classes), aos (JS+CSS scroll reveal), swiper (JS+CSS sliders), gsap (advanced animation core), scrolltrigger (GSAP scroll animations; also enables gsap), scrollsmoother (GSAP smooth scrolling; also enables gsap and scrolltrigger). Do not include library CDN tags in content.html; SlimWeb injects fixed CDN assets from this allowlist.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "animate_css",
+                "aos",
+                "swiper",
+                "gsap",
+                "scrolltrigger",
+                "scrollsmoother"
+              ]
+            }
+          },
+          "confirmation_token": {
+            "type": "string"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "page_name",
+          "content",
+          "enabled_libraries"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_pages_delete",
+      "description": "Delete a custom template page from Default and all non-Default themes. Fixed system pages cannot be deleted.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "page_key": {
+            "type": "string"
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "page_key"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_preview_get_page_url",
+      "description": "Return a preview URL for a page with explicit site, theme, and page parameters so the AI can inspect the page visually before editing or after page creation.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "page_key": {
+            "type": "string",
+            "description": "Page identifier such as home, about, or a custom page slug."
+          },
+          "theme_id": {
+            "type": [
+              "integer",
+              "string"
+            ]
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "published",
+              "preview"
+            ]
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "page_key"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    }
+  ]
+}
