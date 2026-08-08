@@ -229,6 +229,38 @@ export class WeblessBackendClient {
     return this.catalogMutation(actor, `/content/articles/${this.requiredId(args?.article_id, 'article_id')}`, 'DELETE', 'slimweb_articles_delete', 'page_management_articles', {});
   }
 
+  async listPages(actor) {
+    return this.request(this.sitePath(actor, '/content/pages'), { identity: actor, tool: 'slimweb_pages_list', permission: 'page_management_pages' });
+  }
+
+  async checkPageTitle(actor, args) {
+    const query = new URLSearchParams({ title: String(args?.title ?? '') });
+    return this.request(this.sitePath(actor, `/content/pages/title-check?${query}`), { identity: actor, tool: 'slimweb_pages_check_title', permission: 'page_management_pages' });
+  }
+
+  async getPageContent(actor, args) {
+    const query = new URLSearchParams({ name: String(args?.page_name ?? '') });
+    return this.request(this.sitePath(actor, `/content/pages/resolve?${query}`), { identity: actor, tool: 'slimweb_pages_get_content', permission: 'page_management_pages' });
+  }
+
+  async createPage(actor, args) {
+    return this.catalogMutation(actor, '/content/pages', 'PUT', 'slimweb_pages_create', 'page_management_pages', args);
+  }
+
+  async updatePage(actor, args) {
+    return this.catalogMutation(actor, '/content/pages', 'PUT', 'slimweb_pages_update', 'page_management_pages', args);
+  }
+
+  async getPagePreviewUrl(actor, args) {
+    return this.request(this.sitePath(actor, '/content/pages/preview'), { method: 'POST', identity: actor, tool: 'slimweb_preview_get_page_url', permission: 'page_management_pages', body: this.withoutSiteSelector(args) });
+  }
+
+  async deletePage(actor, args) {
+    const key = String(args?.page_key ?? '').trim();
+    if (!/^[a-z0-9][a-z0-9_-]{1,99}$/i.test(key)) throw new BackendError('page_key is invalid.', { code: 'VALIDATION_FAILED' });
+    return this.catalogMutation(actor, `/content/pages/${encodeURIComponent(key)}`, 'DELETE', 'slimweb_pages_delete', 'page_management_pages', {});
+  }
+
   async catalogMutation(actor, suffix, method, tool, permission, args) {
     return this.request(this.sitePath(actor, suffix), {
       method,

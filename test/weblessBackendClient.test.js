@@ -225,6 +225,34 @@ test('backend client maps Phase 3 article methods to the versioned content API',
   assert.ok(requests.every((request) => !Object.hasOwn(request.body ?? {}, 'site_id')));
 });
 
+test('backend client maps Phase 3 page methods to storage-backed content endpoints', async () => {
+  const requests = [];
+  await withJsonServer(async (request, response) => {
+    requests.push({ method: request.method, url: request.url, headers: request.headers, body: await readJson(request) });
+    sendJson(response, 200, { ok: true, data: { accepted: true }, warnings: [] });
+  }, async (baseUrl) => {
+    const client = new WeblessBackendClient({ baseUrl, secret: 'service-secret', idempotencyKeyFactory: () => 'idempotency-page-001' });
+    await client.listPages(actor, { site_id: 101 });
+    await client.checkPageTitle(actor, { site_id: 101, title: '品牌故事' });
+    await client.getPageContent(actor, { site_id: 101, page_name: 'brand-story' });
+    await client.createPage(actor, { site_id: 101, title: '品牌故事', content: { html: '<p>A</p>' } });
+    await client.updatePage(actor, { site_id: 101, page_name: 'brand-story', content: { html: '<p>B</p>' } });
+    await client.getPagePreviewUrl(actor, { site_id: 101, page_key: 'brand-story', theme_id: 'default' });
+    await client.deletePage(actor, { site_id: 101, page_key: 'brand-story' });
+  });
+  assert.deepEqual(requests.map(({ method, url }) => [method, url]), [
+    ['GET', '/internal/mcp/v1/sites/swcb_demo/content/pages'],
+    ['GET', `/internal/mcp/v1/sites/swcb_demo/content/pages/title-check?title=${encodeURIComponent('品牌故事')}`],
+    ['GET', '/internal/mcp/v1/sites/swcb_demo/content/pages/resolve?name=brand-story'],
+    ['PUT', '/internal/mcp/v1/sites/swcb_demo/content/pages'],
+    ['PUT', '/internal/mcp/v1/sites/swcb_demo/content/pages'],
+    ['POST', '/internal/mcp/v1/sites/swcb_demo/content/pages/preview'],
+    ['DELETE', '/internal/mcp/v1/sites/swcb_demo/content/pages/brand-story']
+  ]);
+  assert.ok([3, 4, 6].every((index) => requests[index].headers['idempotency-key'] === 'idempotency-page-001'));
+  assert.equal(requests[5].headers['idempotency-key'], undefined);
+});
+
 test('backend client maps Webless error envelopes to stable errors', async () => {
   const cases = [
     [403, 'FORBIDDEN'],

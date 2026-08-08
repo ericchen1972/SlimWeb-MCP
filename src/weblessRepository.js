@@ -4109,51 +4109,11 @@ export class WeblessAccountRepository {
 	  }
 	
   async getPagePreviewUrl(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const pageKey = normalizePageKey(args.page_key ?? 'index');
-    const theme = pageKey === 'index'
-      ? siteLevelHomepageTheme(site)
-      : await this.resolveThemeForSite(site.id, args.theme_id);
-    const url = new URL(this.previewUrlFor(site, pageKey, theme.id));
-
-    return {
-      site,
-      page_key: pageKey,
-      theme,
-      url: url.toString(),
-      mode: args.mode === 'published' ? 'published' : 'preview',
-      supports_theme_parameter: pageKey !== 'index'
-    };
+    return this.requireBackendClient('content_pages_read').getPagePreviewUrl(accountId, args);
   }
 
   async deletePage(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const pageKey = normalizePageKey(args.page_key);
-
-    if (FIXED_TEMPLATE_PAGE_KEYS.has(pageKey)) {
-      throw codedError('VALIDATION_FAILED', 'Fixed template pages cannot be deleted.');
-    }
-
-    await this.storage.deleteDirectory(`sites/${site.id}/templates/default/pages/${pageKey}`);
-
-    const schemes = await this.pool.query(
-      `
-        select id
-        from site_pages
-        where site_id = $1 and is_default = false
-      `,
-      [site.id]
-    );
-
-    for (const scheme of schemes.rows) {
-      await this.storage.deleteDirectory(`sites/${site.id}/templates/schemes/${scheme.id}/pages/${pageKey}`);
-    }
-
-    return {
-      ok: true,
-      site,
-      deleted_page_key: pageKey
-    };
+    return this.requireBackendClient('content_pages_write').deletePage(accountId, args);
   }
 
   async getHomeContent(accountId, args) {
@@ -4164,186 +4124,23 @@ export class WeblessAccountRepository {
   }
 
   async listPages(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const previewTheme = args.theme_id === undefined || args.theme_id === null || String(args.theme_id).trim() === ''
-      ? null
-      : await this.resolveThemeForSite(site.id, args.theme_id);
-    const previewThemeId = previewTheme?.id ?? 'default';
-    const customPages = await this.listCustomPagesForSite(site, {
-      includeHtml: false,
-      previewThemeId
-    });
-    const fixedPages = fixedTemplatePages().map((page) => ({
-      ...page,
-      type: 'fixed',
-      is_fixed: true,
-      can_edit: isEditableFixedPageKey(page.page_key),
-      can_delete: false,
-      public_url: this.previewUrlFor(site, page.page_key, previewThemeId),
-      preview_url: this.previewUrlFor(site, page.page_key, previewThemeId)
-    }));
-    const pages = [...fixedPages, ...customPages];
-
-    pages.sort((left, right) => left.title.localeCompare(right.title, 'zh-Hant'));
-
-    return {
-      site,
-      pages
-    };
+    return this.requireBackendClient('content_pages_read').listPages(accountId, args);
   }
 
   async getPageContent(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const pageName = requireNonEmptyString(args.page_name, 'page_name');
-    const pageRecord = await this.findPageForSite(site, pageName, { includeHtml: true });
-    if (!pageRecord || (pageRecord.is_fixed && !isEditableFixedPageKey(pageRecord.page_key))) {
-      throw codedError('NOT_FOUND', `Page not found or not accessible: ${pageName}`);
-    }
-
-    return {
-      site,
-      page_name: pageName,
-      ...pageRecord
-    };
+    return this.requireBackendClient('content_pages_read').getPageContent(accountId, args);
   }
 
   async checkPageTitle(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const title = requireNonEmptyString(args.title, 'title');
-    const { matches } = await this.findPageTitleMatchesForSite(site, title);
-
-    return {
-      site,
-      title,
-      normalized_title: normalizeTitleMatch(title),
-      exists: matches.length > 0,
-      matches
-    };
+    return this.requireBackendClient('content_pages_read').checkPageTitle(accountId, args);
   }
 
   async createPage(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const title = requireNonEmptyString(args.title, 'title');
-    const html = extractHtmlContent(args.content);
-    const enabledLibraries = normalizePageEnabledLibraries(args.enabled_libraries ?? args.content?.enabled_libraries);
-    const storedHtml = pageHtmlWithManagedLibraries(html, enabledLibraries);
-    const { matches } = await this.findPageTitleMatchesForSite(site, title);
-    if (matches.length > 0) {
-      throw codedError('CONFLICT', 'Page title already exists.', { matches });
-    }
-
-    const existingKeys = new Set([
-      ...FIXED_TEMPLATE_PAGE_KEYS,
-      ...(await this.listCustomPagesForSite(site, { includeHtml: false })).map((page) => page.page_key)
-    ]);
-    const requestedPageKey = nullableString(args.page_key);
-    const pageKeyBase = requestedPageKey
-      ? normalizePageKey(requestedPageKey)
-      : safeGeneratedPageKey(title, `page-${site.id}`);
-    const pageKey = uniqueValue(pageKeyBase, existingKeys, 120);
-    const theme = siteLevelHomepageTheme(site);
-    const storagePath = pageContentStoragePath(site.id, theme, pageKey);
-    const metadataPath = customPageMetadataStoragePath(site.id, pageKey);
-    const metadata = {
-      key: pageKey,
-      name: title,
-      enabled_libraries: enabledLibraries,
-      updated_at: new Date().toISOString()
-    };
-
-    await this.storage.write(storagePath, Buffer.from(storedHtml.trim() + '\n', 'utf8'), 'text/x-php; charset=utf-8');
-    await this.storage.write(metadataPath, Buffer.from(JSON.stringify(metadata, null, 2) + '\n', 'utf8'), 'application/json; charset=utf-8');
-
-    return {
-      ok: true,
-      site,
-      page_key: pageKey,
-      title,
-      theme,
-      storage_path: storagePath,
-      metadata_path: metadataPath,
-      enabled_libraries: enabledLibraries,
-      public_url: this.customPagePublicUrlFor(site, pageKey),
-      preview_url: this.previewUrlFor(site, pageKey, theme.id),
-      bytes_written: Buffer.byteLength(storedHtml.trim() + '\n')
-    };
+    return this.requireBackendClient('content_pages_write').createPage(accountId, args);
   }
 
   async updatePage(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const pageName = requireNonEmptyString(args.page_name, 'page_name');
-    const html = extractHtmlContent(args.content);
-    const enabledLibraries = normalizePageEnabledLibraries(args.enabled_libraries ?? args.content?.enabled_libraries);
-    const storedHtml = pageHtmlWithManagedLibraries(html, enabledLibraries);
-    const pageRecord = await this.findPageForSite(site, pageName, { includeHtml: true });
-
-    if (!pageRecord) {
-      throw codedError('NOT_FOUND', `Page not found or not accessible: ${pageName}`);
-    }
-
-    if (pageRecord.is_fixed && !isEditableFixedPageKey(pageRecord.page_key)) {
-      throw codedError('VALIDATION_FAILED', 'Fixed template pages cannot be modified.');
-    }
-
-    if (isEditableFixedPageKey(pageRecord.page_key)) {
-      const theme = siteLevelHomepageTheme(site);
-      const storagePath = pageRecord.storage_path ?? homeContentStoragePath(site.id);
-
-      await this.storage.write(storagePath, Buffer.from(storedHtml.trim() + '\n', 'utf8'), 'text/x-php; charset=utf-8');
-
-      return {
-        ok: true,
-        site,
-        page_key: pageRecord.page_key,
-        title: pageRecord.title,
-        theme,
-        storage_path: storagePath,
-        metadata_path: null,
-        enabled_libraries: enabledLibraries,
-        public_url: pageRecord.public_url,
-        preview_url: pageRecord.preview_url,
-        bytes_written: Buffer.byteLength(storedHtml.trim() + '\n')
-      };
-    }
-
-    const currentTitle = pageRecord.title;
-    const nextTitle = nullableString(args.title) ?? currentTitle;
-    if (normalizeTitleMatch(nextTitle) !== normalizeTitleMatch(currentTitle)) {
-      const { matches } = await this.findPageTitleMatchesForSite(site, nextTitle);
-      const conflictingMatches = matches.filter((match) => match.page_key !== pageRecord.page_key);
-      if (conflictingMatches.length > 0) {
-        throw codedError('CONFLICT', 'Page title already exists.', { matches: conflictingMatches });
-      }
-    }
-
-    const theme = siteLevelHomepageTheme(site);
-    const storagePath = pageContentStoragePath(site.id, theme, pageRecord.page_key);
-    const metadataPath = customPageMetadataStoragePath(site.id, pageRecord.page_key);
-    const existingMetadata = parseJsonObject(await this.storage.readText(metadataPath));
-    const metadata = {
-      ...existingMetadata,
-      key: pageRecord.page_key,
-      name: nextTitle,
-      enabled_libraries: enabledLibraries,
-      updated_at: new Date().toISOString()
-    };
-
-    await this.storage.write(storagePath, Buffer.from(storedHtml.trim() + '\n', 'utf8'), 'text/x-php; charset=utf-8');
-    await this.storage.write(metadataPath, Buffer.from(JSON.stringify(metadata, null, 2) + '\n', 'utf8'), 'application/json; charset=utf-8');
-
-    return {
-      ok: true,
-      site,
-      page_key: pageRecord.page_key,
-      title: nextTitle,
-      theme,
-      storage_path: storagePath,
-      metadata_path: metadataPath,
-      enabled_libraries: enabledLibraries,
-      public_url: this.customPagePublicUrlFor(site, pageRecord.page_key),
-      preview_url: this.previewUrlFor(site, pageRecord.page_key, theme.id),
-      bytes_written: Buffer.byteLength(storedHtml.trim() + '\n')
-    };
+    return this.requireBackendClient('content_pages_write').updatePage(accountId, args);
   }
 
   async updateContentSeo(accountId, args) {

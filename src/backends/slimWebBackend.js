@@ -22,7 +22,14 @@ export const SLIMWEB_BACKEND_METHODS = Object.freeze([
   'getArticleContent',
   'createArticle',
   'updateArticle',
-  'deleteArticle'
+  'deleteArticle',
+  'listPages',
+  'checkPageTitle',
+  'getPageContent',
+  'createPage',
+  'updatePage',
+  'getPagePreviewUrl',
+  'deletePage'
 ]);
 
 export function assertSlimWebBackend(backend) {
