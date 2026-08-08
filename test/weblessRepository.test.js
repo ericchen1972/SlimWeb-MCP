@@ -317,6 +317,18 @@ test('Phase 4 member and promotion methods use only the backend client', async (
   assert.ok(calls.every(([, resolvedActor, received]) => resolvedActor === actor && received === args));
 });
 
+test('Phase 4 merchandising methods use only the backend client', async () => {
+  const actor = { site: { site_code: 'swcb_demo' } };
+  const args = { site_id: 101, threshold_gift_id: 7, product_add_on_id: 8 };
+  const methods = ['listThresholdGifts', 'upsertThresholdGift', 'deleteThresholdGift', 'listProductAddOns', 'upsertProductAddOn', 'deleteProductAddOn'];
+  const calls = [];
+  const backendClient = Object.fromEntries(methods.map((method) => [method, async (resolvedActor, received) => { calls.push([method, resolvedActor, received]); return { method }; }]));
+  const repository = new WeblessAccountRepository({ async query() { throw new Error('unexpected SQL'); } }, { backendClient });
+
+  for (const method of methods) assert.deepEqual(await repository[method](actor, args), { method });
+  assert.deepEqual(calls.map(([method]) => method), methods);
+});
+
 function fakePool() {
   return {
     async query(sql, params) {

@@ -66,7 +66,13 @@ export const SLIMWEB_BACKEND_METHODS = Object.freeze([
   'deleteDiscountCode',
   'listMemberTiers',
   'upsertMemberTier',
-  'deleteMemberTier'
+  'deleteMemberTier',
+  'listThresholdGifts',
+  'upsertThresholdGift',
+  'deleteThresholdGift',
+  'listProductAddOns',
+  'upsertProductAddOn',
+  'deleteProductAddOn'
 ]);
 
 export function assertSlimWebBackend(backend) {

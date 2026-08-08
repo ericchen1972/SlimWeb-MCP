@@ -2429,19 +2429,11 @@ export class WeblessAccountRepository {
   }
 
   async deleteThresholdGift(accountId, args) {
-    return this.deleteScopedRecord(accountId, args, {
-      table: 'threshold_gifts',
-      idField: 'threshold_gift_id',
-      resultField: 'deleted_threshold_gift_id'
-    });
+    return this.requireBackendClient("merchandising").deleteThresholdGift(accountId, args);
   }
 
   async deleteProductAddOn(accountId, args) {
-    return this.deleteScopedRecord(accountId, args, {
-      table: 'product_add_ons',
-      idField: 'product_add_on_id',
-      resultField: 'deleted_product_add_on_id'
-    });
+    return this.requireBackendClient("merchandising").deleteProductAddOn(accountId, args);
   }
 
   async deleteCustomerServiceLog(accountId, args) {
@@ -2782,155 +2774,21 @@ export class WeblessAccountRepository {
     return this.requireBackendClient("member_promotions").upsertMemberTier(accountId, args);
   }
 
-	  async listThresholdGifts(accountId, args) {
-	    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-	    const filters = ['tg.site_id = $1'];
-	    const params = [site.id];
-	    if (args.is_active !== undefined && args.is_active !== null) {
-	      filters.push(`tg.is_active = $${params.length + 1}`);
-	      params.push(Boolean(args.is_active));
-	    }
-	    const result = await this.pool.query(
-	      `
-	        select tg.id, tg.site_id, tg.threshold_amount, tg.product_id, p.name as product_name,
-	               tg.sort_order, tg.is_active, tg.created_at, tg.updated_at
-	        from threshold_gifts tg
-	        left join products p on p.id = tg.product_id and p.site_id = tg.site_id
-	        where ${filters.join(' and ')}
-	        order by tg.is_active desc, tg.sort_order asc, tg.threshold_amount asc, tg.id asc
-	      `,
-	      params
-	    );
+  async listThresholdGifts(accountId, args) {
+    return this.requireBackendClient("merchandising").listThresholdGifts(accountId, args);
+  }
 
-	    return {
-	      site,
-	      threshold_gifts: result.rows.map((gift) => formatThresholdGift(gift))
-	    };
-	  }
+  async upsertThresholdGift(accountId, args) {
+    return this.requireBackendClient("merchandising").upsertThresholdGift(accountId, args);
+  }
 
-	  async upsertThresholdGift(accountId, args) {
-	    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-	    const thresholdGiftId = args.threshold_gift_id === undefined || args.threshold_gift_id === null ? null : requireInteger(args.threshold_gift_id, 'threshold_gift_id');
-	    const existing = thresholdGiftId ? await this.findThresholdGiftForSite(site.id, thresholdGiftId) : null;
-	    const thresholdAmount = requirePositiveAmount(args.threshold_amount ?? existing?.threshold_amount, 'threshold_amount');
-	    const productId = args.product_id === undefined || args.product_id === null
-	      ? (existing ? existing.product_id : null)
-	      : requireInteger(args.product_id, 'product_id');
-	    if (!productId) {
-	      throw codedError('VALIDATION_FAILED', 'product_id is required when creating a threshold gift.');
-	    }
-	    await this.findProductForSite(site.id, productId);
-	    const sortOrder = args.sort_order === undefined || args.sort_order === null ? Number.parseInt(existing?.sort_order ?? '0', 10) : requireNonNegativeAmount(args.sort_order, 'sort_order');
-	    const isActive = args.is_active === undefined || args.is_active === null ? Boolean(existing?.is_active ?? true) : Boolean(args.is_active);
+  async listProductAddOns(accountId, args) {
+    return this.requireBackendClient("merchandising").listProductAddOns(accountId, args);
+  }
 
-	    const result = thresholdGiftId
-	      ? await this.pool.query(
-	        `
-	          update threshold_gifts
-	          set threshold_amount = $1, product_id = $2, sort_order = $3, is_active = $4, updated_at = now()
-	          where site_id = $5 and id = $6
-	          returning id, site_id, threshold_amount, product_id, sort_order, is_active, created_at, updated_at
-	        `,
-	        [thresholdAmount, productId, sortOrder, isActive, site.id, thresholdGiftId]
-	      )
-	      : await this.pool.query(
-	        `
-	          insert into threshold_gifts (site_id, threshold_amount, product_id, sort_order, is_active, created_at, updated_at)
-	          values ($1, $2, $3, $4, $5, now(), now())
-	          returning id, site_id, threshold_amount, product_id, sort_order, is_active, created_at, updated_at
-	        `,
-	        [site.id, thresholdAmount, productId, sortOrder, isActive]
-	      );
-
-	    return { ok: true, site, threshold_gift: formatThresholdGift(result.rows[0]) };
-	  }
-
-	  async listProductAddOns(accountId, args) {
-	    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-	    const filters = ['pao.site_id = $1'];
-	    const params = [site.id];
-	    if (args.product_id !== undefined && args.product_id !== null) {
-	      filters.push(`pao.product_id = $${params.length + 1}`);
-	      params.push(requireInteger(args.product_id, 'product_id'));
-	    }
-	    if (args.is_active !== undefined && args.is_active !== null) {
-	      filters.push(`pao.is_active = $${params.length + 1}`);
-	      params.push(Boolean(args.is_active));
-	    }
-	    const result = await this.pool.query(
-	      `
-	        select pao.id, pao.site_id, pao.product_id, p.name as product_name,
-	               pao.add_on_product_id, ap.name as add_on_product_name,
-	               pao.add_on_price, pao.max_quantity, pao.sort_order, pao.is_active,
-	               pao.created_at, pao.updated_at
-	        from product_add_ons pao
-	        left join products p on p.id = pao.product_id and p.site_id = pao.site_id
-	        left join products ap on ap.id = pao.add_on_product_id and ap.site_id = pao.site_id
-	        where ${filters.join(' and ')}
-	        order by pao.product_id asc, pao.sort_order asc, pao.id asc
-	      `,
-	      params
-	    );
-
-	    return {
-	      site,
-	      product_add_ons: result.rows.map((addOn) => formatProductAddOn(addOn))
-	    };
-	  }
-
-	  async upsertProductAddOn(accountId, args) {
-	    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-	    const addOnId = args.product_add_on_id === undefined || args.product_add_on_id === null ? null : requireInteger(args.product_add_on_id, 'product_add_on_id');
-	    const existing = addOnId ? await this.findProductAddOnForSite(site.id, addOnId) : null;
-	    const productId = args.product_id === undefined || args.product_id === null ? existing?.product_id : requireInteger(args.product_id, 'product_id');
-	    const addOnProductId = args.add_on_product_id === undefined || args.add_on_product_id === null ? existing?.add_on_product_id : requireInteger(args.add_on_product_id, 'add_on_product_id');
-	    if (!productId || !addOnProductId) {
-	      throw codedError('VALIDATION_FAILED', 'product_id and add_on_product_id are required.');
-	    }
-	    if (String(productId) === String(addOnProductId)) {
-	      throw codedError('VALIDATION_FAILED', 'add_on_product_id cannot be the same product as product_id.');
-	    }
-	    await Promise.all([this.findProductForSite(site.id, productId), this.findProductForSite(site.id, addOnProductId)]);
-	    const addOnPrice = args.add_on_price === undefined || args.add_on_price === null ? Number.parseInt(existing?.add_on_price ?? '0', 10) : requireNonNegativeAmount(args.add_on_price, 'add_on_price');
-	    const maxQuantity = args.max_quantity === undefined || args.max_quantity === null ? Number.parseInt(existing?.max_quantity ?? '1', 10) : requirePositiveAmount(args.max_quantity, 'max_quantity');
-	    const sortOrder = args.sort_order === undefined || args.sort_order === null ? Number.parseInt(existing?.sort_order ?? '0', 10) : requireNonNegativeAmount(args.sort_order, 'sort_order');
-	    const isActive = args.is_active === undefined || args.is_active === null ? Boolean(existing?.is_active ?? true) : Boolean(args.is_active);
-
-	    const duplicate = await this.pool.query(
-	      `
-	        select id
-	        from product_add_ons
-	        where site_id = $1 and product_id = $2 and add_on_product_id = $3 and ($4::bigint is null or id != $4::bigint)
-	        limit 1
-	      `,
-	      [site.id, productId, addOnProductId, addOnId]
-	    );
-	    if (duplicate.rows.length > 0) {
-	      throw codedError('VALIDATION_FAILED', 'This product add-on rule already exists.');
-	    }
-
-	    const result = addOnId
-	      ? await this.pool.query(
-	        `
-	          update product_add_ons
-	          set product_id = $1, add_on_product_id = $2, add_on_price = $3, max_quantity = $4,
-	              sort_order = $5, is_active = $6, updated_at = now()
-	          where site_id = $7 and id = $8
-	          returning id, site_id, product_id, add_on_product_id, add_on_price, max_quantity, sort_order, is_active, created_at, updated_at
-	        `,
-	        [productId, addOnProductId, addOnPrice, maxQuantity, sortOrder, isActive, site.id, addOnId]
-	      )
-	      : await this.pool.query(
-	        `
-	          insert into product_add_ons (site_id, product_id, add_on_product_id, add_on_price, max_quantity, sort_order, is_active, created_at, updated_at)
-	          values ($1, $2, $3, $4, $5, $6, $7, now(), now())
-	          returning id, site_id, product_id, add_on_product_id, add_on_price, max_quantity, sort_order, is_active, created_at, updated_at
-	        `,
-	        [site.id, productId, addOnProductId, addOnPrice, maxQuantity, sortOrder, isActive]
-	      );
-
-	    return { ok: true, site, product_add_on: formatProductAddOn(result.rows[0]) };
-	  }
+  async upsertProductAddOn(accountId, args) {
+    return this.requireBackendClient("merchandising").upsertProductAddOn(accountId, args);
+  }
 
 	  async listCustomerServiceLogs(accountId, args) {
 	    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));

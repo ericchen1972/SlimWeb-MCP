@@ -467,6 +467,32 @@ test('backend client maps all Phase 4 member and promotion methods to site-scope
   assert.ok(requests.every((request) => !Object.hasOwn(request.body ?? {}, 'site_id') && !Object.hasOwn(request.body ?? {}, 'site_code')));
 });
 
+test('backend client maps all Phase 4 merchandising methods to site-scoped commerce endpoints', async () => {
+  const requests = [];
+  await withJsonServer(async (request, response) => {
+    requests.push({ method: request.method, url: request.url, headers: request.headers, body: await readJson(request) });
+    sendJson(response, 200, { ok: true, data: { accepted: true }, warnings: [] });
+  }, async (baseUrl) => {
+    const client = new WeblessBackendClient({ baseUrl, secret: 'service-secret', idempotencyKeyFactory: () => 'merchandising-key-001' });
+    await client.listThresholdGifts(actor, { site_id: 101, is_active: true });
+    await client.upsertThresholdGift(actor, { site_id: 101, threshold_amount: 2000, product_id: 7 });
+    await client.deleteThresholdGift(actor, { site_id: 101, threshold_gift_id: 8 });
+    await client.listProductAddOns(actor, { site_id: 101, product_id: 9, is_active: false });
+    await client.upsertProductAddOn(actor, { site_id: 101, product_id: 9, add_on_product_id: 10, add_on_price: 100 });
+    await client.deleteProductAddOn(actor, { site_id: 101, product_add_on_id: 11 });
+  });
+
+  assert.deepEqual(requests.map(({ method, url }) => [method, url]), [
+    ['GET', '/internal/mcp/v1/sites/swcb_demo/commerce/threshold-gifts?is_active=true'],
+    ['PUT', '/internal/mcp/v1/sites/swcb_demo/commerce/threshold-gifts'],
+    ['DELETE', '/internal/mcp/v1/sites/swcb_demo/commerce/threshold-gifts/8'],
+    ['GET', '/internal/mcp/v1/sites/swcb_demo/commerce/product-add-ons?product_id=9&is_active=false'],
+    ['PUT', '/internal/mcp/v1/sites/swcb_demo/commerce/product-add-ons'],
+    ['DELETE', '/internal/mcp/v1/sites/swcb_demo/commerce/product-add-ons/11']
+  ]);
+  assert.deepEqual(requests.filter(({ method }) => method !== 'GET').map(({ headers }) => headers['idempotency-key']), Array(4).fill('merchandising-key-001'));
+});
+
 test('backend client maps Webless error envelopes to stable errors', async () => {
   const cases = [
     [403, 'FORBIDDEN'],

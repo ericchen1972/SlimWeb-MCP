@@ -459,6 +459,30 @@ export class WeblessBackendClient {
     return this.commerceMutation(actor, `/commerce/member-tiers/${this.requiredId(args?.member_tier_id, 'member_tier_id')}`, 'DELETE', 'slimweb_member_tiers_delete', 'member_levels', args, ['member_tier_id']);
   }
 
+  async listThresholdGifts(actor, args) {
+    return this.commerceList(actor, '/commerce/threshold-gifts', 'slimweb_threshold_gifts_list', 'threshold_gift_management', args, ['is_active']);
+  }
+
+  async upsertThresholdGift(actor, args) {
+    return this.commerceMutation(actor, '/commerce/threshold-gifts', 'PUT', 'slimweb_threshold_gifts_upsert', 'threshold_gift_management', args);
+  }
+
+  async deleteThresholdGift(actor, args) {
+    return this.commerceMutation(actor, `/commerce/threshold-gifts/${this.requiredId(args?.threshold_gift_id, 'threshold_gift_id')}`, 'DELETE', 'slimweb_threshold_gifts_delete', 'threshold_gift_management', args, ['threshold_gift_id']);
+  }
+
+  async listProductAddOns(actor, args) {
+    return this.commerceList(actor, '/commerce/product-add-ons', 'slimweb_product_add_ons_list', 'add_on_product_management', args, ['product_id', 'is_active']);
+  }
+
+  async upsertProductAddOn(actor, args) {
+    return this.commerceMutation(actor, '/commerce/product-add-ons', 'PUT', 'slimweb_product_add_ons_upsert', 'add_on_product_management', args);
+  }
+
+  async deleteProductAddOn(actor, args) {
+    return this.commerceMutation(actor, `/commerce/product-add-ons/${this.requiredId(args?.product_add_on_id, 'product_add_on_id')}`, 'DELETE', 'slimweb_product_add_ons_delete', 'add_on_product_management', args, ['product_add_on_id']);
+  }
+
   async commerceList(actor, suffix, tool, permission, args, fields) {
     const filters = this.withoutSiteSelector(args);
     const query = new URLSearchParams();
