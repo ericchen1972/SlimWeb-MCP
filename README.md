@@ -1803,14 +1803,29 @@ MCP tools 應回傳可預期的錯誤類型：
 
 ## 登入與 webless 帳號系統
 
-MCP service 使用與 webless 相同的 Google Client ID 驗證 Google Identity token，並直接連接 webless PostgreSQL：
+MCP service 使用與 webless 相同的 Google Client ID 驗證 Google Identity token。SaaS Backend API 遷移採領域分批進行，目前執行路徑如下：
+
+| Domain | Current SaaS execution path |
+| --- | --- |
+| Google admin site list and site permission resolution | Webless `/internal/mcp/v1` API |
+| Basic settings read/update, including site name and logo | Webless `/internal/mcp/v1` API |
+| Other tool domains | Temporary direct repository until their approved migration phase |
+
+第一批使用以下設定：
+
+- `WEBLESS_BACKEND_API_BASE_URL`: Webless Backend API origin，正式環境為 `https://webless-aakwcbp2ca-de.a.run.app`。
+- `WEBLESS_MCP_SECRET`: MCP service 與 Webless 共用的 service credential；它不代表商家身分，Webless 仍會重新驗證 Google actor、站點歸屬與 endpoint permission。
+- Backend API request timeout 為 15 秒。設定了 Backend API 但連線失敗、逾時或回傳錯誤時，該操作直接失敗，不會 fallback 到 SQL。
+- 每個 request 帶 request ID；設定寫入另帶 idempotency key，由 Webless PostgreSQL 保存完成結果，避免 Cloud Run 多實例重複寫入。
+
+目前尚未遷移的工具仍需要既有 PostgreSQL／storage deployment variables；只有在後續所有領域完成並通過驗證後才能移除。
 
 - 登入時不以 webless 主會員 `accounts` 授權 MCP。
-- 登入時依 Google `sub` 或 `google_email` 查 `site_admins`，只允許至少一個 Web admin 身份有 `backend_ai_assistant` 權限的使用者進入 MCP。
+- 登入時由 Webless API 依 Google `sub` 或 `google_email` 查 `site_admins`，只允許至少一個 Web admin 身份有 `backend_ai_assistant` 或 `system_admin` 權限的使用者進入 MCP。
 - MCP session 使用 `MCP_SESSION_SECRET` 簽章
 - session 可透過 HttpOnly cookie 或 `Authorization: Bearer <token>` 使用
-- `slimweb_sites_list` 透過 `site_admins` + `sites` 列出該 Google 帳號可用 MCP 操作的網站
-- 每個 site-scoped tool call 會重新驗證該 Google 帳號在指定 `site_code` 對應站台的 Web admin 權限
+- `slimweb_sites_list` 由 Webless API 列出該 Google 帳號可用 MCP 操作的網站
+- 每個 site-scoped tool call 會透過 Webless API 重新驗證該 Google 帳號在指定 `site_code` 對應站台的 Web admin 權限
 - ChatGPT / Claude remote MCP 使用同一套 OAuth 驗證流程。未授權 `tools/call` 會回 HTTP 401 與 `WWW-Authenticate: Bearer resource_metadata="..."`，讓 client 透過 discovery / dynamic client registration / authorization code + PKCE 取得 bearer token；使用者不需要手動複製 MCP token。
 
 Cloud Run 入口是 public HTTPS，但 MCP tools 需要有效 MCP session。未登入呼叫 protected tools 會回 `AUTH_REQUIRED`。
