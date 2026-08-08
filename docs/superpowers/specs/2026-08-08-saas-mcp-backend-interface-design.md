@@ -227,3 +227,22 @@ Production-destructive smoke tests require an explicitly designated test site an
 - The live SaaS deployment passes health, contract-hash, authenticated read, and reversible write verification.
 - No permanent direct-database or storage fallback remains in SlimWeb-MCP.
 - Standalone work has not begun; its implementation will be evaluated only after these SaaS criteria pass.
+
+## Phase 1 Acceptance Evidence — 2026-08-08
+
+The SaaS basic-settings migration slice passed its automated, deployment, contract, and reversible production checks.
+
+- Webless production revision: `webless-00516-ney` (100% traffic).
+- SlimWeb-MCP production revision: `slimweb-mcp-00120-j72` (100% traffic).
+- SlimWeb-MCP deployment workflow: GitHub Actions run `31239743807`, conclusion `success`.
+- Webless test suite: 697 tests passed with 3,930 assertions.
+- SlimWeb-MCP test suite: 410 tests passed.
+- Frozen public tool contract: 125 tools; SHA-256 `d6de40eb08a55927c199ae1b227fc29b7bf4010e0bc70a87b14d4d3ed1be6871`.
+- Reversible production test site: `swcb_zog0l7zlyp3lwmlc`.
+- `slimweb_settings_get` read the original name `SlimWeb`.
+- `slimweb_settings_update` changed the name to a temporary verification value; both the public MCP read and the Webless internal API read returned that temporary value.
+- A second `slimweb_settings_update` restored `SlimWeb`; both read paths confirmed restoration.
+- The immutable `site_code`, slug, and domain values were identical before and after the test.
+- Webless persisted separate successful idempotency records for the temporary update and restoration.
+
+This evidence completes Phase 1 only. The remaining SaaS tool domains continue under the migration sequence described above; Standalone remains out of scope until the SaaS migration is accepted.
