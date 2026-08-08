@@ -263,3 +263,21 @@ The SaaS catalog and navigation migration passed automated regression, productio
 - The 14 migrated repository methods now require `WeblessBackendClient`; their prior direct PostgreSQL and storage implementations were removed.
 
 This evidence completes Phase 2 only. Phase 3 content, template, and media migration is next; Standalone remains out of scope until all SaaS phases pass.
+
+## Phase 3 Acceptance Evidence — 2026-08-08
+
+The remaining SaaS content, template, and media slice passed automated regression, production deployment, authenticated public MCP reads, and a non-destructive write check.
+
+- Migrated the remaining 16 public theme, design-context, style-profile, media-library, and asset-registration tools to `WeblessBackendClient`.
+- Webless production revision: `webless-00538-pih` (100% traffic).
+- SlimWeb-MCP production revision: `slimweb-mcp-00128-z2f` (100% traffic).
+- SlimWeb-MCP deployment workflow: GitHub Actions run `31256662109`, conclusion `success`.
+- Webless test suite: 727 tests passed with 0 failures.
+- SlimWeb-MCP test suite: 358 tests passed with 0 failures.
+- Frozen public tool contract remains 125 tools with SHA-256 `d6de40eb08a55927c199ae1b227fc29b7bf4010e0bc70a87b14d4d3ed1be6871`.
+- Production health checks returned HTTP 200 for Webless `/up` and SlimWeb-MCP `/readyz`; the internal API rejected a request without the service credential with HTTP 403.
+- Authenticated public `slimweb_themes_list`, `slimweb_site_theme_mode_get`, `slimweb_design_context_get`, and `slimweb_media_library_stats` calls succeeded for `swcb_zog0l7zlyp3lwmlc`.
+- A public `slimweb_site_theme_mode_update` same-value `light` update returned `ok: true`, proving the production write path without changing storefront appearance.
+- The migrated repository methods now delegate database and storage work to the Webless Backend API; the prior direct theme and media persistence blocks were removed.
+
+This evidence completes Phase 3 only. Phase 4 commerce operations is next; Standalone remains out of scope until the SaaS migration is accepted.
