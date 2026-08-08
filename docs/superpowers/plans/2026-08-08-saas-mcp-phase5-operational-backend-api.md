@@ -42,8 +42,8 @@ The authoritative migration total is 34 repository methods after excluding the a
 - [x] Verify no Phase 5 public repository method reaches `.pool`, `.storage`, `postWeblessInternal`, `requestWeblessInternal`, `this.fetch`, poster/provider helpers, or export SQL helpers.
 - [x] Run targeted and complete Webless/MCP suites, Pint for changed PHP files, and the frozen 125-tool contract hash test.
 - [x] Confirm the migration inventory drops from 34 direct paths to zero, then remove now-unreachable direct helpers and credentials in Phase 6.
-- [ ] Deploy Webless first, then SlimWeb-MCP; verify health, unauthenticated denial, authenticated safe reads, and a non-destructive idempotent write.
-- [ ] Record revisions, test totals, contract hash, and live evidence in the approved design specification.
+- [x] Deploy Webless first, then SlimWeb-MCP; verify health, unauthenticated denial, authenticated safe reads, and a non-destructive idempotent write.
+- [x] Record revisions, test totals, contract hash, and live evidence in the approved design specification.
 
 ## Safety
 

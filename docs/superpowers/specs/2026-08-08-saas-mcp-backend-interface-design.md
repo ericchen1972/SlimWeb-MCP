@@ -299,3 +299,23 @@ The SaaS commerce slice passed automated regression, architecture enforcement, p
 - Laravel Pint passes for every Phase 4 file. The repository-wide Pint baseline still reports unrelated pre-existing formatting violations outside this migration and was not mass-rewritten.
 
 This evidence completes Phase 4 only. Phase 5 will migrate the remaining 34 database/storage-bound paths; Standalone remains out of scope until the SaaS migration is accepted.
+
+## Phase 5 and Phase 6 Acceptance Evidence — 2026-08-09
+
+The final operational slice and removal/hardening phase passed automated regression, architecture enforcement, production deployment, and authenticated end-to-end verification. The SaaS migration is complete.
+
+- Final Phase 5 inventory: 34 site operations, SEO/integrations, mail/admin/newsletter, Notion/poster, customer-service, export, and audit repository methods migrated; direct public paths reduced from 34 to zero.
+- Webless code revision: `3cd04d4`; production build assets revision: `3a82f68`.
+- Webless production revision: `webless-00546-xuh` (100% traffic).
+- SlimWeb-MCP code revision: `85d33c1`; production revision: `slimweb-mcp-00134-vcb` (100% traffic).
+- SlimWeb-MCP deployment workflow: GitHub Actions run `31265837268`, conclusion `success`.
+- Webless complete suite: 753 tests passed with 0 failures. Focused Phase 5 controller/service suite: 12 tests passed; integration, idempotency, validation, tenant, and transaction rollback paths are covered.
+- SlimWeb-MCP complete post-removal suite: 255 tests passed with 0 failures. The frozen contract suite added 2 explicit passing assertions.
+- Frozen public tool contract remains 125 tools with SHA-256 `d6de40eb08a55927c199ae1b227fc29b7bf4010e0bc70a87b14d4d3ed1be6871` locally and on production.
+- Production health checks returned HTTP 200 for Webless `/up` and SlimWeb-MCP `/readyz`; the internal API rejected a missing service credential with HTTP 403.
+- Authenticated public MCP calls to `slimweb_sites_list` and `slimweb_seo_settings_get` succeeded for `swcb_zog0l7zlyp3lwmlc` without an MCP error.
+- An authenticated tenant-scoped SEO read followed by a same-value write succeeded; replaying the identical idempotency key returned the same saved response, with no merchant-visible setting change.
+- Phase 6 removed more than 16,000 lines of unreachable direct persistence/parity code, along with `pg`, Excel export, GCS/local storage adapters, direct provider helpers, Cloud SQL attachment settings, database environment variables, and storage credentials from SlimWeb-MCP.
+- The production SlimWeb-MCP revision now has only the runtime environment names required for public URL, Google authentication, signed MCP sessions, the Webless service credential, and the Backend API origin. No database or storage environment variables remain.
+
+This evidence accepts the SaaS Backend interface migration and opens the previously deferred Standalone implementation work.
