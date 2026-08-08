@@ -493,6 +493,54 @@ test('backend client maps all Phase 4 merchandising methods to site-scoped comme
   assert.deepEqual(requests.filter(({ method }) => method !== 'GET').map(({ headers }) => headers['idempotency-key']), Array(4).fill('merchandising-key-001'));
 });
 
+test('backend client maps all Phase 4 order transaction methods to site-scoped commerce endpoints', async () => {
+  const requests = [];
+  await withJsonServer(async (request, response) => {
+    requests.push({ method: request.method, url: request.url, headers: request.headers, body: await readJson(request) });
+    sendJson(response, 200, { ok: true, data: { accepted: true }, warnings: [] });
+  }, async (baseUrl) => {
+    const client = new WeblessBackendClient({ baseUrl, secret: 'service-secret', idempotencyKeyFactory: () => 'order-key-001' });
+    await client.listOrders(actor, { site_id: 101, search_order_no: 'SW', limit: 10 });
+    await client.calculateOrderProfitStatistics(actor, { site_id: 101, date_from: '2026-08-01' });
+    await client.getOrder(actor, { site_id: 101, order_no: 'SW1' });
+    await client.createOrderLogistics(actor, { site_id: 101, order_no: 'SW1', provider: 'hct' });
+    await client.markOrderShipped(actor, { site_id: 101, order_id: 1 });
+    await client.listPendingReturns(actor, { site_id: 101, limit: 5 });
+    await client.createReturnLogistics(actor, { site_id: 101, order_no: 'SW1', provider: 'hct' });
+    await client.cancelReturn(actor, { site_id: 101, order_no: 'SW1' });
+    await client.completeReturn(actor, { site_id: 101, order_no: 'SW1' });
+    await client.completeRefund(actor, { site_id: 101, order_no: 'SW1' });
+    await client.createRefund(actor, { site_id: 101, order_no: 'SW1', provider: 'ecpay' });
+    await client.updateOrdersStatus(actor, { site_id: 101, order_numbers: ['SW1'], status: 'confirmed' });
+    await client.updateOrdersRecipient(actor, { site_id: 101, orders: [{ order_no: 'SW1', recipient_name: 'Eric' }] });
+    await client.deleteOrders(actor, { site_id: 101, order_numbers: ['SW1'] });
+    await client.getWaybillUrl(actor, { site_id: 101, order_numbers: ['SW1'] });
+    await client.getReturnWaybillUrl(actor, { site_id: 101, order_numbers: ['SW1'] });
+  });
+
+  assert.deepEqual(requests.map(({ method, url }) => [method, url]), [
+    ['GET', '/internal/mcp/v1/sites/swcb_demo/commerce/orders?search_order_no=SW&limit=10'],
+    ['GET', '/internal/mcp/v1/sites/swcb_demo/commerce/orders/profit-statistics?date_from=2026-08-01'],
+    ['GET', '/internal/mcp/v1/sites/swcb_demo/commerce/orders/detail?order_no=SW1'],
+    ['POST', '/internal/mcp/v1/sites/swcb_demo/commerce/orders/logistics'],
+    ['POST', '/internal/mcp/v1/sites/swcb_demo/commerce/orders/mark-shipped'],
+    ['GET', '/internal/mcp/v1/sites/swcb_demo/commerce/returns/pending?limit=5'],
+    ['POST', '/internal/mcp/v1/sites/swcb_demo/commerce/returns/logistics'],
+    ['POST', '/internal/mcp/v1/sites/swcb_demo/commerce/returns/cancel'],
+    ['POST', '/internal/mcp/v1/sites/swcb_demo/commerce/returns/complete'],
+    ['POST', '/internal/mcp/v1/sites/swcb_demo/commerce/refunds/complete'],
+    ['POST', '/internal/mcp/v1/sites/swcb_demo/commerce/refunds'],
+    ['PATCH', '/internal/mcp/v1/sites/swcb_demo/commerce/orders/status'],
+    ['PATCH', '/internal/mcp/v1/sites/swcb_demo/commerce/orders/recipient'],
+    ['DELETE', '/internal/mcp/v1/sites/swcb_demo/commerce/orders'],
+    ['POST', '/internal/mcp/v1/sites/swcb_demo/commerce/orders/waybill-url'],
+    ['POST', '/internal/mcp/v1/sites/swcb_demo/commerce/returns/waybill-url']
+  ]);
+  assert.ok(requests.filter(({ method, headers }) => method !== 'GET' && headers['idempotency-key'] !== undefined).every(({ headers }) => headers['idempotency-key'] === 'order-key-001'));
+  assert.equal(requests[14].headers['idempotency-key'], undefined);
+  assert.equal(requests[15].headers['idempotency-key'], undefined);
+});
+
 test('backend client maps Webless error envelopes to stable errors', async () => {
   const cases = [
     [403, 'FORBIDDEN'],

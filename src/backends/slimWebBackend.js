@@ -72,7 +72,23 @@ export const SLIMWEB_BACKEND_METHODS = Object.freeze([
   'deleteThresholdGift',
   'listProductAddOns',
   'upsertProductAddOn',
-  'deleteProductAddOn'
+  'deleteProductAddOn',
+  'listOrders',
+  'calculateOrderProfitStatistics',
+  'getOrder',
+  'createOrderLogistics',
+  'markOrderShipped',
+  'listPendingReturns',
+  'createReturnLogistics',
+  'cancelReturn',
+  'completeReturn',
+  'completeRefund',
+  'createRefund',
+  'updateOrdersStatus',
+  'updateOrdersRecipient',
+  'deleteOrders',
+  'getWaybillUrl',
+  'getReturnWaybillUrl'
 ]);
 
 export function assertSlimWebBackend(backend) {

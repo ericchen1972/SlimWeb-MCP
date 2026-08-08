@@ -483,11 +483,91 @@ export class WeblessBackendClient {
     return this.commerceMutation(actor, `/commerce/product-add-ons/${this.requiredId(args?.product_add_on_id, 'product_add_on_id')}`, 'DELETE', 'slimweb_product_add_ons_delete', 'add_on_product_management', args, ['product_add_on_id']);
   }
 
+  async listOrders(actor, args) {
+    return this.commerceList(actor, '/commerce/orders', 'slimweb_orders_list', 'orders_management', args, ['search_order_no', 'search_field', 'search_value', 'fuzzy', 'date_from', 'date_to', 'amount_min', 'amount_max', 'logistics_status', 'statuses', 'limit', 'offset']);
+  }
+
+  async calculateOrderProfitStatistics(actor, args) {
+    return this.commerceList(actor, '/commerce/orders/profit-statistics', 'slimweb_orders_profit_statistics', 'order_profit_statistics', args, ['date_from', 'date_to']);
+  }
+
+  async getOrder(actor, args) {
+    return this.commerceList(actor, '/commerce/orders/detail', 'slimweb_orders_get', 'orders_management', args, ['order_id', 'order_no']);
+  }
+
+  async createOrderLogistics(actor, args) {
+    return this.commerceMutation(actor, '/commerce/orders/logistics', 'POST', 'slimweb_orders_create_logistics', 'payments_shipping', args);
+  }
+
+  async markOrderShipped(actor, args) {
+    return this.commerceMutation(actor, '/commerce/orders/mark-shipped', 'POST', 'slimweb_orders_mark_shipped', 'orders_management', args);
+  }
+
+  async listPendingReturns(actor, args) {
+    return this.commerceList(actor, '/commerce/returns/pending', 'slimweb_returns_pending_list', 'returns_management', args, ['search_order_no', 'limit', 'offset']);
+  }
+
+  async createReturnLogistics(actor, args) {
+    return this.commerceMutation(actor, '/commerce/returns/logistics', 'POST', 'slimweb_returns_create_logistics', 'returns_management', args);
+  }
+
+  async cancelReturn(actor, args) {
+    return this.commerceMutation(actor, '/commerce/returns/cancel', 'POST', 'slimweb_returns_cancel', 'returns_management', args);
+  }
+
+  async completeReturn(actor, args) {
+    return this.commerceMutation(actor, '/commerce/returns/complete', 'POST', 'slimweb_returns_complete', 'returns_management', args);
+  }
+
+  async completeRefund(actor, args) {
+    return this.commerceMutation(actor, '/commerce/refunds/complete', 'POST', 'slimweb_refunds_complete', 'returns_management', args);
+  }
+
+  async createRefund(actor, args) {
+    return this.commerceMutation(actor, '/commerce/refunds', 'POST', 'slimweb_refunds_create', 'returns_management', args);
+  }
+
+  async updateOrdersStatus(actor, args) {
+    return this.commerceMutation(actor, '/commerce/orders/status', 'PATCH', 'slimweb_orders_update_status', 'orders_management', args);
+  }
+
+  async updateOrdersRecipient(actor, args) {
+    return this.commerceMutation(actor, '/commerce/orders/recipient', 'PATCH', 'slimweb_orders_update_recipient', 'orders_management', args);
+  }
+
+  async deleteOrders(actor, args) {
+    return this.commerceMutation(actor, '/commerce/orders', 'DELETE', 'slimweb_orders_delete', 'orders_management', args);
+  }
+
+  async getWaybillUrl(actor, args) {
+    return this.orderWaybill(actor, '/commerce/orders/waybill-url', 'slimweb_orders_get_waybill_url', 'orders_management', args);
+  }
+
+  async getReturnWaybillUrl(actor, args) {
+    return this.orderWaybill(actor, '/commerce/returns/waybill-url', 'slimweb_returns_get_waybill_url', 'returns_management', args);
+  }
+
+  async orderWaybill(actor, suffix, tool, permission, args) {
+    return this.request(this.sitePath(actor, suffix), {
+      method: 'POST',
+      identity: actor,
+      tool,
+      permission,
+      body: this.withoutSiteSelector(args)
+    });
+  }
+
   async commerceList(actor, suffix, tool, permission, args, fields) {
     const filters = this.withoutSiteSelector(args);
     const query = new URLSearchParams();
     for (const field of fields) {
-      if (filters[field] !== undefined && filters[field] !== null && filters[field] !== '') query.set(field, String(filters[field]));
+      if (filters[field] !== undefined && filters[field] !== null && filters[field] !== '') {
+        if (Array.isArray(filters[field])) {
+          for (const value of filters[field]) query.append(`${field}[]`, String(value));
+        } else {
+          query.set(field, String(filters[field]));
+        }
+      }
     }
     return this.request(this.sitePath(actor, `${suffix}${query.size ? `?${query}` : ''}`), { identity: actor, tool, permission });
   }

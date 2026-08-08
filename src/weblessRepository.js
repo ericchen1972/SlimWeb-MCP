@@ -951,156 +951,12 @@ export class WeblessAccountRepository {
     return this.requireBackendClient('commerce_settings').updatePaymentLogisticsSettings(accountId, args);
   }
 
-  async listOrders(accountId, args, scope = 'orders') {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const limit = Math.min(requireOptionalPositiveInteger(args.limit, 'limit') ?? 20, 20);
-    const offset = requireOptionalNonNegativeInteger(args.offset, 'offset') ?? 0;
-    const statuses = normalizeOrderStatuses(args.statuses);
-    const [paymentProviders, logisticsProviders] = await Promise.all([
-      this.listPaymentProvidersForSite(site.id),
-      this.listLogisticsProvidersForSite(site.id)
-    ]);
-
-    const where = ['site_id = $1'];
-    const params = [site.id];
-
-    if (scope === 'returns') {
-      where.push('return_requested_at is not null');
-      where.push('return_cancelled_at is null');
-    } else {
-      where.push('(return_requested_at is null or return_cancelled_at is not null)');
-    }
-
-    applyOrderListFilters(where, params, args, statuses);
-
-    const countResult = await this.pool.query(
-      `
-        select count(*)::int as total
-        from orders
-        where ${where.join(' and ')}
-      `,
-      params
-    );
-    const total = Number.parseInt(countResult.rows[0]?.total ?? '0', 10);
-    const filters = normalizedOrderListFilters(args, statuses, limit, offset);
-
-    if (total > 20) {
-      return {
-        site,
-        scope,
-        filters,
-        total,
-        too_many: true,
-        message: 'Order search matched more than 20 orders. Ask the user to open the admin backend and narrow the search.',
-        orders: []
-      };
-    }
-
-    params.push(limit);
-    const limitIndex = params.length;
-    params.push(offset);
-    const offsetIndex = params.length;
-
-    const result = await this.pool.query(
-      `
-        select orders.*,
-               ${orderDateDisplaySelectSql()}
-        from orders
-        where ${where.join(' and ')}
-        order by placed_at desc nulls last, created_at desc, id desc
-        limit $${limitIndex} offset $${offsetIndex}
-      `,
-      params
-    );
-    const orders = result.rows.map((order) => formatOrderForMcp(order, {
-      paymentProviders,
-      logisticsProviders,
-      includeReturnActions: scope === 'returns'
-    }));
-
-    return {
-      site,
-      scope,
-      filters,
-      total,
-      too_many: false,
-      orders
-    };
+  async listOrders(accountId, args) {
+    return this.requireBackendClient('order_operations').listOrders(accountId, args);
   }
 
   async calculateOrderProfitStatistics(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const dateFrom = requireOptionalDate(args.date_from, 'date_from');
-    const dateTo = requireOptionalDate(args.date_to, 'date_to');
-    const siteSettings = await this.pool.query(
-      'select shipping_fee from sites where id = $1 limit 1',
-      [site.id]
-    );
-    const shippingCost = Math.max(0, Number.parseInt(siteSettings.rows[0]?.shipping_fee ?? '0', 10) || 0);
-    const result = await this.pool.query(
-      `
-        select o.id,
-               o.order_no,
-               o.grand_total_amount,
-               o.shipping_fee_amount,
-               coalesce(sum(coalesce(p.cost_price, 0) * coalesce(oi.quantity, 0)), 0)::bigint as product_cost_total,
-               count(oi.id)::int as item_count,
-               bool_or(oi.id is null or p.id is null or coalesce(p.cost_price, 0) <= 0) as has_missing_cost
-        from orders o
-        left join order_items oi on oi.order_id = o.id
-        left join products p on p.id = oi.product_id
-        where o.site_id = $1
-          and o.payment_completed_at is not null
-          and coalesce(o.status, '') <> 'cancelled'
-          and ($2::date is null or coalesce(o.placed_at, o.created_at)::date >= $2::date)
-          and ($3::date is null or coalesce(o.placed_at, o.created_at)::date <= $3::date)
-        group by o.id, o.order_no, o.grand_total_amount, o.shipping_fee_amount
-        order by o.id asc
-      `,
-      [site.id, dateFrom, dateTo]
-    );
-
-    let grossOrderTotal = 0;
-    let productCostTotal = 0;
-    let freeShippingCostTotal = 0;
-    let calculatedOrderCount = 0;
-    let skippedOrderCount = 0;
-
-    for (const order of result.rows) {
-      const hasMissingCost = Boolean(order.has_missing_cost) || Number.parseInt(order.item_count ?? '0', 10) <= 0;
-      if (hasMissingCost) {
-        skippedOrderCount += 1;
-        continue;
-      }
-
-      const orderTotal = Number.parseInt(order.grand_total_amount ?? '0', 10) || 0;
-      const orderProductCost = Number.parseInt(order.product_cost_total ?? '0', 10) || 0;
-      const freeShippingCost = (Number.parseInt(order.shipping_fee_amount ?? '0', 10) || 0) === 0 ? shippingCost : 0;
-
-      grossOrderTotal += orderTotal;
-      productCostTotal += orderProductCost;
-      freeShippingCostTotal += freeShippingCost;
-      calculatedOrderCount += 1;
-    }
-
-    return {
-      site,
-      filters: {
-        date_from: dateFrom ?? '',
-        date_to: dateTo ?? ''
-      },
-      profit: {
-        total_amount: grossOrderTotal - productCostTotal - freeShippingCostTotal,
-        gross_order_total: grossOrderTotal,
-        product_cost_total: productCostTotal,
-        free_shipping_cost_total: freeShippingCostTotal,
-        calculated_order_count: calculatedOrderCount,
-        skipped_order_count: skippedOrderCount,
-        formula: 'net_profit = order_grand_total - product_cost_total - free_shipping_cost. Order grand total already includes coupons, discount codes, and member tier discounts.',
-        date_from: dateFrom ?? null,
-        date_to: dateTo ?? null
-      }
-    };
+    return this.requireBackendClient('order_operations').calculateOrderProfitStatistics(accountId, args);
   }
 
   async listPendingOrders(accountId, args) {
@@ -1108,345 +964,39 @@ export class WeblessAccountRepository {
   }
 
   async listPendingReturns(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const limit = Math.min(requireOptionalPositiveInteger(args.limit, 'limit') ?? 20, 100);
-    const offset = requireOptionalNonNegativeInteger(args.offset, 'offset') ?? 0;
-    const searchOrderNo = nullableString(args.search_order_no);
-    const [paymentProviders, logisticsProviders] = await Promise.all([
-      this.listPaymentProvidersForSite(site.id),
-      this.listLogisticsProvidersForSite(site.id)
-    ]);
-    const params = [site.id];
-    const where = [
-      'site_id = $1',
-      'return_requested_at is not null',
-      'return_cancelled_at is null',
-      `(return_status is null or return_status != 'completed')`
-    ];
-
-    if (searchOrderNo) {
-      params.push(`%${searchOrderNo}%`);
-      where.push(`order_no ilike $${params.length}`);
-    }
-
-    params.push(limit);
-    const limitIndex = params.length;
-    params.push(offset);
-    const offsetIndex = params.length;
-
-    const result = await this.pool.query(
-      `
-        select orders.*,
-               ${orderDateDisplaySelectSql()}
-        from orders
-        where ${where.join(' and ')}
-        order by return_requested_at desc nulls last, created_at desc, id desc
-        limit $${limitIndex} offset $${offsetIndex}
-      `,
-      params
-    );
-
-    return {
-      site,
-      scope: 'pending_returns',
-      filters: {
-        search_order_no: searchOrderNo ?? '',
-        limit,
-        offset
-      },
-      orders: result.rows.map((order) => formatOrderForMcp(order, {
-        paymentProviders,
-        logisticsProviders,
-        includeReturnActions: true
-      }))
-    };
+    return this.requireBackendClient('order_operations').listPendingReturns(accountId, args);
   }
 
   async getOrder(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const order = await this.findOrderForSite(site.id, args);
-    const [paymentProviders, logisticsProviders, items] = await Promise.all([
-      this.listPaymentProvidersForSite(site.id),
-      this.listLogisticsProvidersForSite(site.id),
-      this.listOrderItems(order.id)
-    ]);
-
-    return {
-      site,
-      order: {
-        ...formatOrderForMcp(order, { paymentProviders, logisticsProviders, includeReturnActions: true }),
-        items
-      }
-    };
+    return this.requireBackendClient('order_operations').getOrder(accountId, args);
   }
 
   async createOrderLogistics(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const order = await this.findOrderForSite(site.id, args);
-    const logisticsProviders = await this.listLogisticsProvidersForSite(site.id);
-    const actions = orderLogisticsActions(order, logisticsProviders);
-    const provider = requireNonEmptyString(args.provider, 'provider');
-    const storeType = nullableString(args.store_type);
-    const action = findAction(actions, 'create_logistics', provider, storeType);
-    if (!action) {
-      throw codedError('VALIDATION_FAILED', 'This order cannot create the requested logistics order. Read available_actions first.', {
-        available_actions: actions
-      });
-    }
-
-    const trackingNo = generateTrackingNo(provider, order.id);
-    const settings = logisticsProviders.find((item) => item.provider === provider)?.settings ?? {};
-    const details = {
-      provider,
-      status_source: 'local_create',
-      raw_status: 'created',
-      raw_status_label: '',
-      tracking_no: trackingNo,
-      store_type: action.store_type ?? '',
-      temperature: nullableString(args.temperature) ?? 'normal',
-      carrier: nullableString(args.carrier) ?? (provider === 'ecpay' ? 'tcat' : ''),
-      print_status: 'pending',
-      created_at: new Date().toISOString(),
-      payload: {
-        source: 'slimweb_mcp',
-        order_no: order.order_no,
-        sender_name: settings.senderName ?? '',
-        sender_phone: settings.senderPhone ?? '',
-        sender_zip: settings.senderZip ?? '',
-        sender_address: settings.senderAddress ?? ''
-      }
-    };
-
-    await this.pool.query(
-      `
-        update orders
-        set logistics_completed_at = coalesce(logistics_completed_at, now()),
-            logistics_details = $3::jsonb,
-            updated_at = now()
-        where site_id = $1 and id = $2
-      `,
-      [site.id, order.id, JSON.stringify(details)]
-    );
-
-    return this.getOrder(accountId, { site_id: site.id, order_id: order.id });
+    return this.requireBackendClient('order_operations').createOrderLogistics(accountId, args);
   }
 
   async markOrderShipped(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const order = await this.findOrderForSite(site.id, args);
-    if (order.logistics_completed_at !== null) {
-      throw codedError('VALIDATION_FAILED', 'This order already has logistics. Use provider callbacks or logistics status instead.');
-    }
-
-    const details = {
-      provider: 'manual',
-      status_source: 'manual',
-      raw_status: 'shipped',
-      raw_status_label: '已出貨',
-      tracking_no: '',
-      created_at: new Date().toISOString(),
-      payload: {
-        source: 'slimweb_mcp_mark_shipped',
-        order_no: order.order_no
-      }
-    };
-
-    await this.pool.query(
-      `
-        update orders
-        set status = 'confirmed',
-            confirmed_at = coalesce(confirmed_at, now()),
-            logistics_completed_at = now(),
-            logistics_details = $3::jsonb,
-            updated_at = now()
-        where site_id = $1 and id = $2
-      `,
-      [site.id, order.id, JSON.stringify(details)]
-    );
-
-    return this.getOrder(accountId, { site_id: site.id, order_id: order.id });
+    return this.requireBackendClient('order_operations').markOrderShipped(accountId, args);
   }
 
   async createReturnLogistics(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const order = await this.findOrderForSite(site.id, args);
-    const logisticsProviders = await this.listLogisticsProvidersForSite(site.id);
-    const actions = orderReturnActions(order, logisticsProviders);
-    const provider = requireNonEmptyString(args.provider, 'provider');
-    const type = nullableString(args.type);
-    const action = actions.find((item) => item.action === 'create_return_logistics' && item.provider === provider && (!type || item.type === type));
-    if (!action) {
-      throw codedError('VALIDATION_FAILED', 'This return cannot create the requested reverse logistics order. Read available_actions first.', {
-        available_actions: actions
-      });
-    }
-
-    const trackingNo = generateTrackingNo(provider, order.id, true);
-    const details = {
-      provider,
-      type: action.type,
-      status_source: 'local_create',
-      raw_status: 'created',
-      raw_status_label: '已建立',
-      tracking_no: trackingNo,
-      created_at: new Date().toISOString(),
-      payload: {
-        source: 'slimweb_mcp',
-        order_no: order.order_no,
-        return_name: order.recipient_name ?? '',
-        return_phone: order.recipient_phone ?? '',
-        return_zip: order.recipient_zip ?? '',
-        return_address: order.recipient_address ?? ''
-      }
-    };
-
-    await this.pool.query(
-      `
-        update orders
-        set return_status = 'created',
-            return_logistics_provider = $3,
-            return_logistics_type = $4,
-            return_logistics_tracking_no = $5,
-            return_logistics_status = 'created',
-            return_logistics_details = $6::jsonb,
-            updated_at = now()
-        where site_id = $1 and id = $2
-      `,
-      [site.id, order.id, provider, action.type, trackingNo, JSON.stringify(details)]
-    );
-
-    return this.getOrder(accountId, { site_id: site.id, order_id: order.id });
+    return this.requireBackendClient('order_operations').createReturnLogistics(accountId, args);
   }
 
   async cancelReturn(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const order = await this.findOrderForSite(site.id, args);
-    if (!order.return_requested_at || order.return_cancelled_at) {
-      throw codedError('VALIDATION_FAILED', 'This order is not in an active return flow.');
-    }
-
-    await this.pool.query(
-      `
-        update orders
-        set status = 'confirmed',
-            confirmed_at = coalesce(confirmed_at, now()),
-            return_status = 'cancelled',
-            return_cancelled_at = now(),
-            updated_at = now()
-        where site_id = $1 and id = $2
-      `,
-      [site.id, order.id]
-    );
-
-    return this.getOrder(accountId, { site_id: site.id, order_id: order.id });
+    return this.requireBackendClient('order_operations').cancelReturn(accountId, args);
   }
 
   async completeReturn(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const order = await this.findOrderForSite(site.id, args);
-    if (!order.return_requested_at || order.return_cancelled_at || order.return_logistics_tracking_no) {
-      throw codedError('VALIDATION_FAILED', 'This return cannot be manually completed. If reverse logistics exists, wait for provider status.');
-    }
-
-    await this.pool.query(
-      `
-        update orders
-        set status = 'returned',
-            returned_at = coalesce(returned_at, now()),
-            return_status = 'completed',
-            return_completed_at = now(),
-            updated_at = now()
-        where site_id = $1 and id = $2
-      `,
-      [site.id, order.id]
-    );
-
-    return this.getOrder(accountId, { site_id: site.id, order_id: order.id });
+    return this.requireBackendClient('order_operations').completeReturn(accountId, args);
   }
 
   async completeRefund(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const order = await this.findOrderForSite(site.id, args);
-    const refundStatus = orderRefundStatus(order);
-    if (!order.payment_completed_at || !['pending', 'exception'].includes(refundStatus)) {
-      throw codedError('VALIDATION_FAILED', 'This order cannot be manually marked as refunded.');
-    }
-
-    const amount = Math.max(0, Number.parseInt(order.grand_total_amount ?? '0', 10));
-    const details = {
-      provider: 'manual',
-      status_source: 'manual',
-      raw_status: 'completed',
-      raw_status_label: '已完成退款',
-      amount,
-      completed_at: new Date().toISOString(),
-      payload: {
-        source: 'slimweb_mcp',
-        order_no: order.order_no
-      }
-    };
-
-    await this.pool.query(
-      `
-        update orders
-        set refund_status = 'completed',
-            refund_provider = 'manual',
-            refund_amount = $3,
-            refund_completed_at = now(),
-            refund_details = $4::jsonb,
-            updated_at = now()
-        where site_id = $1 and id = $2
-      `,
-      [site.id, order.id, amount, JSON.stringify(details)]
-    );
-
-    return this.getOrder(accountId, { site_id: site.id, order_id: order.id });
+    return this.requireBackendClient('order_operations').completeRefund(accountId, args);
   }
 
   async createRefund(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const order = await this.findOrderForSite(site.id, args);
-    const paymentProviders = await this.listPaymentProvidersForSite(site.id);
-    const actions = orderRefundActions(order, paymentProviders);
-    const provider = requireNonEmptyString(args.provider, 'provider');
-    const action = actions.find((item) => item.action === 'create_refund' && item.provider === provider);
-    if (!action) {
-      throw codedError('VALIDATION_FAILED', 'This order cannot create the requested payment refund. Read available_actions first.', {
-        available_actions: actions
-      });
-    }
-
-    const amount = Math.max(0, Number.parseInt(order.grand_total_amount ?? '0', 10));
-    const details = {
-      provider,
-      status_source: 'local_create',
-      raw_status: 'created',
-      raw_status_label: '已建立',
-      amount,
-      created_at: new Date().toISOString(),
-      payload: {
-        source: 'slimweb_mcp',
-        order_no: order.order_no,
-        payment_method: order.payment_method ?? '',
-        payment_provider: order.payment_provider ?? ''
-      }
-    };
-
-    await this.pool.query(
-      `
-        update orders
-        set refund_status = 'created',
-            refund_provider = $3,
-            refund_amount = $4,
-            refund_completed_at = null,
-            refund_details = $5::jsonb,
-            updated_at = now()
-        where site_id = $1 and id = $2
-      `,
-      [site.id, order.id, provider, amount, JSON.stringify(details)]
-    );
-
-    return this.getOrder(accountId, { site_id: site.id, order_id: order.id });
+    return this.requireBackendClient('order_operations').createRefund(accountId, args);
   }
 
   async getDashboardSummary(accountId, args) {
@@ -1727,51 +1277,23 @@ export class WeblessAccountRepository {
   }
 
   async updateOrdersStatus(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const orderNumbers = requireOrderNumbers(args.order_numbers);
-    const status = requireEnum(args.status, ['pending', 'confirmed', 'returning', 'returned'], 'status');
-    const payload = await this.postWeblessInternal(site, 'mcp-orders/status', { order_numbers: orderNumbers, status }, 'Unable to update order status');
-    return { site, ...payload };
+    return this.requireBackendClient('order_operations').updateOrdersStatus(accountId, args);
   }
 
   async updateOrdersRecipient(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    if (!Array.isArray(args.orders) || args.orders.length === 0) {
-      throw codedError('VALIDATION_FAILED', 'orders must be a non-empty array with complete order_no values.');
-    }
-    const orders = args.orders.map((item, index) => ({
-      order_no: requireNonEmptyString(item?.order_no, `orders[${index}].order_no`),
-      recipient_name: requireNonEmptyString(item?.recipient_name, `orders[${index}].recipient_name`)
-    }));
-    requireOrderNumbers(orders.map((item) => item.order_no));
-    const payload = await this.postWeblessInternal(site, 'mcp-orders/recipient', { orders }, 'Unable to update order recipients');
-    return { site, ...payload };
+    return this.requireBackendClient('order_operations').updateOrdersRecipient(accountId, args);
   }
 
   async deleteOrders(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const orderNumbers = requireOrderNumbers(args.order_numbers);
-    const payload = await this.postWeblessInternal(site, 'mcp-orders/delete', { order_numbers: orderNumbers }, 'Unable to delete orders');
-    return { site, ...payload };
+    return this.requireBackendClient('order_operations').deleteOrders(accountId, args);
   }
 
   async getWaybillUrl(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const orderNumbers = requireOrderNumbers(args.order_numbers);
-    const type = requireEnum(args.type ?? 'forward', ['forward', 'return'], 'type');
-    const payload = await this.postWeblessInternal(site, 'mcp-waybills/url', { order_numbers: orderNumbers, type }, 'Unable to create waybill URL');
-    return {
-      site,
-      ...payload,
-      printing_guidance: {
-        mcp_prints_directly: false,
-        local_control_rule: 'If the AI client can control the local browser or computer, ask the user whether to open and print this URL. Operate the print UI only after the user agrees.'
-      }
-    };
+    return this.requireBackendClient('order_operations').getWaybillUrl(accountId, args);
   }
 
   async getReturnWaybillUrl(accountId, args) {
-    return this.getWaybillUrl(accountId, { ...args, type: 'return' });
+    return this.requireBackendClient('order_operations').getReturnWaybillUrl(accountId, args);
   }
 
   async getMediaLibraryStats(accountId, args) {
@@ -2213,23 +1735,23 @@ export class WeblessAccountRepository {
   }
 
   async listCouponTemplates(accountId, args) {
-    return this.requireBackendClient("member_promotions").listCouponTemplates(accountId, args);
+    return this.requireBackendClient('member_promotions').listCouponTemplates(accountId, args);
   }
 
   async upsertCouponTemplate(accountId, args) {
-    return this.requireBackendClient("member_promotions").upsertCouponTemplate(accountId, args);
+    return this.requireBackendClient('member_promotions').upsertCouponTemplate(accountId, args);
   }
 
   async issueMemberCoupon(accountId, args) {
-    return this.requireBackendClient("member_promotions").issueMemberCoupon(accountId, args);
+    return this.requireBackendClient('member_promotions').issueMemberCoupon(accountId, args);
   }
 
   async listMembers(accountId, args) {
-    return this.requireBackendClient("member_promotions").listMembers(accountId, args);
+    return this.requireBackendClient('member_promotions').listMembers(accountId, args);
   }
 
   async getMember(accountId, args) {
-    return this.requireBackendClient("member_promotions").getMember(accountId, args);
+    return this.requireBackendClient('member_promotions').getMember(accountId, args);
   }
 
   async createNewsletter(accountId, args) {
@@ -2421,19 +1943,19 @@ export class WeblessAccountRepository {
   }
 
   async deleteDiscountCode(accountId, args) {
-    return this.requireBackendClient("member_promotions").deleteDiscountCode(accountId, args);
+    return this.requireBackendClient('member_promotions').deleteDiscountCode(accountId, args);
   }
 
   async deleteMemberTier(accountId, args) {
-    return this.requireBackendClient("member_promotions").deleteMemberTier(accountId, args);
+    return this.requireBackendClient('member_promotions').deleteMemberTier(accountId, args);
   }
 
   async deleteThresholdGift(accountId, args) {
-    return this.requireBackendClient("merchandising").deleteThresholdGift(accountId, args);
+    return this.requireBackendClient('merchandising').deleteThresholdGift(accountId, args);
   }
 
   async deleteProductAddOn(accountId, args) {
-    return this.requireBackendClient("merchandising").deleteProductAddOn(accountId, args);
+    return this.requireBackendClient('merchandising').deleteProductAddOn(accountId, args);
   }
 
   async deleteCustomerServiceLog(accountId, args) {
@@ -2445,11 +1967,11 @@ export class WeblessAccountRepository {
   }
 
   async deleteMember(accountId, args) {
-    return this.requireBackendClient("member_promotions").deleteMember(accountId, args);
+    return this.requireBackendClient('member_promotions').deleteMember(accountId, args);
   }
 
   async revokeMemberCoupon(accountId, args) {
-    return this.requireBackendClient("member_promotions").revokeMemberCoupon(accountId, args);
+    return this.requireBackendClient('member_promotions').revokeMemberCoupon(accountId, args);
   }
 
   async deleteArticle(accountId, args) {
@@ -2759,35 +2281,35 @@ export class WeblessAccountRepository {
   }
 
   async listDiscountCodes(accountId, args) {
-    return this.requireBackendClient("member_promotions").listDiscountCodes(accountId, args);
+    return this.requireBackendClient('member_promotions').listDiscountCodes(accountId, args);
   }
 
   async upsertDiscountCode(accountId, args) {
-    return this.requireBackendClient("member_promotions").upsertDiscountCode(accountId, args);
+    return this.requireBackendClient('member_promotions').upsertDiscountCode(accountId, args);
   }
 
   async listMemberTiers(accountId, args) {
-    return this.requireBackendClient("member_promotions").listMemberTiers(accountId, args);
+    return this.requireBackendClient('member_promotions').listMemberTiers(accountId, args);
   }
 
   async upsertMemberTier(accountId, args) {
-    return this.requireBackendClient("member_promotions").upsertMemberTier(accountId, args);
+    return this.requireBackendClient('member_promotions').upsertMemberTier(accountId, args);
   }
 
   async listThresholdGifts(accountId, args) {
-    return this.requireBackendClient("merchandising").listThresholdGifts(accountId, args);
+    return this.requireBackendClient('merchandising').listThresholdGifts(accountId, args);
   }
 
   async upsertThresholdGift(accountId, args) {
-    return this.requireBackendClient("merchandising").upsertThresholdGift(accountId, args);
+    return this.requireBackendClient('merchandising').upsertThresholdGift(accountId, args);
   }
 
   async listProductAddOns(accountId, args) {
-    return this.requireBackendClient("merchandising").listProductAddOns(accountId, args);
+    return this.requireBackendClient('merchandising').listProductAddOns(accountId, args);
   }
 
   async upsertProductAddOn(accountId, args) {
-    return this.requireBackendClient("merchandising").upsertProductAddOn(accountId, args);
+    return this.requireBackendClient('merchandising').upsertProductAddOn(accountId, args);
   }
 
 	  async listCustomerServiceLogs(accountId, args) {

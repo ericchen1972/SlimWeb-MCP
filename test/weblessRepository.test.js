@@ -329,6 +329,18 @@ test('Phase 4 merchandising methods use only the backend client', async () => {
   assert.deepEqual(calls.map(([method]) => method), methods);
 });
 
+test('Phase 4 order transaction methods use only the backend client', async () => {
+  const actor = { site: { site_code: 'swcb_demo' } };
+  const args = { site_id: 101, order_id: 7, order_no: 'SW1', order_numbers: ['SW1'] };
+  const methods = ['listOrders', 'calculateOrderProfitStatistics', 'getOrder', 'createOrderLogistics', 'markOrderShipped', 'listPendingReturns', 'createReturnLogistics', 'cancelReturn', 'completeReturn', 'completeRefund', 'createRefund', 'updateOrdersStatus', 'updateOrdersRecipient', 'deleteOrders', 'getWaybillUrl', 'getReturnWaybillUrl'];
+  const calls = [];
+  const backendClient = Object.fromEntries(methods.map((method) => [method, async (resolvedActor, received) => { calls.push([method, resolvedActor, received]); return { method }; }]));
+  const repository = new WeblessAccountRepository({ async query() { throw new Error('unexpected SQL'); } }, { backendClient, fetchImpl: async () => { throw new Error('unexpected HTTP'); } });
+
+  for (const method of methods) assert.deepEqual(await repository[method](actor, args), { method });
+  assert.deepEqual(calls.map(([method]) => method), methods);
+});
+
 function fakePool() {
   return {
     async query(sql, params) {
@@ -2797,49 +2809,6 @@ test('repository searches and reads Notion pages through independent Webless end
   assert.deepEqual(requests.map(([, body]) => body), [{ title: 'KAI' }, { notion_page_id: 'page-kai' }]);
 });
 
-test('repository sends explicit complete order numbers for mutations', async () => {
-  const requests = [];
-  const fetchImpl = async (url, options) => {
-    const body = JSON.parse(options.body);
-    requests.push([url, body]);
-    return new Response(JSON.stringify({ orders: [], deleted_order_numbers: body.order_numbers ?? [] }), { status: 200, headers: { 'content-type': 'application/json' } });
-  };
-  const repository = new WeblessAccountRepository(fakePool(), { fetchImpl, weblessAppBaseUrl: 'https://slimweb.tw', weblessMcpSecret: 'shared-secret' });
-
-  await repository.updateOrdersStatus(11, { site_id: 101, order_numbers: ['A2343242'], status: 'confirmed' });
-  await repository.updateOrdersRecipient(11, { site_id: 101, orders: [{ order_no: 'A2343242', recipient_name: '陳大明' }] });
-  await repository.deleteOrders(11, { site_id: 101, order_numbers: ['A2343242'] });
-
-  assert.deepEqual(requests.map(([, body]) => body), [
-    { order_numbers: ['A2343242'], status: 'confirmed' },
-    { orders: [{ order_no: 'A2343242', recipient_name: '陳大明' }] },
-    { order_numbers: ['A2343242'] }
-  ]);
-});
-
-test('repository returns waybill URLs for explicit or query-selected order sets', async () => {
-  const fetchImpl = async (_url, options) => {
-    const body = JSON.parse(options.body);
-    return new Response(JSON.stringify({
-      type: body.type,
-      waybill_url: 'https://slimweb.tw/sites/site-1/orders/logistics/waybills?order_ids=1,2',
-      print_available: true,
-      included_order_numbers: body.order_numbers,
-      excluded_order_numbers: []
-    }), { status: 200, headers: { 'content-type': 'application/json' } });
-  };
-  const repository = new WeblessAccountRepository(fakePool(), { fetchImpl, weblessAppBaseUrl: 'https://slimweb.tw', weblessMcpSecret: 'shared-secret' });
-
-  const result = await repository.getWaybillUrl(11, {
-    site_id: 101,
-    order_numbers: ['SW1', 'SW2'],
-    type: 'forward'
-  });
-
-  assert.equal(result.print_available, true);
-  assert.deepEqual(result.included_order_numbers, ['SW1', 'SW2']);
-});
-
 test('repository updates and reads all contact settings with patch and null semantics', async () => {
   const state = {
     id: 101,
@@ -4231,108 +4200,6 @@ function orderOperationsPool() {
     }
   };
 }
-
-test('repository exposes order actions and validates logistics creation', async () => {
-  const pool = orderOperationsPool();
-  const repository = new WeblessAccountRepository(pool, {
-    laravelAppKey: 'base64:' + Buffer.from('12345678901234567890123456789012').toString('base64')
-  });
-
-  const orders = await repository.listOrders(11, { site_id: 101 });
-  assert.equal(orders.orders[0].order_no, 'SWCVS');
-  assert.equal(orders.orders[0].created_at, '2026-06-01 01:00:00');
-  assert.equal(orders.orders[0].payment_completed_at, '2026-06-01 01:00:00');
-  assert.deepEqual(orders.orders[0].available_actions.filter((action) => action.action === 'create_logistics').map((action) => [action.provider, action.store_type]), [['ecpay', 'seven']]);
-
-  await assert.rejects(
-    () => repository.createOrderLogistics(11, { site_id: 101, order_no: 'SWCVS', provider: 'hct' }),
-    /cannot create the requested logistics/
-  );
-
-  const updated = await repository.createOrderLogistics(11, { site_id: 101, order_no: 'SWCVS', provider: 'ecpay', store_type: 'seven' });
-  assert.equal(updated.order.logistics_status, 'created');
-
-  const returns = await repository.listPendingReturns(11, { site_id: 101 });
-  const returnActions = returns.orders[0].available_actions.map((action) => action.action);
-  assert.ok(returnActions.includes('cancel_return'));
-  assert.ok(returnActions.includes('complete_return'));
-  assert.ok(returnActions.includes('create_return_logistics'));
-});
-
-test('repository searches orders with admin pending and payment incomplete filters', async () => {
-  const pool = orderOperationsPool();
-  const repository = new WeblessAccountRepository(pool, {
-    laravelAppKey: 'base64:' + Buffer.from('12345678901234567890123456789012').toString('base64')
-  });
-
-  const pending = await repository.listOrders(11, { site_id: 101, logistics_status: 'pending' });
-  assert.deepEqual(pending.orders.map((order) => order.order_no), ['SWCVS']);
-  assert.equal(pending.filters.logistics_status, 'pending');
-  assert.equal(pending.total, 1);
-
-  const unpaid = await repository.listOrders(11, { site_id: 101, search_field: 'payment_incomplete' });
-  assert.deepEqual(unpaid.orders.map((order) => order.order_no), ['SWUNPAID']);
-  assert.equal(unpaid.filters.search_field, 'payment_incomplete');
-  assert.equal(unpaid.total, 1);
-});
-
-test('repository calculates order profit statistics with optional date range', async () => {
-  const pool = orderOperationsPool();
-  pool.state.orders[0].shipping_fee_amount = 0;
-  pool.state.orders[0].grand_total_amount = 3000;
-  pool.state.orders[0].created_at_display = '2026-06-02 10:00:00';
-  pool.state.orders[1].shipping_fee_amount = 80;
-  pool.state.orders[1].grand_total_amount = 2000;
-  pool.state.orders[1].created_at = new Date('2026-06-03T10:00:00Z');
-  pool.state.orders[1].created_at_display = '2026-06-03 10:00:00';
-  pool.state.orders.push({
-    ...pool.state.orders[0],
-    id: 4,
-    order_no: 'SWOUTSIDE',
-    grand_total_amount: 2500,
-    shipping_fee_amount: 100,
-    created_at_display: '2026-05-01 10:00:00'
-  });
-  pool.state.orderItems.push({ id: 4, order_id: 4, product_id: 1, quantity: 2 });
-  const repository = new WeblessAccountRepository(pool, {
-    laravelAppKey: 'base64:' + Buffer.from('12345678901234567890123456789012').toString('base64')
-  });
-
-  const ranged = await repository.calculateOrderProfitStatistics(11, {
-    site_id: 101,
-    date_from: '2026-06-01',
-    date_to: '2026-06-30'
-  });
-  assert.equal(ranged.profit.total_amount, 1880);
-  assert.equal(ranged.profit.calculated_order_count, 1);
-  assert.equal(ranged.profit.skipped_order_count, 1);
-  assert.equal(ranged.profit.gross_order_total, 3000);
-  assert.equal(ranged.profit.product_cost_total, 1000);
-  assert.equal(ranged.profit.free_shipping_cost_total, 120);
-
-  const all = await repository.calculateOrderProfitStatistics(11, { site_id: 101 });
-  assert.equal(all.profit.total_amount, 3380);
-  assert.equal(all.profit.calculated_order_count, 2);
-});
-
-test('repository returns too many orders instead of listing more than twenty matches', async () => {
-  const pool = orderOperationsPool();
-  for (let index = 0; index < 21; index += 1) {
-    pool.state.orders.push({
-      ...pool.state.orders[0],
-      id: 100 + index,
-      order_no: `SWBULK${index}`
-    });
-  }
-  const repository = new WeblessAccountRepository(pool, {
-    laravelAppKey: 'base64:' + Buffer.from('12345678901234567890123456789012').toString('base64')
-  });
-
-  const result = await repository.listOrders(11, { site_id: 101, logistics_status: 'pending' });
-  assert.equal(result.too_many, true);
-  assert.equal(result.total, 22);
-  assert.deepEqual(result.orders, []);
-});
 
 function memberEmailPool() {
   const site = {
