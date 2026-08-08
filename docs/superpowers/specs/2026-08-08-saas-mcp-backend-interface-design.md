@@ -246,3 +246,20 @@ The SaaS basic-settings migration slice passed its automated, deployment, contra
 - Webless persisted separate successful idempotency records for the temporary update and restoration.
 
 This evidence completes Phase 1 only. The remaining SaaS tool domains continue under the migration sequence described above; Standalone remains out of scope until the SaaS migration is accepted.
+
+## Phase 2 Acceptance Evidence — 2026-08-08
+
+The SaaS catalog and navigation migration passed automated regression, production deployment, authenticated public MCP reads, and a non-destructive idempotent write check.
+
+- Migrated public tools: 14 category, navigation, product, product-image-reference, and product-import tools.
+- Webless production revision: `webless-00526-lih` (100% traffic).
+- SlimWeb-MCP production revision: `slimweb-mcp-00123-ds4` (100% traffic).
+- SlimWeb-MCP deployment workflow: GitHub Actions run `31249852065`, conclusion `success`.
+- Webless test suite: 716 tests passed with 0 failures.
+- SlimWeb-MCP test suite: 398 tests passed with 0 failures.
+- Frozen public tool contract remains 125 tools with SHA-256 `d6de40eb08a55927c199ae1b227fc29b7bf4010e0bc70a87b14d4d3ed1be6871`.
+- Authenticated public `slimweb_sites_list`, `slimweb_categories_list`, `slimweb_nav_items_list`, and `slimweb_products_list` calls succeeded for `swcb_zog0l7zlyp3lwmlc`.
+- A public `slimweb_categories_upsert` same-value update returned `ok: true`, `action: updated`, and an empty `changed_fields` array, proving the write and idempotency path without changing merchant content.
+- The 14 migrated repository methods now require `WeblessBackendClient`; their prior direct PostgreSQL and storage implementations were removed.
+
+This evidence completes Phase 2 only. Phase 3 content, template, and media migration is next; Standalone remains out of scope until all SaaS phases pass.
