@@ -37,7 +37,7 @@ This plan is the first independently deployable slice of the approved SaaS desig
 
 - Create `app/Services/Mcp/McpActorResolver.php`: authoritative Google identity, membership, system-admin, and permission resolution.
 - Create `app/Support/McpApiResponse.php`: stable success/error envelopes.
-- Create `app/Http/Middleware/RenderMcpApiErrors.php`: convert Laravel exceptions into stable backend error envelopes.
+- Create `app/Support/McpApiExceptionRenderer.php`: convert Laravel exceptions into stable backend error envelopes.
 - Create `app/Http/Controllers/Internal/McpV1/SiteContextController.php`: version, site list, and site resolution endpoints.
 - Create `app/Http/Controllers/Internal/McpV1/BasicSettingsController.php`: settings read and patch operations.
 - Create `app/Models/McpIdempotencyKey.php`: persisted write-replay record.
@@ -108,7 +108,7 @@ git commit -m "test: freeze SaaS MCP tool contract"
 - Create: `/Users/eric/Documents/webless/app/Services/Mcp/McpActorResolver.php`
 - Create: `/Users/eric/Documents/webless/app/Support/McpApiResponse.php`
 - Create: `/Users/eric/Documents/webless/app/Http/Middleware/AttachMcpRequestContext.php`
-- Create: `/Users/eric/Documents/webless/app/Http/Middleware/RenderMcpApiErrors.php`
+- Create: `/Users/eric/Documents/webless/app/Support/McpApiExceptionRenderer.php`
 - Test: `/Users/eric/Documents/webless/tests/Unit/McpActorResolverTest.php`
 
 - [ ] **Step 1: Write failing direct identity and tenant-isolation tests**
@@ -179,7 +179,7 @@ public static function error(string $code, string $message, int $status, array $
 
 `AttachMcpRequestContext` must accept `X-Request-Id` matching `[A-Za-z0-9._:-]{8,128}` or generate a UUID, store it as request attribute `mcp_request_id`, and add it to the response header. It must never log the service secret or Google subject.
 
-`RenderMcpApiErrors` wraps downstream middleware/controllers and maps `ValidationException` to 422 `VALIDATION_FAILED`, authorization failures to 403 `FORBIDDEN`, missing models/resources to 404 `NOT_FOUND`, conflicts to 409 `CONFLICT`, throttling to 429 `RATE_LIMITED`, and unexpected exceptions to 500 `INTERNAL_ERROR`. Validation details may include field names/messages; stack traces, SQL, secrets, Google subjects, and credentials must not enter the response.
+`McpApiExceptionRenderer` is registered through `bootstrap/app.php` `withExceptions()->render()` only for `internal/mcp/v1/*`. Laravel 12's routing pipeline renders downstream exceptions before an outer route middleware can catch them, so the global path-scoped renderer maps `ValidationException` to 422 `VALIDATION_FAILED`, authorization failures to 403 `FORBIDDEN`, missing models/resources to 404 `NOT_FOUND`, conflicts to 409 `CONFLICT`, throttling to 429 `RATE_LIMITED`, and unexpected exceptions to 500 `INTERNAL_ERROR`. Validation details may include field names/messages; stack traces, SQL, secrets, Google subjects, and credentials must not enter the response.
 
 - [ ] **Step 5: Run the resolver tests**
 
@@ -190,7 +190,7 @@ Expected: all identity, membership, system-admin, and permission tests PASS.
 - [ ] **Step 6: Commit the actor boundary**
 
 ```bash
-git add app/Services/Mcp/McpActorResolver.php app/Support/McpApiResponse.php app/Http/Middleware/AttachMcpRequestContext.php app/Http/Middleware/RenderMcpApiErrors.php tests/Unit/McpActorResolverTest.php
+git add app/Services/Mcp/McpActorResolver.php app/Support/McpApiResponse.php app/Support/McpApiExceptionRenderer.php app/Http/Middleware/AttachMcpRequestContext.php bootstrap/app.php tests/Unit/McpActorResolverTest.php
 git commit -m "feat: add MCP actor authorization boundary"
 ```
 
@@ -257,7 +257,7 @@ Add controller imports and this route group outside browser-session middleware:
 
 ```php
 Route::prefix('internal/mcp/v1')
-    ->middleware([AttachMcpRequestContext::class, RenderMcpApiErrors::class, EnsureMcpInternalRequest::class])
+    ->middleware([AttachMcpRequestContext::class, EnsureMcpInternalRequest::class])
     ->group(function (): void {
         Route::get('/version', [McpV1SiteContextController::class, 'version']);
         Route::get('/sites', [McpV1SiteContextController::class, 'index']);
