@@ -324,7 +324,7 @@ test('MCP tools list includes homepage editing contract tools', async () => {
     assert.equal(body.result.tools.length, 125);
     assert.equal(
       toolsContractHash,
-      'd6de40eb08a55927c199ae1b227fc29b7bf4010e0bc70a87b14d4d3ed1be6871'
+      'e5e4c662fd241829f532d1a567987698ad6a16e22759dfdea6eeea6c44c7e95b'
     );
 
     for (const toolName of [
@@ -458,6 +458,7 @@ test('MCP tools list includes homepage editing contract tools', async () => {
     const logoSchema = toolsByName.get('slimweb_settings_update').inputSchema.properties.logo;
     const siteNameSchema = toolsByName.get('slimweb_settings_update').inputSchema.properties.name;
     const categoryNavigationModeSchema = toolsByName.get('slimweb_settings_update').inputSchema.properties.category_navigation_mode;
+    assert.equal(toolsByName.get('slimweb_settings_update').inputSchema.properties.member_verification, undefined);
     assert.equal(toolsByName.get('slimweb_settings_update').inputSchema.properties.product_category_depth, undefined);
     assert.deepEqual(categoryNavigationModeSchema.enum, ['category_menu', 'navbar_categories']);
     assert.match(categoryNavigationModeSchema.description, /presentation only/i);

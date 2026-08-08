@@ -6,7 +6,7 @@
 - Site code: `swcb_g3fg1bpnjulrr75o`
 - Domain: `shop.sweety.tw`
 - Contract count: 125
-- Contract SHA-256: `d6de40eb08a55927c199ae1b227fc29b7bf4010e0bc70a87b14d4d3ed1be6871`
+- Contract SHA-256: `e5e4c662fd241829f532d1a567987698ad6a16e22759dfdea6eeea6c44c7e95b` (125 tools; revised after removing the stale `member_verification` write field)
 - External policy: test data/test providers only; no real email, Facebook, Notion publishing, payment, or production shipment.
 
 ## Baseline
@@ -34,6 +34,7 @@
 | Tool | Reproduction | Root cause | Regression test | Commit | Revision | Live retest |
 |---|---|---|---|---|---|---|
 | slimweb_design_context_get | Empty Sweety site has no SitePage row | `ThemeService::resolve()` assumed an active `site_pages` identity instead of restoring the required Default identity for legacy empty sites | `McpV1ThemeTest::test_empty_site_design_context_recovers_canonical_default_theme` (RED 404, GREEN 7 assertions) | `0c675b5` | `webless-00549-bav` | PASS: live response returned theme id 26, active Default, light mode, Tailwind |
+| slimweb_settings_update | Sending `member_verification: none` follows the advertised MCP schema but returns `VALIDATION_FAILED` | The field was intentionally removed from SaaS `sites`; MCP Core still advertised the obsolete write parameter | `toolProfile.test.js`: SaaS schema omits removed member verification writes (RED exposed schema, GREEN omitted) | `a18aabd` | Pending MCP deploy | Pending |
 
 ## Deployment Log
 

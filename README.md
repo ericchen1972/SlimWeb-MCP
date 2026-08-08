@@ -823,7 +823,6 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - Output: updated settings summary、changed fields、warnings、audit ID
 - Side effects: modifies site settings
 - Logo rule: 點陣圖會轉為 WebP、保留透明背景、不放大、依比例將高度限制為最多 96px；SVG 會保留 SVG 格式並經安全清理，同樣依比例限制最高 96px。新 Logo 會覆蓋舊 Logo，且點陣圖的 committed 暫存檔會被移除，因此 Logo 不會進入素材庫或留下多份作用中檔案。
-- Rule: 若要把 `member_verification` 設成 `email`，必須先完成 SMTP 設定；若 SMTP 欄位未完整設定，tool 會拒絕更新。
 - Category/navigation intent rule: Category and nav item intents are separate；商品分類與 nav item 是分開的資料，分類建立/更新不得隱含建立導覽項目。只有使用者另外明確要求頁面、外部連結或選單項目時，才使用 nav-item tools。若只要求分類擺放方式，僅更新 `category_navigation_mode`。
 - 是否需要 confirmation: yes for disabling site、changing return policy、or settings that affect storefront behavior
 - 錯誤情境: validation failed、permission denied、unsupported field、conflict
