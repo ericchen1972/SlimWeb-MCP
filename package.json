@@ -11,6 +11,7 @@
     "node": ">=20"
   },
   "dependencies": {
+    "@slimweb/mcp-core": "github:ericchen1972/SlimWeb-MCP-Core#v0.1.0",
     "exceljs": "^4.4.0",
     "parse5": "^7.3.0",
     "parse5-sax-parser": "^7.0.0",
