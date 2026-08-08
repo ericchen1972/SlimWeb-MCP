@@ -21,7 +21,9 @@ export class WeblessBackendClient {
     fetchImpl = fetch,
     timeoutMs = 15_000,
     requestIdFactory = randomUUID,
-    idempotencyKeyFactory = randomUUID
+    idempotencyKeyFactory = randomUUID,
+    posterPollIntervalMs = 5_000,
+    posterTimeoutMs = 780_000
   } = {}) {
     this.baseUrl = String(baseUrl ?? '').trim().replace(/\/+$/, '');
     this.secret = String(secret ?? '').trim();
@@ -36,6 +38,8 @@ export class WeblessBackendClient {
     this.timeoutMs = Math.max(1, Number(timeoutMs) || 15_000);
     this.requestIdFactory = requestIdFactory;
     this.idempotencyKeyFactory = idempotencyKeyFactory;
+    this.posterPollIntervalMs = Math.max(0, Number(posterPollIntervalMs) || 0);
+    this.posterTimeoutMs = Math.max(1_000, Number(posterTimeoutMs) || 780_000);
 
     assertSlimWebBackend(this);
   }
@@ -104,6 +108,164 @@ export class WeblessBackendClient {
       idempotencyKey: this.idempotencyKeyFactory(),
       body: patch
     });
+  }
+
+  async getSiteReadiness(actor, args) {
+    return this.operationalRead(actor, '/operations/readiness', 'slimweb_site_readiness_get', '', args, ['include_optional']);
+  }
+
+  async getSiteLaunchProgress(actor, args) {
+    return this.operationalRead(actor, '/operations/launch-progress', 'slimweb_site_launch_progress_get', '', args, ['include_optional']);
+  }
+
+  async getSeoSettings(actor) {
+    return this.operationalRead(actor, '/settings/seo', 'slimweb_seo_settings_get', 'seo_settings');
+  }
+
+  async updateSeoSettings(actor, args) {
+    return this.operationalMutation(actor, '/settings/seo', 'slimweb_seo_settings_update', 'seo_settings', args);
+  }
+
+  async getFacebookSettings(actor) {
+    return this.operationalRead(actor, '/integrations/facebook', 'slimweb_facebook_settings_get', 'integration_settings');
+  }
+
+  async updateFacebookSettings(actor, args) {
+    return this.operationalMutation(actor, '/integrations/facebook', 'slimweb_facebook_settings_update', 'integration_settings', args);
+  }
+
+  async getNotionSettings(actor) {
+    return this.operationalRead(actor, '/integrations/notion', 'slimweb_notion_settings_get', 'integration_settings');
+  }
+
+  async updateNotionSettings(actor, args) {
+    return this.operationalMutation(actor, '/integrations/notion', 'slimweb_notion_settings_update', 'integration_settings', args);
+  }
+
+  async getContactSettings(actor) {
+    return this.operationalRead(actor, '/settings/contact', 'slimweb_contact_settings_get', 'basic_settings');
+  }
+
+  async updateContactSettings(actor, args) {
+    return this.operationalMutation(actor, '/settings/contact', 'slimweb_contact_settings_update', 'basic_settings', args);
+  }
+
+  async getDashboardSummary(actor) {
+    return this.operationalRead(actor, '/operations/dashboard-summary', 'slimweb_dashboard_summary', '');
+  }
+
+  async getMailDeliverySettings(actor) {
+    return this.operationalRead(actor, '/communications/mail-delivery', 'slimweb_mail_delivery_settings_get', 'notification_settings');
+  }
+
+  async updateMailDeliverySettings(actor, args) {
+    return this.operationalMutation(actor, '/communications/mail-delivery', 'slimweb_mail_delivery_settings_update', 'notification_settings', args);
+  }
+
+  async getMailTemplates(actor) {
+    return this.operationalRead(actor, '/communications/mail-templates', 'slimweb_mail_templates_get', 'notification_settings');
+  }
+
+  async updateMailTemplates(actor, args) {
+    return this.operationalMutation(actor, '/communications/mail-templates', 'slimweb_mail_templates_update', 'notification_settings', args);
+  }
+
+  async getMailLayout(actor) {
+    return this.operationalRead(actor, '/communications/mail-layout', 'slimweb_mail_layout_get', 'notification_settings');
+  }
+
+  async updateMailLayout(actor, args) {
+    return this.operationalMutation(actor, '/communications/mail-layout', 'slimweb_mail_layout_update', 'notification_settings', args);
+  }
+
+  async listAdmins(actor) {
+    return this.operationalRead(actor, '/operations/admins', 'slimweb_admins_list', 'system_admin');
+  }
+
+  async upsertAdmin(actor, args) {
+    return this.operationalMutation(actor, '/operations/admins', 'slimweb_admins_upsert', 'system_admin', args);
+  }
+
+  async deleteAdmin(actor, args) {
+    const { admin_id: adminId, ...body } = this.withoutSiteSelector(args);
+    return this.operationalMutation(actor, `/operations/admins/${this.requiredId(adminId, 'admin_id')}`, 'slimweb_admins_delete', 'system_admin', body, 'DELETE');
+  }
+
+  async createNewsletter(actor, args) {
+    return this.operationalMutation(actor, '/communications/newsletters', 'slimweb_newsletters_create', 'newsletter_management', args, 'POST');
+  }
+
+  async listNewsletters(actor, args) {
+    return this.operationalRead(actor, '/communications/newsletters', 'slimweb_newsletters_list', 'newsletter_management', args, ['page', 'per_page']);
+  }
+
+  async getNewsletter(actor, args) {
+    return this.newsletterRead(actor, args, 'slimweb_newsletters_get');
+  }
+
+  async updateNewsletter(actor, args) {
+    const { newsletter_id: newsletterId, ...body } = this.withoutSiteSelector(args);
+    return this.operationalMutation(actor, `/communications/newsletters/${this.requiredId(newsletterId, 'newsletter_id')}`, 'slimweb_newsletters_update', 'newsletter_management', body);
+  }
+
+  async deleteNewsletter(actor, args) {
+    const { newsletter_id: newsletterId, ...body } = this.withoutSiteSelector(args);
+    return this.operationalMutation(actor, `/communications/newsletters/${this.requiredId(newsletterId, 'newsletter_id')}`, 'slimweb_newsletters_delete', 'newsletter_management', body, 'DELETE');
+  }
+
+  async newsletterRead(actor, args, tool) {
+    const newsletterId = this.requiredId(args?.newsletter_id, 'newsletter_id');
+    return this.operationalRead(actor, `/communications/newsletters/${newsletterId}`, tool, 'newsletter_management');
+  }
+
+  async searchNotionPages(actor, args) {
+    return this.request(this.sitePath(actor, '/integrations/notion/pages/search'), { method: 'POST', identity: actor, tool: 'slimweb_notion_pages_search', permission: 'integration_settings', body: this.withoutSiteSelector(args) });
+  }
+
+  async getNotionPageContent(actor, args) {
+    return this.request(this.sitePath(actor, '/integrations/notion/pages/content'), { method: 'POST', identity: actor, tool: 'slimweb_notion_page_content_get', permission: 'integration_settings', body: this.withoutSiteSelector(args) });
+  }
+
+  async createPoster(actor, args) {
+    const payload = await this.operationalMutation(actor, '/operations/posters', 'slimweb_posters_create', 'ai_management', args, 'POST');
+    return this.pollPoster(actor, payload);
+  }
+
+  async pollPoster(actor, payload) {
+    if (!payload?.queued || !payload?.job_id) return payload;
+    const deadline = Date.now() + this.posterTimeoutMs;
+    while (Date.now() < deadline) {
+      if (this.posterPollIntervalMs > 0) await new Promise((resolve) => setTimeout(resolve, Math.min(this.posterPollIntervalMs, deadline - Date.now())));
+      const status = await this.operationalRead(actor, `/operations/posters/${encodeURIComponent(payload.job_id)}`, 'slimweb_posters_create', 'ai_management');
+      if (status?.status === 'completed') return status;
+      if (status?.status === 'failed') throw new BackendError(status.message || 'Poster generation failed.', { code: 'UPSTREAM_ERROR', details: { job_id: payload.job_id } });
+    }
+    throw new BackendError('Poster generation did not finish before the MCP timeout.', { code: 'UPSTREAM_TIMEOUT', details: { job_id: payload.job_id } });
+  }
+
+  async listCustomerServiceLogs(actor, args) {
+    return this.operationalRead(actor, '/operations/customer-service/logs', 'slimweb_customer_service_logs_list', 'ai_customer_service', args, ['page', 'per_page', 'member_id', 'keyword']);
+  }
+
+  async deleteCustomerServiceLog(actor, args) {
+    const { customer_service_log_id: logId, ...body } = this.withoutSiteSelector(args);
+    return this.operationalMutation(actor, `/operations/customer-service/logs/${this.requiredId(logId, 'customer_service_log_id')}`, 'slimweb_customer_service_logs_delete', 'ai_customer_service', body, 'DELETE');
+  }
+
+  async getCustomerServiceSettings(actor) {
+    return this.operationalRead(actor, '/operations/customer-service/settings', 'slimweb_customer_service_settings_get', 'ai_customer_service');
+  }
+
+  async updateCustomerServiceSettings(actor, args) {
+    return this.operationalMutation(actor, '/operations/customer-service/settings', 'slimweb_customer_service_settings_update', 'ai_customer_service', args);
+  }
+
+  async createExport(actor, args) {
+    return this.operationalMutation(actor, '/operations/exports', 'slimweb_exports_create', 'system_admin', args, 'POST');
+  }
+
+  async listAuditLogs(actor, args) {
+    return this.operationalRead(actor, '/operations/audit', 'slimweb_audit_logs_list', 'system_admin', args, ['limit', 'tool_name']);
   }
 
   async listCategories(actor) {
@@ -553,6 +715,26 @@ export class WeblessBackendClient {
       identity: actor,
       tool,
       permission,
+      body: this.withoutSiteSelector(args)
+    });
+  }
+
+  async operationalRead(actor, suffix, tool, permission, args = {}, fields = []) {
+    const query = new URLSearchParams();
+    const filters = this.withoutSiteSelector(args);
+    for (const field of fields) {
+      if (filters[field] !== undefined && filters[field] !== null && filters[field] !== '') query.set(field, String(filters[field]));
+    }
+    return this.request(this.sitePath(actor, `${suffix}${query.size ? `?${query}` : ''}`), { identity: actor, tool, permission });
+  }
+
+  async operationalMutation(actor, suffix, tool, permission, args, method = 'PUT') {
+    return this.request(this.sitePath(actor, suffix), {
+      method,
+      identity: actor,
+      tool,
+      permission,
+      idempotencyKey: this.idempotencyKeyFactory(),
       body: this.withoutSiteSelector(args)
     });
   }

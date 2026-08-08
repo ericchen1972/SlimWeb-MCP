@@ -615,7 +615,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - Input: `site_code` plus any subset of SEO/AEO/GEO fields; for Google Analytics, fill only `google_analytics_measurement_id` such as `G-ABC1234567`, not full script tags
 - Output: updated settings、site summary
 - Side effects: updates `sites` SEO/AEO/GEO and GA4 Measurement ID columns; published fields feed the shared storefront SEO head and merchant sitemap/robots/llms output
-- Canonical rule: `canonical_url` must be HTTP(S) and use either the exact configured custom domain or the current site's `/sites/{site_code}` path on `WEBLESS_PUBLIC_BASE_URL`; query and fragment are removed. Unrelated hosts are rejected.
+- Canonical rule: `canonical_url` must be HTTP(S) and use either the site's configured custom domain or its Webless site path; Webless removes query/fragment values and rejects unrelated hosts.
 - Publishing rule: `seo_keywords` remains in the management contract but is not emitted as a meta keywords tag. AEO/GEO text is factual context for llms/structured output, not a set of invented meta tags.
 - 是否需要 confirmation: yes when changing robots policy to noindex or replacing existing customer-facing metadata
 - 錯誤情境: validation failed、site not found、permission denied、conflict
@@ -1767,7 +1767,7 @@ MCP tools 應回傳可預期的錯誤類型：
 - `GET /oauth/authorize`: OAuth authorization code endpoint
 - `POST /oauth/token`: OAuth token endpoint; exchanges authorization code + PKCE verifier for MCP bearer token
 - `GET /auth/login`: SlimWeb MCP Google 登入頁
-- `POST /auth/google`: 接收 Google Identity credential，建立或更新 webless `accounts`
+- `POST /auth/google`: 接收 Google Identity credential，並由 Webless Backend API 驗證其可管理的網站
 - `GET /auth/success`: 登入完成頁
 - `POST /mcp`: MCP JSON-RPC endpoint，目前支援 `initialize`、`tools/list` 與 `tools/call`
 
@@ -1791,15 +1791,7 @@ MCP tools 應回傳可預期的錯誤類型：
 
 主工具表以目前 `tools/list` discovery 為準；尚未出現在主表的舊 contracts 不應視為已實作。
 
-首頁與資產寫入 tools 透過 storage adapter 寫入 Webless template storage。Production 預設使用 GCS，環境變數：
-
-- `WEBLESS_STORAGE_DRIVER`: `gcs` or `local`。Cloud Run production 使用 `gcs`。
-- `GCS_BUCKET`: Webless Cloud Storage bucket，例如 `webless_bucket`。
-- `WEBLESS_STORAGE_ROOT`: local driver 才需要，對應 Webless `Storage::disk('local')` root。
-- `WEBLESS_PUBLIC_BASE_URL`: SlimWeb public base URL，預設 `https://slimweb.tw`。
-- `WEBLESS_APP_KEY` / `LARAVEL_APP_KEY` / `APP_KEY`: Webless Laravel app key。金物流 provider credentials 使用 Laravel `encrypted:array` 相容格式寫入，啟用或更新金物流密鑰時必須設定。
-
-若 storage adapter 未設定，頁面與資產寫入 tools 會回 `UPSTREAM_NOT_CONFIGURED`，避免 MCP 寫入自己的 Cloud Run ephemeral disk 造成 Webless 看不到內容。
+首頁、資產、資料庫與第三方整合寫入全部由 Webless Backend API 執行。SlimWeb-MCP 不持有資料庫、Cloud SQL、GCS、Webless Laravel app key 或其他 provider credentials，也不會寫入自己的 Cloud Run ephemeral disk。
 
 ## 登入與 webless 帳號系統
 
@@ -1808,17 +1800,16 @@ MCP service 使用與 webless 相同的 Google Client ID 驗證 Google Identity 
 | Domain | Current SaaS execution path |
 | --- | --- |
 | Google admin site list and site permission resolution | Webless `/internal/mcp/v1` API |
-| Basic settings read/update, including site name and logo | Webless `/internal/mcp/v1` API |
-| Other tool domains | Temporary direct repository until their approved migration phase |
+| All 123 site data/storage tools | Webless `/internal/mcp/v1` API |
+| Edge-only authentication/status tools | SlimWeb-MCP process |
 
-第一批使用以下設定：
+SaaS MCP 使用以下設定：
 
 - `WEBLESS_BACKEND_API_BASE_URL`: Webless Backend API origin，正式環境為 `https://webless-aakwcbp2ca-de.a.run.app`。
 - `WEBLESS_MCP_SECRET`: MCP service 與 Webless 共用的 service credential；它不代表商家身分，Webless 仍會重新驗證 Google actor、站點歸屬與 endpoint permission。
-- Backend API request timeout 為 15 秒。設定了 Backend API 但連線失敗、逾時或回傳錯誤時，該操作直接失敗，不會 fallback 到 SQL。
+- Backend API request timeout 預設為 15 秒。Backend API 連線失敗、逾時或回傳錯誤時，該操作直接失敗，不會 fallback 到 SQL、storage 或其他舊路徑。
 - 每個 request 帶 request ID；設定寫入另帶 idempotency key，由 Webless PostgreSQL 保存完成結果，避免 Cloud Run 多實例重複寫入。
-
-目前尚未遷移的工具仍需要既有 PostgreSQL／storage deployment variables；只有在後續所有領域完成並通過驗證後才能移除。
+- SlimWeb-MCP 部署不需要 Cloud SQL、PostgreSQL、GCS、VPC connector 或 storage driver 設定；這些基礎設施只屬於 Webless。
 
 - 登入時不以 webless 主會員 `accounts` 授權 MCP。
 - 登入時由 Webless API 依 Google `sub` 或 `google_email` 查 `site_admins`，只允許至少一個 Web admin 身份有 `backend_ai_assistant` 或 `system_admin` 權限的使用者進入 MCP。

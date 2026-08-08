@@ -133,6 +133,150 @@ test('backend client maps site context and settings methods to Webless HTTP', as
   assert.deepEqual(requests[3].body, { name: '新名稱' });
 });
 
+test('backend client maps Phase 5 operational settings to versioned Webless endpoints', async () => {
+  const requests = [];
+  await withJsonServer(async (request, response) => {
+    requests.push({ method: request.method, url: request.url, headers: request.headers, body: await readJson(request) });
+    sendJson(response, 200, { ok: true, data: { ok: true, site }, warnings: [] });
+  }, async (baseUrl) => {
+    const client = new WeblessBackendClient({ baseUrl, secret: 'service-secret', requestIdFactory: () => 'phase5-request-001', idempotencyKeyFactory: () => 'phase5-idempotency-001' });
+    await client.getSiteReadiness(actor, { site_id: 101, include_optional: true });
+    await client.getSiteLaunchProgress(actor, { site_id: 101 });
+    await client.getSeoSettings(actor, { site_id: 101 });
+    await client.updateSeoSettings(actor, { site_id: 101, seo_title: 'SEO' });
+    await client.getFacebookSettings(actor, { site_id: 101 });
+    await client.updateFacebookSettings(actor, { site_id: 101, facebook_app_id: 'app' });
+    await client.getNotionSettings(actor, { site_id: 101 });
+    await client.updateNotionSettings(actor, { site_id: 101, notion_token: 'token' });
+    await client.getContactSettings(actor, { site_id: 101 });
+    await client.updateContactSettings(actor, { site_id: 101, contact_email: 'shop@example.com' });
+    await client.getDashboardSummary(actor, { site_id: 101 });
+  });
+
+  assert.deepEqual(requests.map(({ method, url }) => [method, url]), [
+    ['GET', '/internal/mcp/v1/sites/swcb_demo/operations/readiness?include_optional=true'],
+    ['GET', '/internal/mcp/v1/sites/swcb_demo/operations/launch-progress'],
+    ['GET', '/internal/mcp/v1/sites/swcb_demo/settings/seo'],
+    ['PUT', '/internal/mcp/v1/sites/swcb_demo/settings/seo'],
+    ['GET', '/internal/mcp/v1/sites/swcb_demo/integrations/facebook'],
+    ['PUT', '/internal/mcp/v1/sites/swcb_demo/integrations/facebook'],
+    ['GET', '/internal/mcp/v1/sites/swcb_demo/integrations/notion'],
+    ['PUT', '/internal/mcp/v1/sites/swcb_demo/integrations/notion'],
+    ['GET', '/internal/mcp/v1/sites/swcb_demo/settings/contact'],
+    ['PUT', '/internal/mcp/v1/sites/swcb_demo/settings/contact'],
+    ['GET', '/internal/mcp/v1/sites/swcb_demo/operations/dashboard-summary']
+  ]);
+  assert.equal(requests.filter(({ method }) => method === 'PUT').every(({ headers }) => headers['idempotency-key'] === 'phase5-idempotency-001'), true);
+});
+
+test('backend client maps Phase 5 communications and admin tools to versioned Webless endpoints', async () => {
+  const requests = [];
+  await withJsonServer(async (request, response) => {
+    requests.push({ method: request.method, url: request.url, headers: request.headers, body: await readJson(request) });
+    sendJson(response, 200, { ok: true, data: { ok: true, site }, warnings: [] });
+  }, async (baseUrl) => {
+    const client = new WeblessBackendClient({ baseUrl, secret: 'service-secret', requestIdFactory: () => 'phase5-request-002', idempotencyKeyFactory: () => 'phase5-idempotency-002' });
+    await client.getMailDeliverySettings(actor, { site_id: 101 });
+    await client.updateMailDeliverySettings(actor, { site_id: 101, notification_smtp_host: 'smtp.example.com' });
+    await client.getMailTemplates(actor, { site_id: 101 });
+    await client.updateMailTemplates(actor, { site_id: 101, templates: [] });
+    await client.getMailLayout(actor, { site_id: 101 });
+    await client.updateMailLayout(actor, { site_id: 101, html: '{content}' });
+    await client.listAdmins(actor, { site_id: 101 });
+    await client.upsertAdmin(actor, { site_id: 101, google_email: 'editor@example.com' });
+    await client.deleteAdmin(actor, { site_id: 101, admin_id: 9 });
+    await client.createNewsletter(actor, { site_id: 101, title: 'News' });
+    await client.listNewsletters(actor, { site_id: 101, page: 2, per_page: 5 });
+    await client.getNewsletter(actor, { site_id: 101, newsletter_id: 7 });
+    await client.updateNewsletter(actor, { site_id: 101, newsletter_id: 7, title: 'Updated' });
+    await client.deleteNewsletter(actor, { site_id: 101, newsletter_id: 7 });
+  });
+  assert.deepEqual(requests.map(({ method, url }) => [method, url]), [
+    ['GET', '/internal/mcp/v1/sites/swcb_demo/communications/mail-delivery'],
+    ['PUT', '/internal/mcp/v1/sites/swcb_demo/communications/mail-delivery'],
+    ['GET', '/internal/mcp/v1/sites/swcb_demo/communications/mail-templates'],
+    ['PUT', '/internal/mcp/v1/sites/swcb_demo/communications/mail-templates'],
+    ['GET', '/internal/mcp/v1/sites/swcb_demo/communications/mail-layout'],
+    ['PUT', '/internal/mcp/v1/sites/swcb_demo/communications/mail-layout'],
+    ['GET', '/internal/mcp/v1/sites/swcb_demo/operations/admins'],
+    ['PUT', '/internal/mcp/v1/sites/swcb_demo/operations/admins'],
+    ['DELETE', '/internal/mcp/v1/sites/swcb_demo/operations/admins/9'],
+    ['POST', '/internal/mcp/v1/sites/swcb_demo/communications/newsletters'],
+    ['GET', '/internal/mcp/v1/sites/swcb_demo/communications/newsletters?page=2&per_page=5'],
+    ['GET', '/internal/mcp/v1/sites/swcb_demo/communications/newsletters/7'],
+    ['PUT', '/internal/mcp/v1/sites/swcb_demo/communications/newsletters/7'],
+    ['DELETE', '/internal/mcp/v1/sites/swcb_demo/communications/newsletters/7']
+  ]);
+});
+
+test('backend client maps Phase 5 integration and operational tools to versioned Webless endpoints', async () => {
+  const requests = [];
+  await withJsonServer(async (request, response) => {
+    requests.push({ method: request.method, url: request.url, body: await readJson(request) });
+    sendJson(response, 200, { ok: true, data: { ok: true, site }, warnings: [] });
+  }, async (baseUrl) => {
+    const client = new WeblessBackendClient({ baseUrl, secret: 'service-secret', requestIdFactory: () => 'phase5-request-003', idempotencyKeyFactory: () => 'phase5-idempotency-003' });
+    await client.searchNotionPages(actor, { site_id: 101, title: 'KAI' });
+    await client.getNotionPageContent(actor, { site_id: 101, notion_page_id: 'page-1' });
+    await client.createPoster(actor, { site_id: 101, product_names: ['商品'], drawing_prompt: '促銷' });
+    await client.listCustomerServiceLogs(actor, { site_id: 101, page: 2, per_page: 5, member_id: 3, keyword: 'hello' });
+    await client.deleteCustomerServiceLog(actor, { site_id: 101, customer_service_log_id: 8 });
+    await client.getCustomerServiceSettings(actor, { site_id: 101 });
+    await client.updateCustomerServiceSettings(actor, { site_id: 101, use_ai_customer_service: true });
+    await client.createExport(actor, { site_id: 101, export_type: 'orders' });
+    await client.listAuditLogs(actor, { site_id: 101, limit: 10, tool_name: 'slimweb_orders_list' });
+  });
+  assert.deepEqual(requests.map(({ method, url }) => [method, url]), [
+    ['POST', '/internal/mcp/v1/sites/swcb_demo/integrations/notion/pages/search'],
+    ['POST', '/internal/mcp/v1/sites/swcb_demo/integrations/notion/pages/content'],
+    ['POST', '/internal/mcp/v1/sites/swcb_demo/operations/posters'],
+    ['GET', '/internal/mcp/v1/sites/swcb_demo/operations/customer-service/logs?page=2&per_page=5&member_id=3&keyword=hello'],
+    ['DELETE', '/internal/mcp/v1/sites/swcb_demo/operations/customer-service/logs/8'],
+    ['GET', '/internal/mcp/v1/sites/swcb_demo/operations/customer-service/settings'],
+    ['PUT', '/internal/mcp/v1/sites/swcb_demo/operations/customer-service/settings'],
+    ['POST', '/internal/mcp/v1/sites/swcb_demo/operations/exports'],
+    ['GET', '/internal/mcp/v1/sites/swcb_demo/operations/audit?limit=10&tool_name=slimweb_orders_list']
+  ]);
+});
+
+test('backend client keeps poster polling behind the versioned Webless API', async () => {
+  const requests = [];
+  await withJsonServer(async (request, response) => {
+    requests.push([request.method, request.url]);
+    await readJson(request);
+    if (request.method === 'POST') {
+      sendJson(response, 200, { ok: true, data: { queued: true, job_id: 'poster-job-1', status: 'queued' }, warnings: [] });
+      return;
+    }
+    sendJson(response, 200, { ok: true, data: { queued: false, job_id: 'poster-job-1', status: 'completed', image_url: 'https://example.com/poster.webp' }, warnings: [] });
+  }, async (baseUrl) => {
+    const client = new WeblessBackendClient({ baseUrl, secret: 'service-secret', posterPollIntervalMs: 0, posterTimeoutMs: 1_000 });
+    const result = await client.createPoster(actor, { product_names: ['商品'], drawing_prompt: '促銷' });
+    assert.equal(result.status, 'completed');
+    assert.equal(result.image_url, 'https://example.com/poster.webp');
+  });
+  assert.deepEqual(requests, [
+    ['POST', '/internal/mcp/v1/sites/swcb_demo/operations/posters'],
+    ['GET', '/internal/mcp/v1/sites/swcb_demo/operations/posters/poster-job-1']
+  ]);
+});
+
+test('backend client surfaces a failed Webless poster job', async () => {
+  await withJsonServer(async (request, response) => {
+    await readJson(request);
+    const data = request.method === 'POST'
+      ? { queued: true, job_id: 'poster-job-failed', status: 'queued' }
+      : { queued: false, job_id: 'poster-job-failed', status: 'failed', message: 'Poster failed.' };
+    sendJson(response, 200, { ok: true, data, warnings: [] });
+  }, async (baseUrl) => {
+    const client = new WeblessBackendClient({ baseUrl, secret: 'service-secret', posterPollIntervalMs: 0, posterTimeoutMs: 1_000 });
+    await assert.rejects(
+      () => client.createPoster(actor, { product_names: ['商品'], drawing_prompt: '促銷' }),
+      (error) => error instanceof BackendError && error.code === 'UPSTREAM_ERROR' && error.message === 'Poster failed.'
+    );
+  });
+});
+
 test('backend client selects a site through resolved context and an internal theme list including Default', async () => {
   const requests = [];
 
