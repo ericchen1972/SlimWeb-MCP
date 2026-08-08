@@ -388,6 +388,25 @@ export class WeblessBackendClient {
     });
   }
 
+  async getPaymentLogisticsSettings(actor) {
+    return this.request(this.sitePath(actor, '/commerce/settings/providers'), {
+      identity: actor,
+      tool: 'slimweb_payment_logistics_get',
+      permission: 'payments_shipping'
+    });
+  }
+
+  async updatePaymentLogisticsSettings(actor, args) {
+    return this.request(this.sitePath(actor, '/commerce/settings/providers'), {
+      method: 'PUT',
+      identity: actor,
+      tool: 'slimweb_payment_logistics_update',
+      permission: 'payments_shipping',
+      idempotencyKey: this.idempotencyKeyFactory(),
+      body: this.withoutSiteSelector(args)
+    });
+  }
+
   async catalogMutation(actor, suffix, method, tool, permission, args) {
     return this.request(this.sitePath(actor, suffix), {
       method,

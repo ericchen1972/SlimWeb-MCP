@@ -944,99 +944,11 @@ export class WeblessAccountRepository {
   }
 
   async getPaymentLogisticsSettings(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const [paymentProviders, logisticsProviders] = await Promise.all([
-      this.listPaymentProvidersForSite(site.id),
-      this.listLogisticsProvidersForSite(site.id)
-    ]);
-
-    return {
-      site,
-      supported_payment_providers: supportedPaymentProviders(),
-      supported_logistics_providers: supportedLogisticsProviders(),
-      online_card_exclusive_providers: ONLINE_CARD_PAYMENT_PROVIDERS,
-      linepay_exempt_from_card_exclusivity: true,
-      answer_policy: paymentLogisticsAnswerPolicy(),
-      callback_urls: paymentLogisticsCallbackUrls(site),
-      payment_providers: paymentProviders,
-      logistics_providers: logisticsProviders
-    };
+    return this.requireBackendClient('commerce_settings').getPaymentLogisticsSettings(accountId, args);
   }
 
   async updatePaymentLogisticsSettings(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const paymentUpdates = normalizePaymentProviderUpdates(args.payments);
-    const logisticsUpdates = normalizeLogisticsProviderUpdates(args.logistics);
-
-    assertOnlyOneOnlineCardPaymentEnabled(paymentUpdates);
-    await this.pool.query('BEGIN');
-
-    try {
-      for (const update of paymentUpdates) {
-        await this.upsertPaymentProvider(site.id, update);
-
-        if (update.is_enabled && ONLINE_CARD_PAYMENT_PROVIDERS.includes(update.provider)) {
-          await this.pool.query(
-            `
-              update site_payment_providers
-              set is_enabled = false, updated_at = now()
-              where site_id = $1
-                and provider = any($2::text[])
-                and provider != $3
-            `,
-            [site.id, ONLINE_CARD_PAYMENT_PROVIDERS, update.provider]
-          );
-          await this.pool.query(
-            `
-              update site_logistics_providers
-              set is_enabled = false, updated_at = now()
-              where site_id = $1
-                and provider = any($2::text[])
-                and provider != $3
-            `,
-            [site.id, ONLINE_CARD_PAYMENT_PROVIDERS, update.provider]
-          );
-        }
-
-        if (ONLINE_CARD_PAYMENT_PROVIDERS.includes(update.provider)) {
-          await this.pool.query(
-            `
-              update site_logistics_providers
-              set mode = $3, is_enabled = $4, updated_at = now()
-              where site_id = $1 and provider = $2
-            `,
-            [site.id, update.provider, update.mode, update.is_enabled]
-          );
-        }
-      }
-
-      for (const update of logisticsUpdates) {
-        await this.upsertLogisticsProvider(site.id, update);
-      }
-
-      await this.pool.query('COMMIT');
-    } catch (error) {
-      await this.pool.query('ROLLBACK');
-      throw error;
-    }
-
-    const [paymentProviders, logisticsProviders] = await Promise.all([
-      this.listPaymentProvidersForSite(site.id),
-      this.listLogisticsProvidersForSite(site.id)
-    ]);
-
-    return {
-      ok: true,
-      site,
-      supported_payment_providers: supportedPaymentProviders(),
-      supported_logistics_providers: supportedLogisticsProviders(),
-      online_card_exclusive_providers: ONLINE_CARD_PAYMENT_PROVIDERS,
-      linepay_exempt_from_card_exclusivity: true,
-      answer_policy: paymentLogisticsAnswerPolicy(),
-      callback_urls: paymentLogisticsCallbackUrls(site),
-      payment_providers: paymentProviders,
-      logistics_providers: logisticsProviders
-    };
+    return this.requireBackendClient('commerce_settings').updatePaymentLogisticsSettings(accountId, args);
   }
 
   async listOrders(accountId, args, scope = 'orders') {

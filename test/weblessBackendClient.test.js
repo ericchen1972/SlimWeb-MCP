@@ -404,6 +404,27 @@ test('backend client maps ChatGPT attachment imports to Webless-owned image hand
   assert.equal(requests[0].body.image_url, 'https://files.openai.example/a.png');
 });
 
+test('backend client maps Phase 4 payment and logistics settings to the versioned commerce API', async () => {
+  const requests = [];
+  await withJsonServer(async (request, response) => {
+    requests.push({ method: request.method, url: request.url, headers: request.headers, body: await readJson(request) });
+    sendJson(response, 200, { ok: true, data: { accepted: true }, warnings: [] });
+  }, async (baseUrl) => {
+    const client = new WeblessBackendClient({ baseUrl, secret: 'service-secret', idempotencyKeyFactory: () => 'idempotency-commerce-001' });
+    await client.getPaymentLogisticsSettings(actor, { site_id: 101 });
+    await client.updatePaymentLogisticsSettings(actor, { site_id: 101, payments: [{ provider: 'ecpay', is_enabled: false }] });
+  });
+
+  assert.deepEqual(requests.map(({ method, url }) => [method, url]), [
+    ['GET', '/internal/mcp/v1/sites/swcb_demo/commerce/settings/providers'],
+    ['PUT', '/internal/mcp/v1/sites/swcb_demo/commerce/settings/providers']
+  ]);
+  assert.equal(requests[0].headers['x-slimweb-permission'], 'payments_shipping');
+  assert.equal(requests[0].headers['idempotency-key'], undefined);
+  assert.equal(requests[1].headers['idempotency-key'], 'idempotency-commerce-001');
+  assert.equal(requests[1].body.site_id, undefined);
+});
+
 test('backend client maps Webless error envelopes to stable errors', async () => {
   const cases = [
     [403, 'FORBIDDEN'],

@@ -51,7 +51,9 @@ export const SLIMWEB_BACKEND_METHODS = Object.freeze([
   'listExternalAssets',
   'deleteExternalAsset',
   'updateContentSeo',
-  'importChatGptAttachment'
+  'importChatGptAttachment',
+  'getPaymentLogisticsSettings',
+  'updatePaymentLogisticsSettings'
 ]);
 
 export function assertSlimWebBackend(backend) {

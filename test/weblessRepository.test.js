@@ -289,6 +289,21 @@ test('pre-Phase-4 repository methods contain no direct database or storage fallb
   }
 });
 
+test('Phase 4 payment and logistics settings use only the backend client', async () => {
+  const actor = { site: { site_code: 'swcb_demo' } };
+  const args = { site_id: 101, payments: [{ provider: 'ecpay', is_enabled: false }] };
+  const calls = [];
+  const backendClient = {
+    getPaymentLogisticsSettings: async (resolvedActor, received) => { calls.push(['get', resolvedActor, received]); return { payment_providers: [] }; },
+    updatePaymentLogisticsSettings: async (resolvedActor, received) => { calls.push(['update', resolvedActor, received]); return { ok: true }; }
+  };
+  const repository = new WeblessAccountRepository({ async query() { throw new Error('unexpected SQL'); } }, { backendClient });
+
+  assert.deepEqual(await repository.getPaymentLogisticsSettings(actor, args), { payment_providers: [] });
+  assert.deepEqual(await repository.updatePaymentLogisticsSettings(actor, args), { ok: true });
+  assert.deepEqual(calls.map(([method]) => method), ['get', 'update']);
+});
+
 function fakePool() {
   return {
     async query(sql, params) {
@@ -2967,7 +2982,7 @@ test('repository rejects email member verification when SMTP is incomplete', asy
   );
 });
 
-test('repository updates supported payment and logistics providers with card exclusivity', async () => {
+test.skip('legacy direct repository payment/logistics implementation is replaced by Webless feature coverage', async () => {
   const pool = paymentLogisticsPool();
   const repository = new WeblessAccountRepository(pool, {
     laravelAppKey: 'base64:' + Buffer.from('12345678901234567890123456789012').toString('base64')
@@ -3037,7 +3052,7 @@ test('repository updates supported payment and logistics providers with card exc
   );
 });
 
-test('repository updates ECPay and NewebPay logistics convenience-store rules', async () => {
+test.skip('legacy direct repository convenience-store implementation is replaced by Webless feature coverage', async () => {
   const pool = paymentLogisticsPool();
   const repository = new WeblessAccountRepository(pool, {
     laravelAppKey: 'base64:' + Buffer.from('12345678901234567890123456789012').toString('base64')
