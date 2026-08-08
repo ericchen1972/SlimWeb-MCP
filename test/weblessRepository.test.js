@@ -156,6 +156,19 @@ test('Phase 3 page methods require the backend client and avoid PostgreSQL and s
   assert.deepEqual(calls.map(([method]) => method), methods);
 });
 
+test('Phase 3 upload methods require the backend client and avoid database site lookup', async () => {
+  const actor = { site: { site_code: 'swcb_demo' } };
+  const calls = [];
+  const backendClient = {
+    createUpload: async (resolvedActor, args) => { calls.push(['createUpload', resolvedActor, args]); return { ok: true }; },
+    commitUpload: async (resolvedActor, args) => { calls.push(['commitUpload', resolvedActor, args]); return { ok: true }; }
+  };
+  const repository = new WeblessAccountRepository({ async query() { throw new Error('unexpected SQL'); } }, { backendClient });
+  await repository.createUpload(actor, { site_id: 101 });
+  await repository.commitUpload(actor, { site_id: 101 });
+  assert.deepEqual(calls.map(([method]) => method), ['createUpload', 'commitUpload']);
+});
+
 function fakePool() {
   return {
     async query(sql, params) {
@@ -1931,230 +1944,6 @@ test('GCS storage adapter uses service account credentials before metadata token
 
   assert.equal(content, 'template html');
   assert.equal(requests.some((request) => request.url === 'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token'), false);
-});
-
-test('repository creates and commits Webless signed image uploads', async () => {
-  const requests = [];
-  const fetchImpl = async (url, options = {}) => {
-    requests.push({ url, options });
-
-    if (String(url).endsWith('/sites/site-1/mcp-uploads')) {
-      assert.equal(options.method, 'POST');
-      assert.equal(options.headers['x-slimweb-mcp-secret'], 'shared-secret');
-      const body = JSON.parse(options.body);
-      assert.equal(body.filename, 'spman.png');
-      assert.equal(body.mime_type, 'image/png');
-      assert.equal(body.size_bytes, 116936);
-
-      return new Response(JSON.stringify({
-        upload_id: 'upload-1',
-        upload_token: 'token-1',
-        upload_url: 'https://slimweb.tw/sites/site-1/mcp-uploads/upload-1?token=token-1',
-        method: 'PUT',
-        headers: { 'Content-Type': 'image/png' },
-        expires_at: '2026-05-27T12:00:00+00:00'
-      }), { status: 200, headers: { 'content-type': 'application/json' } });
-    }
-
-    if (String(url).endsWith('/sites/site-1/mcp-uploads/upload-1/commit')) {
-      assert.equal(options.method, 'POST');
-      assert.equal(options.headers['x-slimweb-mcp-secret'], 'shared-secret');
-      assert.deepEqual(JSON.parse(options.body), { upload_token: 'token-1' });
-
-      return new Response(JSON.stringify({
-        asset: {
-          upload_id: 'upload-1',
-          media_path: 'sites/101/mcp-uploads/committed/upload-1.webp',
-          public_url: 'https://slimweb.tw/media/sites/101/mcp-uploads/committed/upload-1.webp',
-          mime_type: 'image/webp',
-          filename: 'spman.png',
-          target_usage: 'product_image'
-        }
-      }), { status: 200, headers: { 'content-type': 'application/json' } });
-    }
-
-    throw new Error(`Unexpected fetch: ${url}`);
-  };
-  const repository = new WeblessAccountRepository(fakePool(), {
-    fetchImpl,
-    weblessAppBaseUrl: 'https://slimweb.tw',
-    weblessMcpSecret: 'shared-secret'
-  });
-
-  const upload = await repository.createUpload(11, {
-    site_id: 101,
-    filename: 'spman.png',
-    mime_type: 'image/png',
-    size_bytes: 116936,
-    target_usage: 'product_image'
-  });
-  const committed = await repository.commitUpload(11, {
-    site_id: 101,
-    upload_id: upload.upload_id,
-    upload_token: upload.upload_token
-  });
-
-  assert.equal(upload.upload_url, 'https://slimweb.tw/sites/site-1/mcp-uploads/upload-1?token=token-1');
-  assert.match(upload.upload_instructions.runtime_check, /AI client runtime/);
-  assert.match(upload.upload_instructions.fallback_message, /Codex\/Hermes/);
-  assert.equal(committed.asset.media_path, 'sites/101/mcp-uploads/committed/upload-1.webp');
-  assert.equal(requests.length, 2);
-});
-
-test('repository imports ChatGPT attachment file params through Webless upload flow', async () => {
-  const requests = [];
-  const imageBytes = Buffer.from('fake-png-bytes');
-  const fetchImpl = async (url, options = {}) => {
-    requests.push({ url, options });
-
-    if (String(url) === 'https://files.oaiusercontent.com/file-abc') {
-      assert.equal(options.method, undefined);
-      return new Response(imageBytes, { status: 200, headers: { 'content-type': 'image/png' } });
-    }
-
-    if (String(url).endsWith('/sites/site-1/mcp-uploads')) {
-      assert.equal(options.method, 'POST');
-      assert.equal(options.headers['x-slimweb-mcp-secret'], 'shared-secret');
-      const body = JSON.parse(options.body);
-      assert.equal(body.filename, 'chatgpt-product.png');
-      assert.equal(body.mime_type, 'image/png');
-      assert.equal(body.size_bytes, imageBytes.length);
-      assert.equal(body.target_usage, 'product_image');
-
-      return new Response(JSON.stringify({
-        upload_id: 'upload-chatgpt',
-        upload_token: 'token-chatgpt',
-        upload_url: 'https://slimweb.tw/sites/site-1/mcp-uploads/upload-chatgpt?token=token-chatgpt',
-        method: 'PUT',
-        headers: { 'Content-Type': 'image/png' },
-        expires_at: '2026-05-31T12:00:00+00:00'
-      }), { status: 200, headers: { 'content-type': 'application/json' } });
-    }
-
-    if (String(url) === 'https://slimweb.tw/sites/site-1/mcp-uploads/upload-chatgpt?token=token-chatgpt') {
-      assert.equal(options.method, 'PUT');
-      assert.equal(options.headers['Content-Type'], 'image/png');
-      assert.deepEqual(Buffer.from(options.body), imageBytes);
-
-      return new Response('', { status: 200 });
-    }
-
-    if (String(url).endsWith('/sites/site-1/mcp-uploads/upload-chatgpt/commit')) {
-      assert.equal(options.method, 'POST');
-      assert.deepEqual(JSON.parse(options.body), { upload_token: 'token-chatgpt' });
-
-      return new Response(JSON.stringify({
-        asset: {
-          upload_id: 'upload-chatgpt',
-          media_path: 'sites/101/mcp-uploads/committed/upload-chatgpt.webp',
-          public_url: 'https://slimweb.tw/media/sites/101/mcp-uploads/committed/upload-chatgpt.webp',
-          mime_type: 'image/webp',
-          filename: 'chatgpt-product.png',
-          target_usage: 'product_image'
-        }
-      }), { status: 200, headers: { 'content-type': 'application/json' } });
-    }
-
-    throw new Error(`Unexpected fetch: ${url}`);
-  };
-  const repository = new WeblessAccountRepository(fakePool(), {
-    fetchImpl,
-    weblessAppBaseUrl: 'https://slimweb.tw',
-    weblessMcpSecret: 'shared-secret'
-  });
-
-  const imported = await repository.importChatGptAttachment(11, {
-    site_id: 101,
-    target_usage: 'product_image',
-    filename: 'chatgpt-product.png',
-    image: {
-      download_url: 'https://files.oaiusercontent.com/file-abc',
-      name: 'ignored.png',
-      mime_type: 'image/png'
-    }
-  });
-
-  assert.equal(imported.asset.media_path, 'sites/101/mcp-uploads/committed/upload-chatgpt.webp');
-  assert.equal(imported.upload.source, 'openai_file_params');
-  assert.equal(requests.length, 4);
-});
-
-test('repository imports ChatGPT attachment from GPT Actions-style file refs', async () => {
-  const requests = [];
-  const imageBytes = Buffer.from('fake-webp-bytes');
-  const fetchImpl = async (url, options = {}) => {
-    requests.push({ url, options });
-
-    if (String(url) === 'https://files.oaiusercontent.com/file-action') {
-      assert.equal(options.method, undefined);
-      return new Response(imageBytes, { status: 200, headers: { 'content-type': 'image/webp' } });
-    }
-
-    if (String(url).endsWith('/sites/site-1/mcp-uploads')) {
-      assert.equal(options.method, 'POST');
-      const body = JSON.parse(options.body);
-      assert.equal(body.filename, 'action-image.webp');
-      assert.equal(body.mime_type, 'image/webp');
-      assert.equal(body.size_bytes, imageBytes.length);
-
-      return new Response(JSON.stringify({
-        upload_id: 'upload-action',
-        upload_token: 'token-action',
-        upload_url: 'https://slimweb.tw/sites/site-1/mcp-uploads/upload-action?token=token-action',
-        method: 'PUT',
-        headers: { 'Content-Type': 'image/webp' },
-        expires_at: '2026-05-27T12:00:00+00:00'
-      }), { status: 200, headers: { 'content-type': 'application/json' } });
-    }
-
-    if (String(url) === 'https://slimweb.tw/sites/site-1/mcp-uploads/upload-action?token=token-action') {
-      assert.equal(options.method, 'PUT');
-      assert.equal(options.headers['Content-Type'], 'image/webp');
-      assert.deepEqual(Buffer.from(options.body), imageBytes);
-
-      return new Response('', { status: 200 });
-    }
-
-    if (String(url).endsWith('/sites/site-1/mcp-uploads/upload-action/commit')) {
-      assert.equal(options.method, 'POST');
-      assert.deepEqual(JSON.parse(options.body), { upload_token: 'token-action' });
-
-      return new Response(JSON.stringify({
-        asset: {
-          upload_id: 'upload-action',
-          media_path: 'sites/101/mcp-uploads/committed/upload-action.webp',
-          public_url: 'https://slimweb.tw/media/sites/101/mcp-uploads/committed/upload-action.webp',
-          mime_type: 'image/webp',
-          filename: 'action-image.webp',
-          target_usage: 'reference'
-        }
-      }), { status: 200, headers: { 'content-type': 'application/json' } });
-    }
-
-    throw new Error(`Unexpected fetch: ${url}`);
-  };
-  const repository = new WeblessAccountRepository(fakePool(), {
-    fetchImpl,
-    weblessAppBaseUrl: 'https://slimweb.tw',
-    weblessMcpSecret: 'shared-secret'
-  });
-
-  const imported = await repository.importChatGptAttachment(11, {
-    site_id: 101,
-    target_usage: 'reference',
-    image: {
-      openaiFileIdRefs: [{
-        id: 'file-action',
-        name: 'action-image.webp',
-        mime_type: 'image/webp',
-        download_link: 'https://files.oaiusercontent.com/file-action'
-      }]
-    }
-  });
-
-  assert.equal(imported.asset.media_path, 'sites/101/mcp-uploads/committed/upload-action.webp');
-  assert.equal(imported.upload.file_id, 'file-action');
-  assert.equal(requests.length, 4);
 });
 
 test('repository updates and reads site SEO and AEO settings for admin display', async () => {

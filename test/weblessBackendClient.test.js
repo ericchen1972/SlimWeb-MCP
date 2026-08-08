@@ -253,6 +253,23 @@ test('backend client maps Phase 3 page methods to storage-backed content endpoin
   assert.equal(requests[5].headers['idempotency-key'], undefined);
 });
 
+test('backend client maps signed upload create and commit without database site lookup', async () => {
+  const requests = [];
+  await withJsonServer(async (request, response) => {
+    requests.push({ method: request.method, url: request.url, body: await readJson(request) });
+    sendJson(response, 200, { ok: true, data: { accepted: true }, warnings: [] });
+  }, async (baseUrl) => {
+    const client = new WeblessBackendClient({ baseUrl, secret: 'service-secret' });
+    await client.createUpload(actor, { site_id: 101, filename: 'a.png', mime_type: 'image/png', size_bytes: 10, target_usage: 'page_asset' });
+    await client.commitUpload(actor, { site_id: 101, upload_id: 'upload-123', upload_token: 'token-123' });
+  });
+  assert.deepEqual(requests.map(({ method, url }) => [method, url]), [
+    ['POST', '/internal/mcp/v1/sites/swcb_demo/media/uploads'],
+    ['POST', '/internal/mcp/v1/sites/swcb_demo/media/uploads/upload-123/commit']
+  ]);
+  assert.ok(requests.every((request) => !Object.hasOwn(request.body, 'site_id')));
+});
+
 test('backend client maps Webless error envelopes to stable errors', async () => {
   const cases = [
     [403, 'FORBIDDEN'],

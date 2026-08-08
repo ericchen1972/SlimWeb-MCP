@@ -2575,63 +2575,11 @@ export class WeblessAccountRepository {
   }
 
   async createUpload(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const response = await this.fetch(`${this.weblessAppBaseUrl}/sites/${encodeURIComponent(site.slug)}/mcp-uploads`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-slimweb-mcp-secret': this.requireWeblessMcpSecret()
-      },
-      body: JSON.stringify({
-        filename: requireNonEmptyString(args.filename, 'filename'),
-        mime_type: requireImageMimeType(args.mime_type, 'mime_type'),
-        size_bytes: requirePositiveAmount(args.size_bytes, 'size_bytes'),
-        target_usage: requireUploadTargetUsage(args.target_usage)
-      })
-    });
-
-    const payload = await parseJsonResponse(response, 'Unable to create Webless upload URL');
-
-    return {
-      ok: true,
-      site,
-      ...payload,
-      upload_instructions: {
-        runtime_check: 'Before uploading, identify your own AI client runtime and confirm it can read the source image bytes and make outbound HTTPS PUT requests.',
-        supported_runtime_examples: ['Codex with local/code execution access', 'Hermes with local/code execution access'],
-        unsupported_runtime_examples: ['ChatGPT Remote MCP when the only source is a conversation attachment, /mnt/data path, or hidden attachment rewrite'],
-        fallback_message: 'If this runtime cannot access the image bytes or cannot PUT to upload_url, tell the user this client cannot upload the image through MCP and ask them to use Codex/Hermes or provide a directly downloadable image URL.',
-        step_1: 'Read the image bytes from an accessible local file, generated image file, or directly downloadable image URL.',
-        step_2: 'PUT the raw bytes to upload_url with the returned headers. Do not send base64 through MCP.',
-        step_3: 'Call slimweb_uploads_commit with upload_id and upload_token, then use asset.media_path in product/article/asset tools.'
-      }
-    };
+    return this.requireBackendClient('media_uploads').createUpload(accountId, args);
   }
 
   async commitUpload(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const uploadId = requireNonEmptyString(args.upload_id, 'upload_id');
-    const response = await this.fetch(`${this.weblessAppBaseUrl}/sites/${encodeURIComponent(site.slug)}/mcp-uploads/${encodeURIComponent(uploadId)}/commit`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-slimweb-mcp-secret': this.requireWeblessMcpSecret()
-      },
-      body: JSON.stringify({
-        upload_token: requireNonEmptyString(args.upload_token, 'upload_token')
-      })
-    });
-
-    const payload = await parseJsonResponse(response, 'Unable to commit Webless upload');
-    if (payload?.asset?.media_path) {
-      normalizeCommittedMediaPath({ media_path: payload.asset.media_path }, site.id, 'asset.media_path');
-    }
-
-    return {
-      ok: true,
-      site,
-      ...payload
-    };
+    return this.requireBackendClient('media_uploads').commitUpload(accountId, args);
   }
 
   async importChatGptAttachment(accountId, args) {

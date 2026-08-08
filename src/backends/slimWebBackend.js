@@ -29,7 +29,9 @@ export const SLIMWEB_BACKEND_METHODS = Object.freeze([
   'createPage',
   'updatePage',
   'getPagePreviewUrl',
-  'deletePage'
+  'deletePage',
+  'createUpload',
+  'commitUpload'
 ]);
 
 export function assertSlimWebBackend(backend) {

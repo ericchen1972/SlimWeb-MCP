@@ -261,6 +261,20 @@ export class WeblessBackendClient {
     return this.catalogMutation(actor, `/content/pages/${encodeURIComponent(key)}`, 'DELETE', 'slimweb_pages_delete', 'page_management_pages', {});
   }
 
+  async createUpload(actor, args) {
+    return this.request(this.sitePath(actor, '/media/uploads'), {
+      method: 'POST', identity: actor, tool: 'slimweb_uploads_create', body: this.withoutSiteSelector(args)
+    });
+  }
+
+  async commitUpload(actor, args) {
+    const uploadId = String(args?.upload_id ?? '').trim();
+    if (!/^[A-Za-z0-9._-]{8,128}$/.test(uploadId)) throw new BackendError('upload_id is invalid.', { code: 'VALIDATION_FAILED' });
+    return this.request(this.sitePath(actor, `/media/uploads/${encodeURIComponent(uploadId)}/commit`), {
+      method: 'POST', identity: actor, tool: 'slimweb_uploads_commit', body: this.withoutSiteSelector(args)
+    });
+  }
+
   async catalogMutation(actor, suffix, method, tool, permission, args) {
     return this.request(this.sitePath(actor, suffix), {
       method,
