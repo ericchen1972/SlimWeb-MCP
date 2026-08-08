@@ -31,7 +31,22 @@ export const SLIMWEB_BACKEND_METHODS = Object.freeze([
   'getPagePreviewUrl',
   'deletePage',
   'createUpload',
-  'commitUpload'
+  'commitUpload',
+  'listThemes',
+  'getSiteThemeMode',
+  'getDesignContext',
+  'updateSiteThemeMode',
+  'createThemeFromDefault',
+  'activateTheme',
+  'deleteTheme',
+  'getThemeShellContext',
+  'updateThemeRootElements',
+  'getThemeStyleProfile',
+  'upsertThemeStyleProfile',
+  'appendThemeStyleProfileRequest',
+  'getMediaLibraryStats',
+  'deleteUnusedMedia',
+  'registerAsset'
 ]);
 
 export function assertSlimWebBackend(backend) {

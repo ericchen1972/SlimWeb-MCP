@@ -572,430 +572,52 @@ export class WeblessAccountRepository {
   }
 
   async listThemesForAccountSite(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const themes = (await this.listThemesForSite(site.id)).filter((theme) => !theme.is_default);
-
-    return {
-      site,
-      site_theme_mode: site.theme_mode,
-      themes
-    };
+    return this.requireBackendClient('page_management_templates').listThemes(accountId, args);
   }
 
   async getSiteThemeMode(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-
-    return {
-      site,
-      theme_mode: site.theme_mode,
-      scope: 'site',
-      applies_to: ['Default', 'custom_style_schemes']
-    };
+    return this.requireBackendClient('page_management_templates').getSiteThemeMode(accountId, args);
   }
 
   async getDesignContext(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const theme = await this.resolveThemeForSite(site.id);
-    const profile = await this.findThemeStyleProfile(theme.id);
-
-    return {
-      site,
-      theme,
-      design_summary: profile?.summary?.trim() || '尚未設定設計摘要',
-      color_mode: site.theme_mode,
-      color_mode_label: site.theme_mode === 'dark' ? '黑暗' : '明亮',
-      framework: 'Tailwind'
-    };
+    return this.requireBackendClient('page_management_templates').getDesignContext(accountId, args);
   }
 
   async updateSiteThemeMode(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const themeMode = normalizeSiteThemeMode(args.theme_mode);
-
-    const result = await this.pool.query(
-      `
-        update sites
-        set theme_mode = $2, updated_at = now()
-        where id = $1
-        returning id, slug, name, domain, callback_code, site_status, theme_mode
-      `,
-      [site.id, themeMode]
-    );
-
-    const updatedSite = formatSite(result.rows[0], this.clientMcpBaseUrl);
-
-    return {
-      ok: true,
-      site: updatedSite,
-      theme_mode: updatedSite.theme_mode,
-      scope: 'site',
-      note: 'Style schemes inherit this site-level color mode. Do not store light/dark on site_pages.'
-    };
+    return this.requireBackendClient('page_management_templates').updateSiteThemeMode(accountId, args);
   }
 
   async createThemeFromDefault(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const name = requireThemeName(args.name);
-
-    await this.pool.query('BEGIN');
-
-    try {
-      const sortOrder = await this.nextThemeSortOrder(site.id);
-      const result = await this.pool.query(
-        `
-          insert into site_pages (
-            site_id,
-            name,
-            is_default,
-            is_active,
-            theme_mode,
-            navbar_source_type,
-            mega_menu_source_type,
-            footer_source_type,
-            support_source_type,
-            body_template_code,
-            sort_order
-          )
-          values ($1, $2, false, false, $3, 'default', 'default', 'default', 'default', null, $4)
-          returning id, site_id, name, is_default, is_active, theme_mode
-        `,
-        [site.id, name, 'light', sortOrder]
-      );
-      const theme = formatTheme(result.rows[0]);
-
-      await this.copyDefaultTemplateToTheme(site.id, theme.id);
-      await this.pool.query('COMMIT');
-
-      return {
-        site,
-        theme,
-        copied_from_default: true,
-        copied_scope: 'theme_shell_only',
-        content_fallback: 'site_level_homepage',
-        inherits_site_theme_mode: true,
-        site_theme_mode: site.theme_mode,
-        source_theme: 'Default',
-        preview_url: this.previewUrlFor(site, 'profile', theme.id)
-      };
-    } catch (error) {
-      await this.pool.query('ROLLBACK');
-      throw error;
-    }
+    return this.requireBackendClient('page_management_templates').createThemeFromDefault(accountId, args);
   }
 
   async deleteTheme(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const theme = await this.resolveThemeForSite(site.id, requireInteger(args.theme_id, 'theme_id'));
-
-    if (theme.is_default) {
-      throw codedError('VALIDATION_FAILED', 'Default theme cannot be deleted.');
-    }
-
-    await this.pool.query('BEGIN');
-
-    try {
-      await this.pool.query('delete from site_theme_style_profiles where site_page_id = $1', [theme.id]);
-      await this.pool.query('delete from site_pages where site_id = $1 and id = $2', [site.id, theme.id]);
-
-      if (theme.is_active) {
-        await this.pool.query(
-          `
-            update site_pages
-            set is_active = true, updated_at = now()
-            where site_id = $1 and is_default = true
-          `,
-          [site.id]
-        );
-      }
-
-      await this.pool.query('COMMIT');
-    } catch (error) {
-      await this.pool.query('ROLLBACK');
-      throw error;
-    }
-
-    await this.storage.deleteDirectory(`sites/${site.id}/templates/schemes/${theme.id}`);
-
-    return {
-      ok: true,
-      site,
-      deleted_theme_id: theme.id,
-      themes: await this.listThemesForSite(site.id)
-    };
+    return this.requireBackendClient('page_management_templates').deleteTheme(accountId, args);
   }
 
   async activateTheme(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const theme = await this.resolveThemeForSite(site.id, args.theme_id);
-
-    await this.pool.query('BEGIN');
-
-    try {
-      await this.pool.query(
-        `
-          update site_pages
-          set is_active = false, updated_at = now()
-          where site_id = $1 and is_active = true
-        `,
-        [site.id]
-      );
-
-      const result = await this.pool.query(
-        `
-          update site_pages
-          set is_active = true, updated_at = now()
-          where site_id = $1 and id = $2
-          returning id, site_id, name, is_default, is_active, theme_mode
-        `,
-        [site.id, theme.id]
-      );
-
-      await this.pool.query('COMMIT');
-
-      const activatedTheme = formatTheme(result.rows[0]);
-
-      return {
-        ok: true,
-        site,
-        theme: activatedTheme,
-        themes: await this.listThemesForSite(site.id),
-        preview_url: this.previewUrlFor(site, 'profile', activatedTheme.id)
-      };
-    } catch (error) {
-      await this.pool.query('ROLLBACK');
-      throw error;
-    }
+    return this.requireBackendClient('page_management_templates').activateTheme(accountId, args);
   }
 
   async updateThemeRootElements(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const theme = await this.resolveThemeForSite(site.id, args.theme_id);
-
     const fragments = normalizeRootFragments(args.fragments);
-    const updatedFragments = [];
-
-    for (const [fragment, html] of Object.entries(fragments)) {
-      await this.storage.write(rootElementStoragePath(theme, fragment), Buffer.from(html.trim() + '\n', 'utf8'), 'text/x-php; charset=utf-8');
-      updatedFragments.push(fragment);
-    }
-
-    if (typeof args.css === 'string' && args.css.trim() !== '') {
-      await this.storage.write(`${themeDirectory(theme)}/assets/root-elements/css/00-mcp-theme.css`, Buffer.from(args.css.trim() + '\n', 'utf8'), 'text/css; charset=utf-8');
-    }
-
-    return {
-      ok: true,
-      site,
-      theme,
-      updated_fragments: updatedFragments,
-      updated_css: typeof args.css === 'string' && args.css.trim() !== '',
-      preview_url: this.previewUrlFor(site, 'profile', theme.id)
-    };
+    return this.requireBackendClient('page_management_templates').updateThemeRootElements(accountId, { ...args, fragments });
   }
 
   async getThemeShellContext(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const theme = await this.resolveThemeForSite(site.id, args.theme_id);
-    const [navItems, categories, siteDetails, basicSettings] = await Promise.all([
-      this.listSiteNavItems(site.id),
-      this.listSiteCategories(site.id),
-      this.getSiteDesignDetails(site.id),
-      this.findBasicSettingsForSite(site.id)
-    ]);
-    const currentRootCss = await this.getThemeManagedRootCss(theme);
-
-    const contactItems = contactItemsFromSiteDetails(siteDetails);
-    const websiteType = basicSettings.website_type === 'brand' ? 'brand' : 'ecommerce';
-
-    return {
-      reference_only: true,
-      usage_rule: 'Use this JSON to understand real storefront data shape while designing. Do not hard-code these records into page or theme content.',
-      site,
-      theme,
-      theme_scope: {
-        root_elements: ['navbar', 'floating_actions', 'footer'],
-        content_fallback: theme.is_default ? null : 'default',
-        page_body_rule: 'Non-Default themes inherit Default page content unless a page-specific body is explicitly created.',
-        custom_fragment_rule: 'Each fixed root slot accepts user-defined HTML. Do not auto-bind custom markup to site contact fields or invent missing URLs.',
-        navbar_fragment_rule: 'Navbar markup must be static HTML; Blade, PHP, components, and bound attributes are forbidden. It must form a balanced tree, and the primary slot must use div, nav, or header and be structurally empty. The three required slots must be distinct and outside interactive ancestors.',
-        navbar_href_rule: 'Every anchor must use a literal href beginning with #, a relative or root path, or a validated http/https/protocol-relative URL.'
-      },
-      navbar: {
-        counts: {
-          total_items: navItems.length,
-          top_level_items: navItems.filter((item) => item.parent_id === null).length,
-          icon_items: navItems.filter((item) => item.icon_svg || item.icon_path).length
-        },
-        item_names: navItems.map((item) => item.name),
-        tree: buildTree(navItems)
-      },
-      product_categories: {
-        navigation_mode: basicSettings.category_navigation_mode,
-        runtime_states: [...CATEGORY_NAVIGATION_MODES],
-        runtime_hooks: { ...STOREFRONT_NAVIGATION_RUNTIME_HOOKS },
-        serialization_rule: 'Runtime category and ordinary navigation labels and URLs are not serialized into Theme root HTML. Theme HTML provides presentation slots only; Webless injects the live trees and hooks.',
-        counts: {
-          total_items: categories.length,
-          top_level_items: categories.filter((category) => category.parent_id === null).length,
-          image_items: categories.filter((category) => category.image_path).length,
-          icon_items: categories.filter((category) => category.icon_svg || category.icon_path).length
-        },
-        item_names: categories.map((category) => category.name),
-        tree: buildTree(categories)
-      },
-      storefront_actions: {
-        website_type: websiteType,
-        theme_slot_requirement: 'required',
-        required_theme_slots: ['primary_navigation', 'member_auth', 'cart'],
-        slot_attributes: {
-          primary_navigation: 'data-storefront-primary-navigation-slot',
-          member_auth: 'data-storefront-member-auth-slot',
-          cart: 'data-storefront-cart-slot'
-        },
-        visibility_rule: 'Every Theme navbar contains all three presentation slots. Webless runtime resolves primary navigation data and decides whether to resolve or remove commerce actions for ecommerce or brand sites.',
-        appearance_rule: 'Reference-site styling may change the appearance, spacing, order, labels, icons, badges, and responsive layout of the three Theme slots without recreating their runtime data or behavior.',
-        member_auth_behavior: 'One combined registration/login entry backed by the canonical LINE/Google modal or signed-in member menu.',
-        cart_behavior: 'Canonical cart storage, count badge, panel, validation, and checkout behavior.'
-      },
-      footer: {
-        counts: {
-          contact_items: contactItems.length,
-          social_links: contactItems.filter((item) => item.kind === 'social').length
-        },
-        contact_items: contactItems
-      },
-      root_css: {
-        current_css: currentRootCss,
-        update_tool: 'slimweb_themes_update_root_elements',
-        update_field: 'css'
-      },
-      floating_actions: {
-        default_actions: ['scroll_top', 'ai_assistant'],
-        ai_assistant_enabled: Boolean(siteDetails.use_ai_customer_service),
-        custom_content_rule: 'Custom floating_actions markup is rendered as supplied and may contain any user-defined controls or modal markup.'
-      }
-    };
+    return this.requireBackendClient('page_management_templates').getThemeShellContext(accountId, args);
   }
 
   async getThemeStyleProfile(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const theme = await this.resolveThemeForSite(site.id, args.theme_id);
-    const profile = await this.findThemeStyleProfile(theme.id);
-
-    return {
-      site,
-      theme,
-      profile
-    };
+    return this.requireBackendClient('page_management_templates').getThemeStyleProfile(accountId, args);
   }
 
   async upsertThemeStyleProfile(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const actorAccountId = requireActorAccountId(site.account_id ?? accountId);
-    const theme = await this.resolveThemeForSite(site.id, args.theme_id);
-    const userRequests = normalizeUserRequests(args.user_requests ?? (args.user_request ? [{ request: args.user_request }] : []));
-    const visualKeywords = normalizeStringArray(args.visual_keywords);
-
-    const result = await this.pool.query(
-      `
-        insert into site_theme_style_profiles (
-          site_id,
-          site_page_id,
-          summary,
-          target_audience,
-          visual_keywords,
-          color_notes,
-          typography_notes,
-          layout_notes,
-          illustration_notes,
-          avoid_notes,
-          user_requests,
-          ai_design_notes,
-          created_by_account_id,
-          updated_by_account_id
-        )
-        values ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10, $11::jsonb, $12, $13, $13)
-        on conflict (site_page_id)
-        do update set
-          summary = coalesce(excluded.summary, site_theme_style_profiles.summary),
-          target_audience = coalesce(excluded.target_audience, site_theme_style_profiles.target_audience),
-          visual_keywords = coalesce(excluded.visual_keywords, site_theme_style_profiles.visual_keywords),
-          color_notes = coalesce(excluded.color_notes, site_theme_style_profiles.color_notes),
-          typography_notes = coalesce(excluded.typography_notes, site_theme_style_profiles.typography_notes),
-          layout_notes = coalesce(excluded.layout_notes, site_theme_style_profiles.layout_notes),
-          illustration_notes = coalesce(excluded.illustration_notes, site_theme_style_profiles.illustration_notes),
-          avoid_notes = coalesce(excluded.avoid_notes, site_theme_style_profiles.avoid_notes),
-          user_requests = coalesce(excluded.user_requests, site_theme_style_profiles.user_requests),
-          ai_design_notes = coalesce(excluded.ai_design_notes, site_theme_style_profiles.ai_design_notes),
-          updated_by_account_id = excluded.updated_by_account_id,
-          version = site_theme_style_profiles.version + 1,
-          updated_at = now()
-        returning *
-      `,
-      [
-        site.id,
-        theme.id,
-        nullableString(args.summary),
-        nullableString(args.target_audience),
-        JSON.stringify(visualKeywords),
-        nullableString(args.color_notes),
-        nullableString(args.typography_notes),
-        nullableString(args.layout_notes),
-        nullableString(args.illustration_notes),
-        nullableString(args.avoid_notes),
-        JSON.stringify(userRequests),
-        nullableString(args.ai_design_notes),
-        actorAccountId
-      ]
-    );
-
-    return {
-      ok: true,
-      site,
-      theme,
-      profile: formatStyleProfile(result.rows[0])
-    };
+    return this.requireBackendClient('page_management_templates').upsertThemeStyleProfile(accountId, args);
   }
 
   async appendThemeStyleProfileRequest(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const actorAccountId = requireActorAccountId(site.account_id ?? accountId);
-    const theme = await this.resolveThemeForSite(site.id, args.theme_id);
-    const entry = normalizeUserRequestEntry({
-      request: args.request,
-      ai_notes: args.ai_notes,
-      recorded_at: new Date().toISOString()
-    });
-    const existing = await this.findThemeStyleProfile(theme.id);
-
-    if (!existing) {
-      return this.upsertThemeStyleProfile(accountId, {
-        site_id: site.id,
-        theme_id: theme.id,
-        user_requests: [entry]
-      });
-    }
-
-    const nextRequests = [...normalizeUserRequests(existing.user_requests), entry];
-    const result = await this.pool.query(
-      `
-        update site_theme_style_profiles
-        set user_requests = $1::jsonb,
-            updated_by_account_id = $2,
-            version = version + 1,
-            updated_at = now()
-        where site_page_id = $3
-        returning *
-      `,
-      [JSON.stringify(nextRequests), actorAccountId, theme.id]
-    );
-
-    return {
-      ok: true,
-      site,
-      theme,
-      profile: formatStyleProfile(result.rows[0])
-    };
+    return this.requireBackendClient('page_management_templates').appendThemeStyleProfileRequest(accountId, args);
   }
 
   async getSeoSettings(accountId, args) {
@@ -2250,15 +1872,11 @@ export class WeblessAccountRepository {
   }
 
   async getMediaLibraryStats(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const payload = await this.requestWeblessInternal(site, 'mcp-media/stats', 'GET', 'Unable to read media library statistics');
-    return { site, ...payload };
+    return this.requireBackendClient('media_library').getMediaLibraryStats(accountId, args);
   }
 
   async deleteUnusedMedia(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const payload = await this.requestWeblessInternal(site, 'mcp-media/unused', 'DELETE', 'Unable to delete unused media');
-    return { site, ...payload };
+    return this.requireBackendClient('media_library').deleteUnusedMedia(accountId, args);
   }
 
   async postWeblessInternal(site, pathSuffix, body, errorMessage) {
@@ -4310,26 +3928,7 @@ export class WeblessAccountRepository {
   }
 
   async uploadAsset(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const theme = await this.resolveThemeForSite(site.id, args.theme_id);
-    const storagePath = await this.resolveCommittedImageSource(accountId, site, args.source, 'source', args.target_usage ?? 'reference');
-
-    return {
-      ok: true,
-      site,
-      theme,
-      target_usage: args.target_usage,
-      asset_scope: args.asset_scope,
-      target_id: args.target_id ?? null,
-      alt_text: args.alt_text ?? '',
-      mime_type: contentTypeForPath(storagePath),
-      storage_path: storagePath,
-      public_url: mediaUrlFor(this.publicSiteBaseUrl, storagePath),
-      asset: {
-        media_path: storagePath,
-        public_url: mediaUrlFor(this.publicSiteBaseUrl, storagePath)
-      }
-    };
+    return this.requireBackendClient('media_uploads').registerAsset(accountId, args);
   }
 
   async resolveCommittedImageSource(accountId, site, source, fieldName, targetUsage = 'reference') {

@@ -270,6 +270,65 @@ test('backend client maps signed upload create and commit without database site 
   assert.ok(requests.every((request) => !Object.hasOwn(request.body, 'site_id')));
 });
 
+test('backend client maps remaining Phase 3 theme methods to versioned content endpoints', async () => {
+  const requests = [];
+  await withJsonServer(async (request, response) => {
+    requests.push({ method: request.method, url: request.url, headers: request.headers, body: await readJson(request) });
+    sendJson(response, 200, { ok: true, data: { accepted: true }, warnings: [] });
+  }, async (baseUrl) => {
+    const client = new WeblessBackendClient({ baseUrl, secret: 'service-secret', idempotencyKeyFactory: () => 'idempotency-theme-001' });
+    await client.listThemes(actor, { site_id: 101 });
+    await client.getSiteThemeMode(actor, { site_id: 101 });
+    await client.getDesignContext(actor, { site_id: 101 });
+    await client.updateSiteThemeMode(actor, { site_id: 101, theme_mode: 'dark' });
+    await client.createThemeFromDefault(actor, { site_id: 101, name: 'Cute' });
+    await client.activateTheme(actor, { site_id: 101, theme_id: 22 });
+    await client.deleteTheme(actor, { site_id: 101, theme_id: 22 });
+    await client.getThemeShellContext(actor, { site_id: 101, theme_id: 22 });
+    await client.updateThemeRootElements(actor, { site_id: 101, theme_id: 22, fragments: { footer: '<footer />' } });
+    await client.getThemeStyleProfile(actor, { site_id: 101, theme_id: 22 });
+    await client.upsertThemeStyleProfile(actor, { site_id: 101, theme_id: 22, summary: 'Cute' });
+    await client.appendThemeStyleProfileRequest(actor, { site_id: 101, theme_id: 22, request: 'More pink' });
+  });
+  assert.deepEqual(requests.map(({ method, url }) => [method, url]), [
+    ['GET', '/internal/mcp/v1/sites/swcb_demo/themes'],
+    ['GET', '/internal/mcp/v1/sites/swcb_demo/theme-mode'],
+    ['GET', '/internal/mcp/v1/sites/swcb_demo/design-context'],
+    ['PATCH', '/internal/mcp/v1/sites/swcb_demo/theme-mode'],
+    ['POST', '/internal/mcp/v1/sites/swcb_demo/themes'],
+    ['POST', '/internal/mcp/v1/sites/swcb_demo/themes/22/activate'],
+    ['DELETE', '/internal/mcp/v1/sites/swcb_demo/themes/22'],
+    ['GET', '/internal/mcp/v1/sites/swcb_demo/themes/22/shell-context'],
+    ['PUT', '/internal/mcp/v1/sites/swcb_demo/themes/22/root-elements'],
+    ['GET', '/internal/mcp/v1/sites/swcb_demo/themes/22/style-profile'],
+    ['PUT', '/internal/mcp/v1/sites/swcb_demo/themes/22/style-profile'],
+    ['POST', '/internal/mcp/v1/sites/swcb_demo/themes/22/style-profile/requests']
+  ]);
+  for (const index of [3, 4, 5, 6, 8, 10, 11]) assert.equal(requests[index].headers['idempotency-key'], 'idempotency-theme-001');
+  assert.ok(requests.every((request) => !Object.hasOwn(request.body ?? {}, 'site_id') && !Object.hasOwn(request.body ?? {}, 'site_code')));
+});
+
+test('backend client maps remaining Phase 3 media methods to Webless-owned storage endpoints', async () => {
+  const requests = [];
+  await withJsonServer(async (request, response) => {
+    requests.push({ method: request.method, url: request.url, headers: request.headers, body: await readJson(request) });
+    sendJson(response, 200, { ok: true, data: { accepted: true }, warnings: [] });
+  }, async (baseUrl) => {
+    const client = new WeblessBackendClient({ baseUrl, secret: 'service-secret', idempotencyKeyFactory: () => 'idempotency-media-001' });
+    await client.getMediaLibraryStats(actor, { site_id: 101, include_unused_assets: true });
+    await client.deleteUnusedMedia(actor, { site_id: 101 });
+    await client.registerAsset(actor, { site_id: 101, source: { media_path: 'sites/101/mcp-uploads/committed/a.png' }, target_usage: 'home_page' });
+  });
+  assert.deepEqual(requests.map(({ method, url }) => [method, url]), [
+    ['GET', '/internal/mcp/v1/sites/swcb_demo/media/library/stats?include_unused_assets=true'],
+    ['DELETE', '/internal/mcp/v1/sites/swcb_demo/media/library/unused'],
+    ['POST', '/internal/mcp/v1/sites/swcb_demo/media/assets/register']
+  ]);
+  assert.equal(requests[0].headers['idempotency-key'], undefined);
+  assert.equal(requests[1].headers['idempotency-key'], 'idempotency-media-001');
+  assert.equal(requests[2].headers['idempotency-key'], 'idempotency-media-001');
+});
+
 test('backend client maps Webless error envelopes to stable errors', async () => {
   const cases = [
     [403, 'FORBIDDEN'],

@@ -169,6 +169,34 @@ test('Phase 3 upload methods require the backend client and avoid database site 
   assert.deepEqual(calls.map(([method]) => method), ['createUpload', 'commitUpload']);
 });
 
+test('Phase 3 theme methods use only the backend client', async () => {
+  const actor = { site: { site_code: 'swcb_demo' } };
+  const methods = ['listThemes', 'getSiteThemeMode', 'getDesignContext', 'updateSiteThemeMode', 'createThemeFromDefault', 'activateTheme', 'deleteTheme', 'getThemeShellContext', 'updateThemeRootElements', 'getThemeStyleProfile', 'upsertThemeStyleProfile', 'appendThemeStyleProfileRequest'];
+  const calls = [];
+  const backendClient = Object.fromEntries(methods.map((method) => [method, async (resolvedActor, args) => { calls.push([method, resolvedActor, args]); return { method }; }]));
+  const repository = new WeblessAccountRepository({ async query() { throw new Error('unexpected SQL'); } }, { backendClient, storage: new Proxy({}, { get() { return async () => { throw new Error('unexpected storage'); }; } }) });
+  const args = { site_id: 101, theme_id: 22 };
+  const repositoryMethods = ['listThemesForAccountSite', 'getSiteThemeMode', 'getDesignContext', 'updateSiteThemeMode', 'createThemeFromDefault', 'activateTheme', 'deleteTheme', 'getThemeShellContext', 'updateThemeRootElements', 'getThemeStyleProfile', 'upsertThemeStyleProfile', 'appendThemeStyleProfileRequest'];
+  for (let index = 0; index < repositoryMethods.length; index += 1) assert.deepEqual(await repository[repositoryMethods[index]](actor, args), { method: methods[index] });
+  assert.deepEqual(calls.map(([method]) => method), methods);
+});
+
+test('Phase 3 media methods use only the backend client', async () => {
+  const actor = { site: { site_code: 'swcb_demo' } };
+  const calls = [];
+  const backendClient = {
+    getMediaLibraryStats: async (resolvedActor, args) => { calls.push(['stats', resolvedActor, args]); return { kind: 'stats' }; },
+    deleteUnusedMedia: async (resolvedActor, args) => { calls.push(['cleanup', resolvedActor, args]); return { kind: 'cleanup' }; },
+    registerAsset: async (resolvedActor, args) => { calls.push(['asset', resolvedActor, args]); return { kind: 'asset' }; }
+  };
+  const repository = new WeblessAccountRepository({ async query() { throw new Error('unexpected SQL'); } }, { backendClient, storage: new Proxy({}, { get() { return async () => { throw new Error('unexpected storage'); }; } }) });
+  const args = { site_id: 101 };
+  assert.deepEqual(await repository.getMediaLibraryStats(actor, args), { kind: 'stats' });
+  assert.deepEqual(await repository.deleteUnusedMedia(actor, args), { kind: 'cleanup' });
+  assert.deepEqual(await repository.uploadAsset(actor, args), { kind: 'asset' });
+  assert.deepEqual(calls.map(([kind]) => kind), ['stats', 'cleanup', 'asset']);
+});
+
 function fakePool() {
   return {
     async query(sql, params) {
@@ -2680,25 +2708,6 @@ test('repository returns waybill URLs for explicit or query-selected order sets'
   assert.deepEqual(result.included_order_numbers, ['SW1', 'SW2']);
 });
 
-test('repository reads media stats and deletes unused media through Webless', async () => {
-  const requests = [];
-  const fetchImpl = async (url, options = {}) => {
-    requests.push([url, options.method ?? 'GET']);
-    const payload = String(url).endsWith('/stats')
-      ? { total: { count: 3, size_bytes: 30 }, unused: { count: 2, size_bytes: 20, assets: [] } }
-      : { deleted: { count: 2, size_bytes: 20 }, skipped: { count: 0, size_bytes: 0 }, failed: { count: 0, size_bytes: 0 } };
-    return new Response(JSON.stringify(payload), { status: 200, headers: { 'content-type': 'application/json' } });
-  };
-  const repository = new WeblessAccountRepository(fakePool(), { fetchImpl, weblessAppBaseUrl: 'https://slimweb.tw', weblessMcpSecret: 'shared-secret' });
-
-  const stats = await repository.getMediaLibraryStats(11, { site_id: 101 });
-  const cleaned = await repository.deleteUnusedMedia(11, { site_id: 101 });
-
-  assert.equal(stats.unused.count, 2);
-  assert.equal(cleaned.deleted.size_bytes, 20);
-  assert.deepEqual(requests.map(([, method]) => method), ['GET', 'DELETE']);
-});
-
 test('repository updates and reads all contact settings with patch and null semantics', async () => {
   const state = {
     id: 101,
@@ -3161,385 +3170,6 @@ test('repository rejects standalone content SEO updates without workflow context
   );
 });
 
-test('repository registers committed page assets under the selected Webless site', async () => {
-  const storageRoot = await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-'));
-  const repository = new WeblessAccountRepository(fakePool(), {
-    storageRoot,
-    publicSiteBaseUrl: 'https://slimweb.tw'
-  });
-
-  const upload = await repository.uploadAsset(11, {
-    site_id: 101,
-    source: {
-      media_path: 'sites/101/mcp-uploads/committed/hero.png'
-    },
-    target_usage: 'home_page',
-    asset_scope: 'page',
-    suggested_filename: 'hero.png',
-    alt_text: 'Hero'
-  });
-
-  assert.equal(upload.ok, true);
-  assert.equal(upload.storage_path, 'sites/101/mcp-uploads/committed/hero.png');
-  assert.equal(upload.public_url, 'https://slimweb.tw/media/sites/101/mcp-uploads/committed/hero.png');
-});
-
-test('repository creates a theme by copying only default shell files', async () => {
-  const storageRoot = await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-'));
-  const pool = themeMutationPool();
-  const repository = new WeblessAccountRepository(pool, {
-    storageRoot,
-    publicSiteBaseUrl: 'https://slimweb.tw'
-  });
-
-  await repository.storage.write('sites/101/templates/default/pages/index/content.blade.php', Buffer.from('<section>Default home</section>'));
-  await repository.storage.write('sites/101/templates/default/root-elements/navbar.blade.php', Buffer.from('<nav>Default nav</nav>'));
-  await repository.storage.write('sites/101/templates/default/assets/root-elements/css/00-base.css', Buffer.from('.nav{display:flex}'));
-
-  const result = await repository.createThemeFromDefault(11, {
-    site_id: 101,
-    name: '可愛版型',
-    theme_mode: 'dark'
-  });
-
-  assert.equal(result.theme.id, 22);
-  assert.equal(result.theme.name, '可愛版型');
-  assert.equal(result.theme.theme_mode, 'light');
-  assert.equal(result.inherits_site_theme_mode, true);
-  assert.equal(result.site_theme_mode, 'dark');
-  assert.equal(result.copied_from_default, true);
-  assert.equal(result.content_fallback, 'site_level_homepage');
-  await assert.rejects(
-    readFile(path.join(storageRoot, 'sites/101/templates/schemes/22/pages/index/body.blade.php'), 'utf8'),
-    /ENOENT/
-  );
-  assert.equal(
-    await readFile(path.join(storageRoot, 'sites/101/templates/schemes/22/root-elements/navbar.blade.php'), 'utf8'),
-    '<nav>Default nav</nav>'
-  );
-  assert.equal(
-    await readFile(path.join(storageRoot, 'sites/101/templates/schemes/22/assets/root-elements/css/00-base.css'), 'utf8'),
-    '.nav{display:flex}'
-  );
-  assert.equal(pool.queries.some((query) => query.sql === 'BEGIN'), true);
-  assert.equal(pool.queries.some((query) => query.sql === 'COMMIT'), true);
-});
-
-test('repository public theme list excludes Default', async () => {
-  const repository = new WeblessAccountRepository(themeMutationPool(), {
-    publicSiteBaseUrl: 'https://slimweb.tw'
-  });
-
-  const result = await repository.listThemesForAccountSite(11, {
-    site_id: 101
-  });
-
-  assert.deepEqual(result.themes.map((theme) => theme.name), ['可愛版型']);
-  assert.equal(result.themes.some((theme) => theme.is_default), false);
-});
-
-test('repository updates site-level theme mode', async () => {
-  const pool = themeMutationPool();
-  const repository = new WeblessAccountRepository(pool, {
-    publicSiteBaseUrl: 'https://slimweb.tw'
-  });
-
-  const result = await repository.updateSiteThemeMode(11, {
-    site_id: 101,
-    theme_mode: 'dark'
-  });
-
-  assert.equal(result.ok, true);
-  assert.equal(result.theme_mode, 'dark');
-  assert.equal(result.scope, 'site');
-});
-
-test('repository activates a selected theme for a site', async () => {
-  const pool = themeMutationPool();
-  const repository = new WeblessAccountRepository(pool, {
-    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
-    publicSiteBaseUrl: 'https://slimweb.tw'
-  });
-
-  const result = await repository.activateTheme(11, {
-    site_id: 101,
-    theme_id: '22'
-  });
-
-  assert.equal(result.ok, true);
-  assert.equal(result.theme.id, 22);
-  assert.equal(result.theme.is_active, true);
-  assert.equal(result.themes.find((theme) => theme.id === 7).is_active, false);
-  assert.equal(result.themes.find((theme) => theme.id === 22).is_active, true);
-  assert.match(result.preview_url, /preview_style_scheme=22/);
-  assert.equal(pool.queries.some((query) => query.sql === 'BEGIN'), true);
-  assert.equal(pool.queries.some((query) => query.sql === 'COMMIT'), true);
-});
-
-test('repository returns theme shell context for design reference', async () => {
-  const storageRoot = await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-'));
-  const repository = new WeblessAccountRepository(designContextPool({ categoryNavigationMode: 'navbar_categories' }), {
-    storageRoot,
-    publicSiteBaseUrl: 'https://slimweb.tw'
-  });
-  await repository.storage.write(
-    'sites/101/templates/schemes/22/assets/root-elements/css/00-mcp-theme.css',
-    Buffer.from('.navbar{background:pink}\n.footer{background:mistyrose}\n', 'utf8')
-  );
-
-  const context = await repository.getThemeShellContext(11, {
-    site_id: 101,
-    theme_id: 22
-  });
-
-  assert.equal(context.reference_only, true);
-  assert.equal(context.theme.id, 22);
-  assert.equal(context.navbar.counts.total_items, 2);
-  assert.deepEqual(context.navbar.item_names, ['商品分類', '女生包包']);
-  assert.equal(context.product_categories.counts.total_items, 1);
-  assert.equal(context.footer.counts.contact_items, 8);
-  assert.deepEqual(context.theme_scope.root_elements, ['navbar', 'floating_actions', 'footer']);
-  assert.match(context.theme_scope.navbar_fragment_rule, /static HTML.*Blade.*PHP.*components.*bound attributes/i);
-  assert.match(context.theme_scope.navbar_fragment_rule, /balanced tree.*div.*nav.*header.*structurally empty/i);
-  assert.match(context.theme_scope.navbar_href_rule, /literal href.*#.*relative.*https?/i);
-  assert.equal(context.storefront_actions.website_type, 'ecommerce');
-  assert.equal(context.storefront_actions.theme_slot_requirement, 'required');
-  assert.deepEqual(context.storefront_actions.required_theme_slots, ['primary_navigation', 'member_auth', 'cart']);
-  assert.equal(context.storefront_actions.slot_attributes.primary_navigation, 'data-storefront-primary-navigation-slot');
-  assert.equal(context.storefront_actions.slot_attributes.member_auth, 'data-storefront-member-auth-slot');
-  assert.equal(context.storefront_actions.slot_attributes.cart, 'data-storefront-cart-slot');
-  assert.equal(context.product_categories.navigation_mode, 'navbar_categories');
-  assert.deepEqual(context.product_categories.runtime_states, ['category_menu', 'navbar_categories']);
-  assert.deepEqual(context.product_categories.runtime_hooks, {
-    runtime_container: 'data-storefront-primary-navigation-runtime',
-    primary_navigation: 'data-storefront-primary-navigation',
-    category_menu: 'data-storefront-category-menu',
-    navbar_categories: 'data-storefront-navbar-categories',
-    ordinary_navigation: 'data-storefront-nav-items',
-    node: 'data-storefront-nav-node',
-    trigger: 'data-storefront-nav-trigger',
-    panel: 'data-storefront-nav-panel',
-    children: 'data-storefront-nav-children',
-    depth: 'data-storefront-nav-depth'
-  });
-  assert.match(context.product_categories.serialization_rule, /labels.*URLs.*not.*serialized.*Theme root HTML/i);
-  assert.match(context.storefront_actions.visibility_rule, /Webless runtime/i);
-  assert.equal(context.storefront_actions.required_navbar_actions, undefined);
-  assert.match(context.storefront_actions.appearance_rule, /appearance/i);
-  assert.deepEqual(context.floating_actions.default_actions, ['scroll_top', 'ai_assistant']);
-  assert.equal(context.floating_actions.ai_assistant_enabled, true);
-  assert.equal(context.online_support, undefined);
-  assert.equal(context.root_css.current_css, '.navbar{background:pink}\n.footer{background:mistyrose}\n');
-  assert.equal(context.root_css.update_field, 'css');
-});
-
-test('repository requires the same navbar presentation slots for brand sites', async () => {
-  const repository = new WeblessAccountRepository(designContextPool({ websiteType: 'brand' }), {
-    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
-    publicSiteBaseUrl: 'https://slimweb.tw'
-  });
-
-  const context = await repository.getThemeShellContext(11, {
-    site_id: 101,
-    theme_id: 22
-  });
-
-  assert.equal(context.storefront_actions.website_type, 'brand');
-  assert.equal(context.storefront_actions.theme_slot_requirement, 'required');
-  assert.deepEqual(context.storefront_actions.required_theme_slots, ['primary_navigation', 'member_auth', 'cart']);
-  assert.equal(context.storefront_actions.slot_attributes.primary_navigation, 'data-storefront-primary-navigation-slot');
-  assert.equal(context.storefront_actions.slot_attributes.member_auth, 'data-storefront-member-auth-slot');
-  assert.equal(context.storefront_actions.slot_attributes.cart, 'data-storefront-cart-slot');
-  assert.match(context.storefront_actions.visibility_rule, /Webless runtime/i);
-});
-
-test('repository theme shell context falls back to category menu navigation mode', async () => {
-  const repository = new WeblessAccountRepository(designContextPool(), {
-    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
-    publicSiteBaseUrl: 'https://slimweb.tw'
-  });
-
-  const context = await repository.getThemeShellContext(11, {
-    site_id: 101,
-    theme_id: 22
-  });
-
-  assert.equal(context.product_categories.navigation_mode, 'category_menu');
-  assert.deepEqual(context.product_categories.runtime_states, ['category_menu', 'navbar_categories']);
-});
-
-test('repository accepts model-shaped theme id values for theme shell context', async () => {
-  const repository = new WeblessAccountRepository(designContextPool(), {
-    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
-    publicSiteBaseUrl: 'https://slimweb.tw'
-  });
-
-  const context = await repository.getThemeShellContext(11, {
-    site_id: 101,
-    theme_id: { id: 22, name: '可愛版型' }
-  });
-
-  assert.equal(context.theme.id, 22);
-  assert.equal(context.navbar.counts.total_items, 2);
-});
-
-test('repository accepts string theme id values for theme shell context', async () => {
-  const repository = new WeblessAccountRepository(designContextPool(), {
-    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
-    publicSiteBaseUrl: 'https://slimweb.tw'
-  });
-
-  const context = await repository.getThemeShellContext(11, {
-    site_id: 101,
-    theme_id: '22'
-  });
-
-  assert.equal(context.theme.id, 22);
-  assert.equal(context.reference_only, true);
-});
-
-test('repository returns visual design context for the active theme', async () => {
-  const repository = new WeblessAccountRepository(designContextPool(), {
-    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
-    publicSiteBaseUrl: 'https://slimweb.tw'
-  });
-
-  const context = await repository.getDesignContext(11, {
-    site_id: 101
-  });
-
-  assert.equal(context.theme.id, 22);
-  assert.equal(context.design_summary, '童趣、柔和、手繪插圖');
-  assert.equal(context.color_mode, 'light');
-  assert.equal(context.framework, 'Tailwind');
-});
-
-test('repository stores and appends theme style profile', async () => {
-  const pool = styleProfilePool();
-  const repository = new WeblessAccountRepository(pool, {
-    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-'))
-  });
-
-  const upserted = await repository.upsertThemeStyleProfile(11, {
-    site_id: 101,
-    theme_id: 22,
-    summary: '童趣、柔和、手繪插圖',
-    visual_keywords: ['童趣', '手繪'],
-    color_notes: '暖色但不要整頁橘色',
-    user_request: '建立可愛版型'
-  });
-  const appended = await repository.appendThemeStyleProfileRequest(11, {
-    site_id: 101,
-    theme_id: 22,
-    request: '背景補上像手繪的插圖',
-    ai_notes: '維持 navbar/footer 資料結構'
-  });
-  const read = await repository.getThemeStyleProfile(11, {
-    site_id: 101,
-    theme_id: 22
-  });
-
-  assert.equal(upserted.profile.summary, '童趣、柔和、手繪插圖');
-  assert.equal(appended.profile.user_requests.length, 2);
-  assert.equal(read.profile.visual_keywords[0], '童趣');
-});
-
-test('repository stores theme style profile actor id from admin identity object', async () => {
-  const pool = styleProfilePool();
-  const repository = new WeblessAccountRepository(pool, {
-    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-'))
-  });
-  const actor = {
-    account_id: 11,
-    email: 'admin@example.test',
-    site_id: 101,
-    permissions: ['backend_ai_assistant', 'page_management_templates']
-  };
-
-  const upserted = await repository.upsertThemeStyleProfile(actor, {
-    site_id: 101,
-    theme_id: 22,
-    summary: '暗色版型',
-    visual_keywords: ['dark mode']
-  });
-  const appended = await repository.appendThemeStyleProfileRequest(actor, {
-    site_id: 101,
-    theme_id: 22,
-    request: '補上黑底白字規格'
-  });
-
-  assert.equal(pool.state.profile.created_by_account_id, 2);
-  assert.equal(pool.state.profile.updated_by_account_id, 2);
-  assert.equal(appended.profile.user_requests.length, 1);
-});
-
-test('repository updates root element fragments and css for a custom theme', async () => {
-  const storageRoot = await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-'));
-  const repository = new WeblessAccountRepository(themeMutationPool(), {
-    storageRoot,
-    publicSiteBaseUrl: 'https://slimweb.tw'
-  });
-
-  const result = await repository.updateThemeRootElements(11, {
-    site_id: 101,
-    theme_id: 22,
-    fragments: {
-      navbar: '<nav class="cute-nav"><div data-storefront-primary-navigation-slot></div><div data-storefront-commerce-actions><button data-storefront-member-auth-slot>註冊／登入</button><button data-storefront-cart-slot>購物車</button></div></nav>',
-      floating_actions: '<div class="cute-actions"><button>LINE</button></div>',
-      footer: '<footer>Cute footer</footer>'
-    },
-    css: '.cute-nav{background:#fff7d6}'
-  });
-
-  assert.equal(result.ok, true);
-  assert.deepEqual(result.updated_fragments, ['navbar', 'floating_actions', 'footer']);
-  assert.equal(
-    await readFile(path.join(storageRoot, 'sites/101/templates/schemes/22/root-elements/floating-actions.blade.php'), 'utf8'),
-    '<div class="cute-actions"><button>LINE</button></div>\n'
-  );
-  assert.equal(
-    await readFile(path.join(storageRoot, 'sites/101/templates/schemes/22/root-elements/navbar.blade.php'), 'utf8'),
-    '<nav class="cute-nav"><div data-storefront-primary-navigation-slot></div><div data-storefront-commerce-actions><button data-storefront-member-auth-slot>註冊／登入</button><button data-storefront-cart-slot>購物車</button></div></nav>\n'
-  );
-  assert.equal(
-    await readFile(path.join(storageRoot, 'sites/101/templates/schemes/22/root-elements/footer.blade.php'), 'utf8'),
-    '<footer>Cute footer</footer>\n'
-  );
-  assert.equal(
-    await readFile(path.join(storageRoot, 'sites/101/templates/schemes/22/assets/root-elements/css/00-mcp-theme.css'), 'utf8'),
-    '.cute-nav{background:#fff7d6}\n'
-  );
-
-  const defaultResult = await repository.updateThemeRootElements(11, {
-    site_id: 101,
-    theme_id: 7,
-    fragments: {
-      navbar: '<nav class="default-nav"><div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>',
-      floating_actions: '<button data-scroll-top>Top</button>',
-      footer: '<footer class="default-footer">Default footer</footer>'
-    },
-    css: '.default-nav{background:#fff0f5}'
-  });
-  assert.equal(defaultResult.ok, true);
-  assert.deepEqual(defaultResult.updated_fragments, ['navbar', 'floating_actions', 'footer']);
-  assert.equal(
-    await readFile(path.join(storageRoot, 'sites/101/templates/default/root-elements/floating-actions.blade.php'), 'utf8'),
-    '<button data-scroll-top>Top</button>\n'
-  );
-  assert.equal(
-    await readFile(path.join(storageRoot, 'sites/101/templates/default/root-elements/navbar.blade.php'), 'utf8'),
-    '<nav class="default-nav"><div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>\n'
-  );
-  assert.equal(
-    await readFile(path.join(storageRoot, 'sites/101/templates/default/root-elements/footer.blade.php'), 'utf8'),
-    '<footer class="default-footer">Default footer</footer>\n'
-  );
-  assert.equal(
-    await readFile(path.join(storageRoot, 'sites/101/templates/default/assets/root-elements/css/00-mcp-theme.css'), 'utf8'),
-    '.default-nav{background:#fff0f5}\n'
-  );
-});
-
 test('repository rejects navbar fragments without exactly one primary container and clickable member and cart slots', async () => {
   const repository = new WeblessAccountRepository(themeMutationPool(), {
     storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
@@ -3641,24 +3271,6 @@ for (const [element, primarySlot] of [
   });
 }
 
-test('repository accepts structural primary navigation containers', async () => {
-  for (const element of ['div', 'nav', 'header']) {
-    const repository = new WeblessAccountRepository(themeMutationPool(), {
-      storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
-      publicSiteBaseUrl: 'https://slimweb.tw'
-    });
-    const result = await repository.updateThemeRootElements(11, {
-      site_id: 101,
-      theme_id: 22,
-      fragments: {
-        navbar: `<nav><${element} data-storefront-primary-navigation-slot></${element}><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>`
-      }
-    });
-
-    assert.deepEqual(result.updated_fragments, ['navbar']);
-  }
-});
-
 test('repository rejects malformed or unbalanced navbar trees and self-closing HTML containers', async () => {
   const navbars = [
     '<nav><div data-storefront-primary-navigation-slot></nav><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button>',
@@ -3732,22 +3344,6 @@ test('repository requires three distinct required-slot elements outside interact
   }
 });
 
-test('repository accepts a balanced static navbar tree with wrappers, comments, and SVG icons', async () => {
-  const repository = new WeblessAccountRepository(themeMutationPool(), {
-    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
-    publicSiteBaseUrl: 'https://slimweb.tw'
-  });
-  const result = await repository.updateThemeRootElements(11, {
-    site_id: 101,
-    theme_id: 22,
-    fragments: {
-      navbar: '<nav><div class="navigation-wrap"><header data-storefront-primary-navigation-slot> <!-- runtime --> </header><div class="actions"><button data-storefront-member-auth-slot><svg viewBox="0 0 24 24"><path d="M1 1h2" /></svg>Member</button><a href="/cart" data-storefront-cart-slot><span>Cart</span></a></div></div></nav>'
-    }
-  });
-
-  assert.deepEqual(result.updated_fragments, ['navbar']);
-});
-
 test('repository reports HTML5 parse errors with source locations', async () => {
   const slots = '<div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button>';
   const navbars = [
@@ -3773,22 +3369,6 @@ test('repository reports HTML5 parse errors with source locations', async () => 
         && /HTML parse error/i.test(error.message)
     );
   }
-});
-
-test('repository follows HTML5 unquoted slash semantics while preserving valid SVG and comments', async () => {
-  const repository = new WeblessAccountRepository(themeMutationPool(), {
-    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
-    publicSiteBaseUrl: 'https://slimweb.tw'
-  });
-  const result = await repository.updateThemeRootElements(11, {
-    site_id: 101,
-    theme_id: 22,
-    fragments: {
-      navbar: '<nav><!-- static --><header data-storefront-primary-navigation-slot></header><a href=/member/ data-storefront-member-auth-slot><svg viewBox="0 0 10 10"><path d="M0 0h1" /></svg>Member</a><button data-storefront-cart-slot>Cart</button><a href=/help/>Help</a></nav>'
-    }
-  });
-
-  assert.deepEqual(result.updated_fragments, ['navbar']);
 });
 
 test('repository rejects document wrapper tags that HTML5 fragment parsing would discard', async () => {
@@ -3837,38 +3417,6 @@ test('repository rejects wrapper start tags after an ordinary fragment element',
   }
 });
 
-test('repository accepts wrapper-shaped text inside comments and quoted attributes', async () => {
-  const repository = new WeblessAccountRepository(themeMutationPool(), {
-    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
-    publicSiteBaseUrl: 'https://slimweb.tw'
-  });
-  const result = await repository.updateThemeRootElements(11, {
-    site_id: 101,
-    theme_id: 22,
-    fragments: {
-      navbar: '<nav title="literal <html> text" data-note=\'literal <body> text\'><!-- literal <head> text --><div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>'
-    }
-  });
-
-  assert.deepEqual(result.updated_fragments, ['navbar']);
-});
-
-test('repository accepts wrapper-shaped text inside style and title raw text', async () => {
-  const repository = new WeblessAccountRepository(themeMutationPool(), {
-    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
-    publicSiteBaseUrl: 'https://slimweb.tw'
-  });
-  const result = await repository.updateThemeRootElements(11, {
-    site_id: 101,
-    theme_id: 22,
-    fragments: {
-      navbar: '<nav><style>.sample::before { content: "<html><body>"; }</style><title>literal <head> text</title><div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>'
-    }
-  });
-
-  assert.deepEqual(result.updated_fragments, ['navbar']);
-});
-
 test('repository requires every navbar anchor to have exactly one valued safe nonblank href', async () => {
   const hrefForms = ['', ' href', ' href=""', ' href="   "', ' href="/one" href="/two"'];
 
@@ -3889,48 +3437,6 @@ test('repository requires every navbar anchor to have exactly one valued safe no
         && /every.*anchor|anchor.*exactly one.*href|duplicate attribute/i.test(error.message)
     );
   }
-});
-
-test('repository rejects unavailable required slots and accepts explicitly available controls', async () => {
-  const unavailable = [
-    '<nav><div hidden data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>',
-    '<nav inert><div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>',
-    '<nav aria-hidden="true"><div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>',
-    '<nav><div data-storefront-primary-navigation-slot></div><button aria-disabled="true" data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>',
-    '<nav aria-disabled="true"><div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>',
-    '<nav><div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><span hidden><button data-storefront-cart-slot>Cart</button></span></nav>',
-    '<nav><div data-storefront-primary-navigation-slot></div><fieldset disabled><button data-storefront-member-auth-slot>Member</button></fieldset><button data-storefront-cart-slot>Cart</button></nav>'
-  ];
-
-  for (const navbar of unavailable) {
-    const repository = new WeblessAccountRepository(themeMutationPool(), {
-      storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
-      publicSiteBaseUrl: 'https://slimweb.tw'
-    });
-    await assert.rejects(
-      repository.updateThemeRootElements(11, {
-        site_id: 101,
-        theme_id: 22,
-        fragments: { navbar }
-      }),
-      (error) => error?.code === 'VALIDATION_FAILED'
-        && /required slot|primary-navigation-slot|member-auth-slot|cart-slot/i.test(error.message)
-        && /available|hidden|inert|disabled/i.test(error.message)
-    );
-  }
-
-  const repository = new WeblessAccountRepository(themeMutationPool(), {
-    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
-    publicSiteBaseUrl: 'https://slimweb.tw'
-  });
-  const result = await repository.updateThemeRootElements(11, {
-    site_id: 101,
-    theme_id: 22,
-    fragments: {
-      navbar: '<nav aria-hidden="false"><div data-storefront-primary-navigation-slot></div><fieldset><button aria-disabled="false" data-storefront-member-auth-slot>Member</button></fieldset><a href="/cart" aria-disabled="false" data-storefront-cart-slot>Cart</a><a href="help">Help</a></nav>'
-    }
-  });
-  assert.deepEqual(result.updated_fragments, ['navbar']);
 });
 
 test('repository rejects required slots on foreign-namespace SVG and MathML elements', async () => {
@@ -4033,27 +3539,6 @@ test('repository rejects member and cart anchors without a usable href', async (
   }
 });
 
-test('repository accepts enabled buttons and anchors with usable static hrefs', async () => {
-  for (const [memberSlot, cartSlot] of [
-    ['<button data-storefront-member-auth-slot>Member</button>', '<button type="button" data-storefront-cart-slot>Cart</button>'],
-    ['<a href="#member" data-storefront-member-auth-slot>Member</a>', '<a href="/cart" data-storefront-cart-slot>Cart</a>']
-  ]) {
-    const repository = new WeblessAccountRepository(themeMutationPool(), {
-      storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
-      publicSiteBaseUrl: 'https://slimweb.tw'
-    });
-    const result = await repository.updateThemeRootElements(11, {
-      site_id: 101,
-      theme_id: 22,
-      fragments: {
-        navbar: `<nav><div data-storefront-primary-navigation-slot></div>${memberSlot}${cartSlot}</nav>`
-      }
-    });
-
-    assert.deepEqual(result.updated_fragments, ['navbar']);
-  }
-});
-
 test('repository rejects unsafe or unsupported hrefs on required-slot and ordinary Theme anchors', async () => {
   const unsafeHrefs = [
     'javascript:alert(1)',
@@ -4114,37 +3599,6 @@ test('repository rejects Blade route helpers now that navbar hrefs must be liter
   );
 });
 
-test('repository accepts safe literal hrefs on all Theme anchors', async () => {
-  const safeHrefs = [
-    '#fragment',
-    'account',
-    'account/profile?tab=orders',
-    '?view=compact',
-    '/account',
-    './account',
-    '../account',
-    '//shop.example.test/account',
-    'http://shop.example.test/account',
-    'https://shop.example.test/account'
-  ];
-
-  for (const href of safeHrefs) {
-    const repository = new WeblessAccountRepository(themeMutationPool(), {
-      storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
-      publicSiteBaseUrl: 'https://slimweb.tw'
-    });
-    const result = await repository.updateThemeRootElements(11, {
-      site_id: 101,
-      theme_id: 22,
-      fragments: {
-        navbar: `<nav><div data-storefront-primary-navigation-slot></div><a href="${href}" data-storefront-member-auth-slot>Member</a><button data-storefront-cart-slot>Cart</button><a href="${href}">Other</a></nav>`
-      }
-    });
-
-    assert.deepEqual(result.updated_fragments, ['navbar']);
-  }
-});
-
 test('repository ignores required slots that exist only inside HTML comments', async () => {
   const repository = new WeblessAccountRepository(themeMutationPool(), {
     storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
@@ -4167,47 +3621,6 @@ test('repository ignores required slots that exist only inside HTML comments', a
     }),
     /navbar.*slot|slot.*navbar/i
   );
-});
-
-test('repository ignores duplicate slot markers in well-formed HTML comments and rejects unterminated comments', async () => {
-  const repository = new WeblessAccountRepository(themeMutationPool(), {
-    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
-    publicSiteBaseUrl: 'https://slimweb.tw'
-  });
-  const liveSlots = '<div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button>';
-
-  const result = await repository.updateThemeRootElements(11, {
-    site_id: 101,
-    theme_id: 22,
-    fragments: { navbar: `<nav aria-label="Navigation > <!-- label text -->">${liveSlots}<!-- <div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot></button><button data-storefront-cart-slot></button> --></nav>` }
-  });
-  assert.deepEqual(result.updated_fragments, ['navbar']);
-
-  await assert.rejects(
-    repository.updateThemeRootElements(11, {
-      site_id: 101,
-      theme_id: 22,
-      fragments: { navbar: `<nav>${liveSlots}<!-- unterminated</nav>` }
-    }),
-    /HTML parse error.*eof in comment/i
-  );
-});
-
-test('repository ignores reserved runtime attributes that exist only inside comments', async () => {
-  const repository = new WeblessAccountRepository(themeMutationPool(), {
-    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
-    publicSiteBaseUrl: 'https://slimweb.tw'
-  });
-
-  const result = await repository.updateThemeRootElements(11, {
-    site_id: 101,
-    theme_id: 22,
-    fragments: {
-      navbar: '<nav><div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button><!-- <div data-storefront-nav-node></div> --></nav>'
-    }
-  });
-
-  assert.deepEqual(result.updated_fragments, ['navbar']);
 });
 
 test('repository rejects executable Blade syntax inside ordinary HTML comments', async () => {
@@ -4322,28 +3735,6 @@ test('repository rejects duplicate slot markers inside Blade comments as server-
     }),
     /static HTML|Blade syntax/i
   );
-});
-
-test('repository ignores tag-shaped slot and reserved text inside style raw text', async () => {
-  const repository = new WeblessAccountRepository(themeMutationPool(), {
-    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
-    publicSiteBaseUrl: 'https://slimweb.tw'
-  });
-
-  const result = await repository.updateThemeRootElements(11, {
-    site_id: 101,
-    theme_id: 22,
-    fragments: {
-      navbar: `<nav>
-        <style>.example::before { content: "<div data-storefront-primary-navigation-slot data-storefront-nav-node>ignored ></div>"; }</style>
-        <div data-storefront-primary-navigation-slot></div>
-        <button data-storefront-member-auth-slot>Member</button>
-        <button data-storefront-cart-slot>Cart</button>
-      </nav>`
-    }
-  });
-
-  assert.deepEqual(result.updated_fragments, ['navbar']);
 });
 
 test('repository rejects every server-template construct in navbar HTML', async () => {
@@ -4472,23 +3863,6 @@ test('repository rejects standalone Blade constructs inside opening tags', async
   }
 });
 
-test('repository accepts a literal member href with otherwise static navbar markup', async () => {
-  const repository = new WeblessAccountRepository(themeMutationPool(), {
-    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
-    publicSiteBaseUrl: 'https://slimweb.tw'
-  });
-
-  const result = await repository.updateThemeRootElements(11, {
-    site_id: 101,
-    theme_id: 22,
-    fragments: {
-      navbar: '<nav class="site-nav"><div data-storefront-primary-navigation-slot></div><a href="/member/login" data-storefront-member-auth-slot>Member</a><a href="/cart" class="cart-link" data-storefront-cart-slot>Cart</a></nav>'
-    }
-  });
-
-  assert.deepEqual(result.updated_fragments, ['navbar']);
-});
-
 test('repository rejects Blade constructs anywhere inside unquoted attribute values', async () => {
   const repository = new WeblessAccountRepository(themeMutationPool(), {
     storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
@@ -4512,23 +3886,6 @@ test('repository rejects Blade constructs anywhere inside unquoted attribute val
         && /does not allow dynamic Blade attributes inside opening tags/i.test(error.message)
     );
   }
-});
-
-test('repository permits ordinary at signs in safe quoted and unquoted values', async () => {
-  const repository = new WeblessAccountRepository(themeMutationPool(), {
-    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
-    publicSiteBaseUrl: 'https://slimweb.tw'
-  });
-
-  const result = await repository.updateThemeRootElements(11, {
-    site_id: 101,
-    theme_id: 22,
-    fragments: {
-      navbar: '<nav class="site-nav" data-handle="support@slimweb"><div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button><a href=https://user@example.test/path data-label=user@example.test>Other</a></nav>'
-    }
-  });
-
-  assert.deepEqual(result.updated_fragments, ['navbar']);
 });
 
 test('repository rejects required slots hidden inside a false Blade branch', async () => {
@@ -4783,23 +4140,6 @@ test('repository rejects Blade attribute-generating directives on slot elements'
   }
 });
 
-test('repository keeps email addresses and encoded leading-at handles in harmless text', async () => {
-  const repository = new WeblessAccountRepository(themeMutationPool(), {
-    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
-    publicSiteBaseUrl: 'https://slimweb.tw'
-  });
-
-  const result = await repository.updateThemeRootElements(11, {
-    site_id: 101,
-    theme_id: 22,
-    fragments: {
-      navbar: '<nav title="Contact hello@example.test or &#64;slimweb" data-handle="support@slimweb"><div data-storefront-primary-navigation-slot></div><span>Welcome — hello@example.test &#64;slimweb</span><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>'
-    }
-  });
-
-  assert.deepEqual(result.updated_fragments, ['navbar']);
-});
-
 test('repository requires exact required-slot attribute names', async () => {
   const repository = new WeblessAccountRepository(themeMutationPool(), {
     storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
@@ -4877,39 +4217,6 @@ test('repository rejects reserved storefront runtime navigation attributes in th
         && error.message === `Theme navbar contains reserved storefront runtime attribute: ${attribute}.`
     );
   }
-});
-
-test('repository does not treat a prefixed runtime attribute as an exact reserved attribute', async () => {
-  const repository = new WeblessAccountRepository(themeMutationPool(), {
-    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
-    publicSiteBaseUrl: 'https://slimweb.tw'
-  });
-
-  const result = await repository.updateThemeRootElements(11, {
-    site_id: 101,
-    theme_id: 22,
-    fragments: {
-      navbar: '<nav x-data-storefront-nav-node><div data-storefront-primary-navigation-slot></div><button data-storefront-member-auth-slot>Member</button><button data-storefront-cart-slot>Cart</button></nav>'
-    }
-  });
-
-  assert.deepEqual(result.updated_fragments, ['navbar']);
-});
-
-test('repository allows non-navbar root fragment updates without repeating navbar slots', async () => {
-  const storageRoot = await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-'));
-  const repository = new WeblessAccountRepository(themeMutationPool(), {
-    storageRoot,
-    publicSiteBaseUrl: 'https://slimweb.tw'
-  });
-
-  const result = await repository.updateThemeRootElements(11, {
-    site_id: 101,
-    theme_id: 22,
-    fragments: { footer: '<footer>Footer only</footer>' }
-  });
-
-  assert.deepEqual(result.updated_fragments, ['footer']);
 });
 
 test('repository rejects the removed online_support root fragment', async () => {

@@ -275,6 +275,80 @@ export class WeblessBackendClient {
     });
   }
 
+  async listThemes(actor) {
+    return this.request(this.sitePath(actor, '/themes'), { identity: actor, tool: 'slimweb_themes_list', permission: 'page_management_templates' });
+  }
+
+  async getSiteThemeMode(actor) {
+    return this.request(this.sitePath(actor, '/theme-mode'), { identity: actor, tool: 'slimweb_site_theme_mode_get', permission: 'page_management_templates' });
+  }
+
+  async getDesignContext(actor) {
+    return this.request(this.sitePath(actor, '/design-context'), { identity: actor, tool: 'slimweb_design_context_get', permission: 'page_management_templates' });
+  }
+
+  async updateSiteThemeMode(actor, args) {
+    return this.themeMutation(actor, '/theme-mode', 'PATCH', 'slimweb_site_theme_mode_update', args);
+  }
+
+  async createThemeFromDefault(actor, args) {
+    return this.themeMutation(actor, '/themes', 'POST', 'slimweb_themes_create_from_default', args);
+  }
+
+  async activateTheme(actor, args) {
+    return this.themeMutation(actor, `/themes/${this.themeId(args)}/activate`, 'POST', 'slimweb_themes_activate', {});
+  }
+
+  async deleteTheme(actor, args) {
+    return this.themeMutation(actor, `/themes/${this.themeId(args)}`, 'DELETE', 'slimweb_themes_delete', {});
+  }
+
+  async getThemeShellContext(actor, args) {
+    return this.request(this.sitePath(actor, `/themes/${this.themeId(args)}/shell-context`), { identity: actor, tool: 'slimweb_theme_shell_get_context', permission: 'page_management_templates' });
+  }
+
+  async updateThemeRootElements(actor, args) {
+    return this.themeMutation(actor, `/themes/${this.themeId(args)}/root-elements`, 'PUT', 'slimweb_themes_update_root_elements', args);
+  }
+
+  async getThemeStyleProfile(actor, args) {
+    return this.request(this.sitePath(actor, `/themes/${this.themeId(args)}/style-profile`), { identity: actor, tool: 'slimweb_theme_style_profile_get', permission: 'page_management_templates' });
+  }
+
+  async upsertThemeStyleProfile(actor, args) {
+    return this.themeMutation(actor, `/themes/${this.themeId(args)}/style-profile`, 'PUT', 'slimweb_theme_style_profile_upsert', args);
+  }
+
+  async appendThemeStyleProfileRequest(actor, args) {
+    return this.themeMutation(actor, `/themes/${this.themeId(args)}/style-profile/requests`, 'POST', 'slimweb_theme_style_profile_append_request', args);
+  }
+
+  async themeMutation(actor, suffix, method, tool, args) {
+    const body = this.withoutSiteSelector(args);
+    delete body.theme_id;
+    return this.request(this.sitePath(actor, suffix), { method, identity: actor, tool, permission: 'page_management_templates', idempotencyKey: this.idempotencyKeyFactory(), body });
+  }
+
+  themeId(args) {
+    const value = typeof args?.theme_id === 'object' && args.theme_id !== null ? args.theme_id.id : args?.theme_id;
+    if (String(value).toLowerCase() === 'default') return 'default';
+    return String(this.requiredId(value, 'theme_id'));
+  }
+
+  async getMediaLibraryStats(actor, args) {
+    const query = new URLSearchParams();
+    if (args?.include_unused_assets !== undefined) query.set('include_unused_assets', String(Boolean(args.include_unused_assets)));
+    return this.request(this.sitePath(actor, `/media/library/stats${query.size ? `?${query}` : ''}`), { identity: actor, tool: 'slimweb_media_library_stats' });
+  }
+
+  async deleteUnusedMedia(actor) {
+    return this.request(this.sitePath(actor, '/media/library/unused'), { method: 'DELETE', identity: actor, tool: 'slimweb_media_library_delete_unused', idempotencyKey: this.idempotencyKeyFactory(), body: {} });
+  }
+
+  async registerAsset(actor, args) {
+    return this.request(this.sitePath(actor, '/media/assets/register'), { method: 'POST', identity: actor, tool: 'slimweb_assets_upload', idempotencyKey: this.idempotencyKeyFactory(), body: this.withoutSiteSelector(args) });
+  }
+
   async catalogMutation(actor, suffix, method, tool, permission, args) {
     return this.request(this.sitePath(actor, suffix), {
       method,
