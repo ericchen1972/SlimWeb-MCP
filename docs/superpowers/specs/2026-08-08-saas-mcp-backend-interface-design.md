@@ -307,8 +307,8 @@ The final operational slice and removal/hardening phase passed automated regress
 - Final Phase 5 inventory: 34 site operations, SEO/integrations, mail/admin/newsletter, Notion/poster, customer-service, export, and audit repository methods migrated; direct public paths reduced from 34 to zero.
 - Webless code revision: `3cd04d4`; production build assets revision: `3a82f68`.
 - Webless production revision: `webless-00546-xuh` (100% traffic).
-- SlimWeb-MCP code revision: `85d33c1`; production revision: `slimweb-mcp-00134-vcb` (100% traffic).
-- SlimWeb-MCP deployment workflow: GitHub Actions run `31265837268`, conclusion `success`.
+- SlimWeb-MCP code revision: `85d33c1`; verified code deployment: `slimweb-mcp-00134-vcb`; final docs-only production revision: `slimweb-mcp-00135-zql` (100% traffic).
+- SlimWeb-MCP deployment workflows: implementation run `31265837268` and final documentation run `31266237015`, both concluded `success`.
 - Webless complete suite: 753 tests passed with 0 failures. Focused Phase 5 controller/service suite: 12 tests passed; integration, idempotency, validation, tenant, and transaction rollback paths are covered.
 - SlimWeb-MCP complete post-removal suite: 255 tests passed with 0 failures. The frozen contract suite added 2 explicit passing assertions.
 - Frozen public tool contract remains 125 tools with SHA-256 `d6de40eb08a55927c199ae1b227fc29b7bf4010e0bc70a87b14d4d3ed1be6871` locally and on production.
