@@ -21,7 +21,7 @@
 - Members: 0
 - Coupon templates: 0
 - Existing payment/logistics status: complete
-- Known live defect: `slimweb_design_context_get` returns `No query results for model [App\\Models\\SitePage]` on the empty site.
+- Resolved live defect: empty sites now recover the canonical active `Default` theme identity before returning design context.
 
 ## QA Fixture Inventory
 
@@ -33,7 +33,7 @@
 
 | Tool | Reproduction | Root cause | Regression test | Commit | Revision | Live retest |
 |---|---|---|---|---|---|---|
-| slimweb_design_context_get | Empty Sweety site has no SitePage row | Under investigation | Pending RED test | — | — | — |
+| slimweb_design_context_get | Empty Sweety site has no SitePage row | `ThemeService::resolve()` assumed an active `site_pages` identity instead of restoring the required Default identity for legacy empty sites | `McpV1ThemeTest::test_empty_site_design_context_recovers_canonical_default_theme` (RED 404, GREEN 7 assertions) | `0c675b5` | `webless-00549-bav` | PASS: live response returned theme id 26, active Default, light mode, Tailwind |
 
 ## Deployment Log
 
@@ -73,7 +73,7 @@
 | slimweb_site_select | identity |  |  |  | NOT_RUN |  |  |
 | slimweb_themes_list | theme_media |  |  |  | NOT_RUN |  |  |
 | slimweb_site_theme_mode_get | theme_media |  |  |  | NOT_RUN |  |  |
-| slimweb_design_context_get | theme_media |  |  |  | NOT_RUN |  |  |
+| slimweb_design_context_get | theme_media | Authorized empty site | Tailwind design context with canonical active Default theme | Tailwind context returned with active Default theme id 26 and light mode | PASS_SUCCESS | Keep restored Default identity | Regression 1/1, related 15/15, Webless 754/754; live `webless-00549-bav` |
 | slimweb_site_theme_mode_update | theme_media |  |  |  | NOT_RUN |  |  |
 | slimweb_themes_create_from_default | theme_media |  |  |  | NOT_RUN |  |  |
 | slimweb_themes_activate | theme_media |  |  |  | NOT_RUN |  |  |
@@ -170,4 +170,3 @@
 | slimweb_pages_update | content_navigation |  |  |  | NOT_RUN |  |  |
 | slimweb_pages_delete | content_navigation |  |  |  | NOT_RUN |  |  |
 | slimweb_preview_get_page_url | theme_media |  |  |  | NOT_RUN |  |  |
-
