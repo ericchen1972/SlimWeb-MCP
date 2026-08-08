@@ -360,6 +360,17 @@ export class WeblessAccountRepository {
       : POSTER_POLL_INTERVAL_MS;
   }
 
+  requireBackendClient(capability) {
+    if (!this.backendClient) {
+      throw codedError(
+        'UPSTREAM_NOT_CONFIGURED',
+        `Webless backend API is required for ${capability}.`
+      );
+    }
+
+    return this.backendClient;
+  }
+
   async upsertGoogleAccount(profile) {
     const result = await this.pool.query(
       `
@@ -2858,649 +2869,59 @@ export class WeblessAccountRepository {
   }
 
   async listCategories(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const categories = await this.listProductImportCategories(site.id);
-    const productCounts = await this.productCountsByCategory(site.id);
-
-    return {
-      site,
-      categories: buildCategoryTree(categories, productCounts),
-      flat_categories: categories.map((category) => ({
-        ...category,
-        product_count: productCounts.get(category.id) ?? 0,
-        is_leaf: !categories.some((item) => item.parent_id === category.id)
-      })),
-      guidance: {
-        product_category_rule: 'Products must be assigned to a leaf category. Ask the user to confirm category placement when a parent/child relationship is unclear.'
-      }
-    };
+    return this.requireBackendClient('catalog_read').listCategories(accountId, args);
   }
 
   async upsertCategory(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    let categoryId = args.category_id === undefined || args.category_id === null ? null : requireInteger(args.category_id, 'category_id');
-    const name = requireCategoryName(args.name);
-    const currentName = args.current_name === undefined || args.current_name === null
-      ? null
-      : requireCategoryName(args.current_name);
-    let existing = categoryId ? await this.findCategoryForSite(site.id, categoryId) : null;
-    let matchedExistingByName = false;
-    let matchedExistingByCurrentName = false;
-    if (!categoryId && currentName) {
-      existing = await this.findCategoryByNameForSite(site.id, currentName);
-      if (!existing) {
-        throw codedError('NOT_FOUND', `Category not found or not accessible by current_name: ${currentName}`);
-      }
-      categoryId = Number.parseInt(existing.id, 10);
-      matchedExistingByCurrentName = true;
-    }
-    if (!categoryId) {
-      existing = await this.findCategoryByNameForSite(site.id, name);
-      categoryId = existing ? Number.parseInt(existing.id, 10) : null;
-      matchedExistingByName = Boolean(existing);
-    }
-    const shouldPreserveExistingParent = categoryId && (
-      args.parent_id === undefined
-      || (matchedExistingByName && args.parent_id === null)
-    );
-    const parentId = shouldPreserveExistingParent ? existing.parent_id ?? null : normalizeNullableInteger(args.parent_id, 'parent_id');
-    const iconSvg = normalizeGeneratedSvgIcon(args.icon_svg_base64 ?? args.generated_icon_svg, existing?.icon_svg ?? null, categoryId ? false : true);
-    const imagePath = args.image === undefined
-      ? existing?.image_path ?? null
-      : await this.resolveCommittedImageSource(accountId, site, args.image, 'image', 'page_asset');
-
-    if (!categoryId && !imagePath) {
-      throw codedError('VALIDATION_FAILED', 'A committed 16:9 category image is required when creating a category. Use a user-provided usable image first; otherwise upload generated image bytes or wait for the user to reattach the generated image.');
-    }
-
-    if (categoryId && parentId === categoryId) {
-      throw codedError('VALIDATION_FAILED', 'A category cannot be its own parent.');
-    }
-
-    if (parentId !== null) {
-      await this.findCategoryForSite(site.id, parentId);
-    }
-
-    if (categoryId) {
-      await this.assertCategoryParentIsNotDescendant(site.id, categoryId, parentId);
-    }
-
-    const keepsExistingName = categoryId && existing && String(existing.name ?? '').toLowerCase() === name.toLowerCase();
-    if (!keepsExistingName) {
-      await this.assertCategoryNameAvailable(site.id, parentId, name, categoryId);
-    }
-    if ((args.icon_svg_base64 !== undefined || args.generated_icon_svg !== undefined) && existing?.icon_path) {
-      await this.storage.delete(existing.icon_path);
-    }
-    if (args.image !== undefined && existing?.image_path && existing.image_path !== imagePath) {
-      await this.storage.delete(existing.image_path);
-    }
-
-    let sortOrder;
-    if (categoryId && args.sort_order === undefined) {
-      sortOrder = Number.parseInt(existing.sort_order ?? '0', 10);
-    } else if (args.sort_order === undefined || args.sort_order === null) {
-      sortOrder = await this.nextCategorySortOrder(site.id, parentId);
-    } else {
-      sortOrder = requireNonNegativeAmount(args.sort_order, 'sort_order');
-    }
-
-    const previousCategory = existing ? { ...existing } : null;
-    const result = categoryId
-      ? await this.pool.query(
-        `
-          update site_categories
-          set parent_id = $1,
-              name = $2,
-              icon_svg = $3,
-              icon_path = case when $3::text is null then icon_path else null end,
-              image_path = $4,
-              sort_order = $5,
-              updated_at = now()
-          where site_id = $6 and id = $7
-          returning id, site_id, parent_id, name, icon_svg, icon_path, image_path, sort_order, created_at, updated_at
-        `,
-        [parentId, name, iconSvg, imagePath, sortOrder, site.id, categoryId]
-      )
-      : await this.pool.query(
-        `
-          insert into site_categories (site_id, parent_id, name, icon_svg, image_path, sort_order, created_at, updated_at)
-          values ($1, $2, $3, $4, $5, $6, now(), now())
-          returning id, site_id, parent_id, name, icon_svg, icon_path, image_path, sort_order, created_at, updated_at
-        `,
-        [site.id, parentId, name, iconSvg, imagePath, sortOrder]
-      );
-    const savedCategory = result.rows[0];
-    if (!savedCategory) {
-      throw codedError('UPSTREAM_ERROR', 'Category upsert did not return a saved row.');
-    }
-
-    return {
-      ok: true,
-      site,
-      action: categoryId ? 'updated' : 'created',
-      matched_by: matchedExistingByCurrentName ? 'current_name' : (matchedExistingByName ? 'name' : (args.category_id ? 'category_id' : null)),
-      changed_fields: categoryChangedFields(previousCategory, savedCategory),
-      category: formatCategory(savedCategory)
-    };
+    return this.requireBackendClient('catalog_write').upsertCategory(accountId, args);
   }
 
   async deleteCategory(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const category = await this.findCategoryForSite(site.id, requireInteger(args.category_id, 'category_id'));
-    const descendants = await this.pool.query(
-      `
-        with recursive category_tree as (
-          select id, icon_path, image_path
-          from site_categories
-          where site_id = $1 and id = $2
-          union all
-          select child.id, child.icon_path, child.image_path
-          from site_categories child
-          inner join category_tree parent on parent.id = child.parent_id
-          where child.site_id = $1
-        )
-        select id, icon_path, image_path from category_tree
-      `,
-      [site.id, category.id]
-    );
-    const categoryIds = descendants.rows.map((row) => row.id);
-    const productCount = await this.pool.query(
-      `
-        select count(*)::int as total
-        from products
-        where site_id = $1 and site_category_id = any($2::bigint[])
-      `,
-      [site.id, categoryIds]
-    );
-    const totalProducts = Number.parseInt(productCount.rows[0]?.total ?? '0', 10);
-
-    if (totalProducts > 0) {
-      throw codedError('VALIDATION_FAILED', 'Product category cannot be deleted while it or its child categories contain products.', {
-        product_count: totalProducts
-      });
-    }
-
-    for (const categoryRow of descendants.rows) {
-      if (categoryRow.icon_path) {
-        await this.storage.delete(categoryRow.icon_path);
-      }
-
-      if (categoryRow.image_path) {
-        await this.storage.delete(categoryRow.image_path);
-      }
-    }
-
-    await this.pool.query('delete from site_categories where site_id = $1 and id = any($2::bigint[])', [site.id, categoryIds]);
-
-    return {
-      ok: true,
-      site,
-      deleted_category_ids: categoryIds,
-      categories: (await this.listCategories(accountId, { site_id: site.id })).categories
-    };
+    return this.requireBackendClient('catalog_write').deleteCategory(accountId, args);
   }
 
   async listNavItems(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const navItems = await this.listSiteNavItems(site.id);
-
-    return {
-      site,
-      nav_items: buildTree(navItems),
-      flat_nav_items: navItems
-    };
+    return this.requireBackendClient('navigation_read').listNavItems(accountId, args);
   }
 
   async upsertNavItem(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const navItemId = args.nav_item_id === undefined || args.nav_item_id === null ? null : requireInteger(args.nav_item_id, 'nav_item_id');
-    const existing = navItemId ? await this.findNavItemForSite(site.id, navItemId) : null;
-    const parentId = navItemId && args.parent_id === undefined ? existing.parent_id ?? null : normalizeNullableInteger(args.parent_id, 'parent_id');
-    const name = requireNavItemName(args.name);
-    const itemType = normalizeNavItemType(args.item_type);
-    const url = normalizeNavItemUrl(args.url, itemType);
-    const iconSvg = normalizeGeneratedSvgIcon(args.icon_svg_base64 ?? args.generated_icon_svg, existing?.icon_svg ?? null, navItemId ? false : true);
-
-    if (navItemId && parentId === navItemId) {
-      throw codedError('VALIDATION_FAILED', 'A navigation item cannot be its own parent.');
-    }
-
-    if (parentId !== null) {
-      const parent = await this.findNavItemForSite(site.id, parentId);
-      if (parent.item_type !== 'dropdown') {
-        throw codedError('VALIDATION_FAILED', 'Only dropdown navigation items can have children.');
-      }
-    }
-
-    if (navItemId) {
-      await this.assertNavItemParentIsNotDescendant(site.id, navItemId, parentId);
-      if (existing.item_type === 'dropdown' && itemType === 'link') {
-        await this.assertNavItemHasNoChildren(site.id, navItemId);
-      }
-    }
-
-    await this.assertNavItemNameAvailable(site.id, parentId, name, navItemId);
-    if ((args.icon_svg_base64 !== undefined || args.generated_icon_svg !== undefined) && existing?.icon_path) {
-      await this.storage.delete(existing.icon_path);
-    }
-
-    let sortOrder;
-    if (navItemId && args.sort_order === undefined) {
-      sortOrder = Number.parseInt(existing.sort_order ?? '0', 10);
-    } else if (args.sort_order === undefined || args.sort_order === null) {
-      sortOrder = await this.nextNavItemSortOrder(site.id, parentId);
-    } else {
-      sortOrder = requireNonNegativeAmount(args.sort_order, 'sort_order');
-    }
-
-    const result = navItemId
-      ? await this.pool.query(
-        `
-          update site_nav_items
-          set parent_id = $1,
-              name = $2,
-              item_type = $3,
-              url = $4,
-              icon_svg = $5,
-              icon_path = case when $5::text is null then icon_path else null end,
-              sort_order = $6,
-              updated_at = now()
-          where site_id = $7 and id = $8
-          returning id, site_id, parent_id, name, item_type, url, icon_svg, icon_path, sort_order, created_at, updated_at
-        `,
-        [parentId, name, itemType, url, iconSvg, sortOrder, site.id, navItemId]
-      )
-      : await this.pool.query(
-        `
-          insert into site_nav_items (site_id, parent_id, name, item_type, url, icon_svg, sort_order, created_at, updated_at)
-          values ($1, $2, $3, $4, $5, $6, $7, now(), now())
-          returning id, site_id, parent_id, name, item_type, url, icon_svg, icon_path, sort_order, created_at, updated_at
-        `,
-        [site.id, parentId, name, itemType, url, iconSvg, sortOrder]
-      );
-
-    return {
-      ok: true,
-      site,
-      nav_item: formatNavItem(result.rows[0])
-    };
+    return this.requireBackendClient('navigation_write').upsertNavItem(accountId, args);
   }
 
   async deleteNavItem(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const navItem = await this.findNavItemForSite(site.id, requireInteger(args.nav_item_id, 'nav_item_id'));
-    const descendants = await this.pool.query(
-      `
-        with recursive nav_tree as (
-          select id, icon_path
-          from site_nav_items
-          where site_id = $1 and id = $2
-          union all
-          select child.id, child.icon_path
-          from site_nav_items child
-          inner join nav_tree parent on parent.id = child.parent_id
-          where child.site_id = $1
-        )
-        select id, icon_path from nav_tree
-      `,
-      [site.id, navItem.id]
-    );
-    const navItemIds = descendants.rows.map((row) => row.id);
-
-    for (const navItemRow of descendants.rows) {
-      if (navItemRow.icon_path) {
-        await this.storage.delete(navItemRow.icon_path);
-      }
-    }
-
-    await this.pool.query('delete from site_nav_items where site_id = $1 and id = any($2::bigint[])', [site.id, navItemIds]);
-
-    return {
-      ok: true,
-      site,
-      deleted_nav_item_ids: navItemIds,
-      nav_items: (await this.listNavItems(accountId, { site_id: site.id })).nav_items
-    };
+    return this.requireBackendClient('navigation_write').deleteNavItem(accountId, args);
   }
 
   async listProducts(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const page = clampPositiveInteger(args.page, 1, 1, 1000);
-    const perPage = clampPositiveInteger(args.per_page, 8, 1, 50);
-    const offset = (page - 1) * perPage;
-    const filters = ['p.site_id = $1'];
-    const params = [site.id];
-    const categoryId = normalizeNullableInteger(args.category_id, 'category_id');
-    const keyword = nullableString(args.keyword);
-    const status = nullableString(args.status) ?? 'all';
-
-    if (categoryId !== null) {
-      filters.push(`p.site_category_id = $${params.length + 1}`);
-      params.push(categoryId);
-    }
-
-    if (keyword) {
-      filters.push(`(p.name ilike $${params.length + 1} or p.sku ilike $${params.length + 1})`);
-      params.push(`%${keyword}%`);
-    }
-
-    if (status !== 'all') {
-      if (!['active', 'hidden', 'sold_out'].includes(status)) {
-        throw codedError('VALIDATION_FAILED', 'status must be all, active, hidden, or sold_out.');
-      }
-      filters.push(`p.status = $${params.length + 1}`);
-      params.push(status);
-    }
-
-    if (args.max_stock !== undefined && args.max_stock !== null) {
-      const stockParam = params.length + 1;
-      filters.push(`(p.stock <= $${stockParam} or exists (select 1 from product_variants pv where pv.product_id = p.id and pv.stock <= $${stockParam}))`);
-      params.push(requireNonNegativeAmount(args.max_stock, 'max_stock'));
-    }
-
-    const whereSql = filters.join(' and ');
-    const [countResult, productResult] = await Promise.all([
-      this.pool.query(`select count(*)::int as total from products p where ${whereSql}`, params),
-      this.pool.query(
-        `
-          select p.id, p.site_id, p.site_category_id, p.sku, p.name, p.summary, p.base_price, p.sale_price, p.stock, p.status, p.sales_volume, p.created_at, p.updated_at,
-                 c.name as category_name
-          from products p
-          left join site_categories c on c.id = p.site_category_id
-          where ${whereSql}
-          order by p.id desc
-          limit $${params.length + 1} offset $${params.length + 2}
-        `,
-        [...params, perPage, offset]
-      )
-    ]);
-    const total = Number.parseInt(countResult.rows[0]?.total ?? '0', 10);
-
-    return {
-      site,
-      products: productResult.rows.map((product) => formatProductSummary(product, site, this.publicSiteBaseUrl)),
-      pagination: {
-        page,
-        per_page: perPage,
-        last_page: Math.max(1, Math.ceil(total / perPage)),
-        total
-      }
-    };
+    return this.requireBackendClient('catalog_read').listProducts(accountId, args);
   }
 
   async getProduct(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const product = await this.findProductForSite(site.id, requireInteger(args.product_id, 'product_id'));
-
-    return {
-      site,
-      product: await this.formatProductWithRelations(product, site)
-    };
+    return this.requireBackendClient('catalog_read').getProduct(accountId, args);
   }
 
   async prepareProductImageReference(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const mediaPath = nullableString(args.media_path);
-    const imageUrl = nullableString(args.image_url);
-
-    if (!mediaPath && !imageUrl) {
-      throw codedError('VALIDATION_FAILED', 'image_url or media_path is required.');
-    }
-
-    const sourceUrl = mediaPath ? mediaUrlFor(this.publicSiteBaseUrl, mediaPath) : imageUrl;
-    if (!looksLikeUrl(sourceUrl)) {
-      throw codedError('VALIDATION_FAILED', 'image_url must be a public http/https URL or media_path must be a SlimWeb media path.');
-    }
-
-    const filename = filenameFromUrl(sourceUrl) ?? 'product-reference-image';
-    const mimeType = mimeTypeFromImageFilename(filename);
-    const purpose = nullableString(args.purpose) ?? 'image_edit_reference';
-    if (!['image_edit_reference', 'generate_more_product_images', 'visual_judgement', 'other'].includes(purpose)) {
-      throw codedError('VALIDATION_FAILED', 'purpose must be image_edit_reference, generate_more_product_images, visual_judgement, or other.');
-    }
-
-    return {
-      site: {
-        id: site.id,
-        site_code: site.site_code ?? null,
-        name: site.name ?? null
-      },
-      product_context: {
-        product_id: args.product_id ?? null,
-        product_image_id: args.product_image_id ?? null
-      },
-      reference_image: {
-        source_url: sourceUrl,
-        download_url: sourceUrl,
-        media_path: mediaPath,
-        mime_type: mimeType,
-        file_name: filename,
-        purpose,
-        usage: 'chatgpt_image_edit_reference'
-      },
-      downloadable_reference: {
-        download_url: sourceUrl,
-        mime_type: mimeType,
-        file_name: filename
-      },
-      chatgpt_guidance: 'Use this only as an experimental ChatGPT visual reference. If ChatGPT cannot attach this returned reference as image-edit input, ask the user to paste or upload the product image before generating or editing images.',
-      other_clients_guidance: 'Codex, Hermes, and clients with byte access should fetch source_url directly and pass the image bytes to their own vision or image-edit runtime.'
-    };
+    return this.requireBackendClient('catalog_read').prepareProductImageReference(accountId, args);
   }
 
   async upsertProduct(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const productId = args.product_id === undefined || args.product_id === null ? null : requireInteger(args.product_id, 'product_id');
-    const existing = productId ? await this.findProductForSite(site.id, productId) : null;
-    const product = normalizeProductPayload(args, existing);
-    const category = await this.findCategoryForSite(site.id, product.site_category_id);
-    await this.assertCategoryIsLeaf(site.id, category.id);
-    await this.assertProductSkuAvailable(site.id, product.sku, productId);
-
-    if (!productId && product.primary_images.length === 0) {
-      throw codedError('VALIDATION_FAILED', 'At least one primary image is required. Ask the user to provide a product main image before creating the product.');
-    }
-
-    if (productId && product.primary_images.length === 0) {
-      const existingPrimaryCount = await this.countProductImages(productId, 'primary');
-      if (existingPrimaryCount === 0) {
-        throw codedError('VALIDATION_FAILED', 'At least one primary image is required. Ask the user to provide a product main image before updating the product.');
-      }
-    }
-
-    await this.pool.query('BEGIN');
-
-    try {
-      const result = productId
-        ? await this.pool.query(
-          `
-            update products
-            set site_category_id = $1,
-                variant_mode = $2,
-                replace_image_by_variant = $3,
-                sku = $4,
-                name = $5,
-                summary = $6,
-                description = $7,
-                base_price = $8,
-                sale_price = $9,
-                sale_ends_at = $10,
-                cost_price = $11,
-                stock = $12,
-                buy_limit = $13,
-                gift_coupon_template_id = $14,
-                status = $15,
-                is_service = $16,
-                updated_at = now()
-            where site_id = $17 and id = $18
-            returning *
-          `,
-          [
-            product.site_category_id,
-            product.variant_mode,
-            product.replace_image_by_variant,
-            product.sku,
-            product.name,
-            product.summary,
-            product.description,
-            product.base_price,
-            product.sale_price,
-            product.sale_ends_at,
-            product.cost_price,
-            product.stock,
-            product.buy_limit,
-            product.gift_coupon_template_id,
-            product.status,
-            product.is_service,
-            site.id,
-            productId
-          ]
-        )
-        : await this.pool.query(
-          `
-            insert into products (
-              site_id, site_category_id, variant_mode, replace_image_by_variant, sku, name, slug, summary, description,
-              base_price, sale_price, sale_ends_at, cost_price, stock, buy_limit, gift_coupon_template_id, status, is_service, created_at, updated_at
-            )
-            values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, now(), now())
-            returning *
-          `,
-          [
-            site.id,
-            product.site_category_id,
-            product.variant_mode,
-            product.replace_image_by_variant,
-            product.sku,
-            product.name,
-            await this.uniqueProductSlug(site.id, product.name),
-            product.summary,
-            product.description,
-            product.base_price,
-            product.sale_price,
-            product.sale_ends_at,
-            product.cost_price,
-            product.stock,
-            product.buy_limit,
-            product.gift_coupon_template_id,
-            product.status,
-            product.is_service
-          ]
-        );
-      const savedProduct = result.rows[0];
-
-      await this.syncProductChildRecords(site, savedProduct, product);
-      await this.pool.query('COMMIT');
-
-      return {
-        ok: true,
-        site,
-        product: await this.formatProductWithRelations(savedProduct, site)
-      };
-    } catch (error) {
-      await this.pool.query('ROLLBACK');
-      throw error;
-    }
+    return this.requireBackendClient('catalog_write').upsertProduct(accountId, args);
   }
 
   async deleteProduct(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const product = await this.findProductForSite(site.id, requireInteger(args.product_id, 'product_id'));
-    const images = await this.pool.query('select path from product_images where product_id = $1', [product.id]);
-
-    for (const image of images.rows) {
-      if (image.path && !/^https?:\/\//i.test(image.path)) {
-        await this.storage.delete(image.path);
-      }
-    }
-
-    await this.pool.query('delete from products where site_id = $1 and id = $2', [site.id, product.id]);
-
-    return {
-      ok: true,
-      site,
-      deleted_product_id: product.id,
-      categories: (await this.listCategories(accountId, { site_id: site.id })).categories
-    };
+    return this.requireBackendClient('catalog_write').deleteProduct(accountId, args);
   }
 
   async inspectProductImport(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const dataset = await parseProductImportSource(args.source);
-    const categories = await this.listProductImportCategories(site.id);
-
-    return {
-      site,
-      dataset: productImportDatasetSummary(dataset),
-      target_schema: productImportTargetSchema(),
-      available_categories: categories,
-      ai_mapping_prompt: productImportAiMappingPrompt(dataset, categories),
-      guidance: productImportGuidance()
-    };
+    return this.requireBackendClient('catalog_import').inspectProductImport(accountId, args);
   }
 
   async validateProductImport(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const dataset = await parseProductImportSource(args.source);
-    const mapping = normalizeProductImportMapping(args.mapping);
-    const validation = validateProductImportDataset(dataset, mapping);
-
-    return {
-      site,
-      dataset: productImportDatasetSummary(dataset),
-      mapping,
-      validation,
-      convertible: validation.convertible,
-      failure_reasons: productImportFailureReasons(validation)
-    };
+    return this.requireBackendClient('catalog_import').validateProductImport(accountId, args);
   }
 
   async commitProductImport(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const dataset = await parseProductImportSource(args.source);
-    const mapping = normalizeProductImportMapping(args.mapping);
-    const validation = validateProductImportDataset(dataset, mapping);
-
-    if (!validation.convertible) {
-      throw codedError('VALIDATION_FAILED', 'Product import mapping is not convertible.', {
-        validation,
-        failure_reasons: productImportFailureReasons(validation)
-      });
-    }
-
-    await this.pool.query('BEGIN');
-
-    try {
-      const importCategory = await this.ensureProductImportCategory(site.id);
-      const categoryAssignments = await this.listLeafCategoryAssignments(site.id);
-      const [usedSkus, usedSlugs] = await Promise.all([
-        this.listExistingProductValues(site.id, 'sku'),
-        this.listExistingProductValues(site.id, 'slug')
-      ]);
-      const preparedRows = prepareProductImportRows(dataset, mapping, site.id, importCategory.id, categoryAssignments, usedSkus, usedSlugs);
-      let createdProducts = 0;
-
-      for (const chunk of chunkArray(preparedRows, 100)) {
-        createdProducts += await this.insertProductImportChunk(chunk, mapping);
-      }
-
-      await this.pool.query('COMMIT');
-
-      return {
-        ok: true,
-        site,
-        result: {
-          created_products: createdProducts,
-          matched_products: preparedRows.filter((row) => row.site_category_id !== importCategory.id).length,
-          unmatched_products: preparedRows.filter((row) => row.site_category_id === importCategory.id).length,
-          category: importCategory
-        },
-        validation
-      };
-    } catch (error) {
-      await this.pool.query('ROLLBACK');
-      throw error;
-    }
+    return this.requireBackendClient('catalog_import').commitProductImport(accountId, args);
   }
 
   async listCouponTemplates(accountId, args) {

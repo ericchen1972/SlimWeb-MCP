@@ -8,6 +8,22 @@ import { createRequestHandler } from '../src/app.js';
 
 const EXPECTED_COUNT = 125;
 const EXPECTED_SHA256 = 'd6de40eb08a55927c199ae1b227fc29b7bf4010e0bc70a87b14d4d3ed1be6871';
+const PHASE_2_TOOLS = [
+  'slimweb_categories_list',
+  'slimweb_categories_upsert',
+  'slimweb_categories_delete',
+  'slimweb_nav_items_list',
+  'slimweb_nav_items_upsert',
+  'slimweb_nav_items_delete',
+  'slimweb_products_list',
+  'slimweb_products_get',
+  'slimweb_product_image_reference_prepare',
+  'slimweb_products_upsert',
+  'slimweb_products_delete',
+  'slimweb_products_import_inspect',
+  'slimweb_products_import_validate',
+  'slimweb_products_import_commit'
+];
 
 async function currentToolContract() {
   const server = createServer(createRequestHandler());
@@ -46,4 +62,14 @@ test('SaaS tool contract fixture remains byte-for-byte stable', async () => {
   assert.equal(expected.count, EXPECTED_COUNT);
   assert.equal(expected.sha256, EXPECTED_SHA256);
   assert.deepEqual(tools, expected.tools);
+});
+
+test('Phase 2 inventory is present in the frozen SaaS contract', async () => {
+  const expected = JSON.parse(await readFile(
+    new URL('./fixtures/saas-tool-contract.json', import.meta.url),
+    'utf8'
+  ));
+  const names = new Set(expected.tools.map((tool) => tool.name));
+
+  assert.deepEqual(PHASE_2_TOOLS.filter((name) => !names.has(name)), []);
 });

@@ -2,7 +2,21 @@ export const SLIMWEB_BACKEND_METHODS = Object.freeze([
   'listSitesForAdminIdentity',
   'resolveAdminSiteForIdentity',
   'getBasicSettings',
-  'updateBasicSettings'
+  'updateBasicSettings',
+  'listCategories',
+  'upsertCategory',
+  'deleteCategory',
+  'listNavItems',
+  'upsertNavItem',
+  'deleteNavItem',
+  'listProducts',
+  'getProduct',
+  'prepareProductImageReference',
+  'upsertProduct',
+  'deleteProduct',
+  'inspectProductImport',
+  'validateProductImport',
+  'commitProductImport'
 ]);
 
 export function assertSlimWebBackend(backend) {

@@ -133,6 +133,66 @@ test('backend client maps site context and settings methods to Webless HTTP', as
   assert.deepEqual(requests[3].body, { name: '新名稱' });
 });
 
+test('backend client maps all Phase 2 catalog methods without site selectors in bodies', async () => {
+  const requests = [];
+
+  await withJsonServer(async (request, response) => {
+    requests.push({ method: request.method, url: request.url, headers: request.headers, body: await readJson(request) });
+    sendJson(response, 200, { ok: true, data: { accepted: true }, warnings: [] });
+  }, async (baseUrl) => {
+    const client = new WeblessBackendClient({
+      baseUrl,
+      secret: 'service-secret',
+      requestIdFactory: () => 'request-catalog-001',
+      idempotencyKeyFactory: () => 'idempotency-catalog-001'
+    });
+    const scoped = { site_id: 101, site_code: 'ignored', name: '洋裝' };
+
+    await client.listCategories(actor, scoped);
+    await client.upsertCategory(actor, scoped);
+    await client.deleteCategory(actor, { site_id: 101, category_id: 7 });
+    await client.listNavItems(actor, scoped);
+    await client.upsertNavItem(actor, scoped);
+    await client.deleteNavItem(actor, { site_id: 101, nav_item_id: 8 });
+    await client.listProducts(actor, { site_id: 101, keyword: 'dress', page: 2 });
+    await client.getProduct(actor, { site_id: 101, product_id: 9 });
+    await client.prepareProductImageReference(actor, { site_id: 101, media_path: 'sites/101/ref.webp' });
+    await client.upsertProduct(actor, scoped);
+    await client.deleteProduct(actor, { site_id: 101, product_id: 9 });
+    await client.inspectProductImport(actor, { site_id: 101, source: { filename: 'a.csv' } });
+    await client.validateProductImport(actor, { site_id: 101, source: {}, mapping: {} });
+    await client.commitProductImport(actor, { site_id: 101, source: {}, mapping: {} });
+  });
+
+  assert.deepEqual(requests.map(({ method, url }) => [method, url]), [
+    ['GET', '/internal/mcp/v1/sites/swcb_demo/catalog/categories'],
+    ['PUT', '/internal/mcp/v1/sites/swcb_demo/catalog/categories'],
+    ['DELETE', '/internal/mcp/v1/sites/swcb_demo/catalog/categories/7'],
+    ['GET', '/internal/mcp/v1/sites/swcb_demo/navigation/items'],
+    ['PUT', '/internal/mcp/v1/sites/swcb_demo/navigation/items'],
+    ['DELETE', '/internal/mcp/v1/sites/swcb_demo/navigation/items/8'],
+    ['GET', '/internal/mcp/v1/sites/swcb_demo/catalog/products?keyword=dress&page=2'],
+    ['GET', '/internal/mcp/v1/sites/swcb_demo/catalog/products/9'],
+    ['POST', '/internal/mcp/v1/sites/swcb_demo/catalog/product-image-reference'],
+    ['PUT', '/internal/mcp/v1/sites/swcb_demo/catalog/products'],
+    ['DELETE', '/internal/mcp/v1/sites/swcb_demo/catalog/products/9'],
+    ['POST', '/internal/mcp/v1/sites/swcb_demo/catalog/imports/inspect'],
+    ['POST', '/internal/mcp/v1/sites/swcb_demo/catalog/imports/validate'],
+    ['POST', '/internal/mcp/v1/sites/swcb_demo/catalog/imports/commit']
+  ]);
+  for (const request of requests) {
+    assert.equal(request.headers['x-request-id'], 'request-catalog-001');
+    assert.equal(Object.hasOwn(request.body ?? {}, 'site_id'), false);
+    assert.equal(Object.hasOwn(request.body ?? {}, 'site_code'), false);
+  }
+  for (const index of [1, 2, 4, 5, 9, 10, 13]) {
+    assert.equal(requests[index].headers['idempotency-key'], 'idempotency-catalog-001');
+  }
+  for (const index of [0, 3, 6, 7, 8, 11, 12]) {
+    assert.equal(requests[index].headers['idempotency-key'], undefined);
+  }
+});
+
 test('backend client maps Webless error envelopes to stable errors', async () => {
   const cases = [
     [403, 'FORBIDDEN'],

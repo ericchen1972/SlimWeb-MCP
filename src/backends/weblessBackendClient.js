@@ -89,7 +89,116 @@ export class WeblessBackendClient {
     });
   }
 
-  settingsPath(actor) {
+  async listCategories(actor) {
+    return this.request(this.sitePath(actor, '/catalog/categories'), {
+      identity: actor,
+      tool: 'slimweb_categories_list',
+      permission: 'product_management_categories'
+    });
+  }
+
+  async upsertCategory(actor, args) {
+    return this.catalogMutation(actor, '/catalog/categories', 'PUT', 'slimweb_categories_upsert', 'product_management_categories', args);
+  }
+
+  async deleteCategory(actor, args) {
+    return this.catalogMutation(actor, `/catalog/categories/${this.requiredId(args?.category_id, 'category_id')}`, 'DELETE', 'slimweb_categories_delete', 'product_management_categories', {});
+  }
+
+  async listNavItems(actor) {
+    return this.request(this.sitePath(actor, '/navigation/items'), {
+      identity: actor,
+      tool: 'slimweb_nav_items_list',
+      permission: 'page_management_navbar'
+    });
+  }
+
+  async upsertNavItem(actor, args) {
+    return this.catalogMutation(actor, '/navigation/items', 'PUT', 'slimweb_nav_items_upsert', 'page_management_navbar', args);
+  }
+
+  async deleteNavItem(actor, args) {
+    return this.catalogMutation(actor, `/navigation/items/${this.requiredId(args?.nav_item_id, 'nav_item_id')}`, 'DELETE', 'slimweb_nav_items_delete', 'page_management_navbar', {});
+  }
+
+  async listProducts(actor, args) {
+    const filters = this.withoutSiteSelector(args);
+    const query = new URLSearchParams();
+    for (const field of ['category_id', 'keyword', 'status', 'max_stock', 'page', 'per_page']) {
+      if (filters[field] !== undefined && filters[field] !== null && filters[field] !== '') {
+        query.set(field, String(filters[field]));
+      }
+    }
+    const suffix = `/catalog/products${query.size > 0 ? `?${query}` : ''}`;
+
+    return this.request(this.sitePath(actor, suffix), {
+      identity: actor,
+      tool: 'slimweb_products_list',
+      permission: 'product_management_products'
+    });
+  }
+
+  async getProduct(actor, args) {
+    return this.request(this.sitePath(actor, `/catalog/products/${this.requiredId(args?.product_id, 'product_id')}`), {
+      identity: actor,
+      tool: 'slimweb_products_get',
+      permission: 'product_management_products'
+    });
+  }
+
+  async prepareProductImageReference(actor, args) {
+    return this.request(this.sitePath(actor, '/catalog/product-image-reference'), {
+      method: 'POST',
+      identity: actor,
+      tool: 'slimweb_product_image_reference_prepare',
+      body: this.withoutSiteSelector(args)
+    });
+  }
+
+  async upsertProduct(actor, args) {
+    return this.catalogMutation(actor, '/catalog/products', 'PUT', 'slimweb_products_upsert', 'product_management_products', args);
+  }
+
+  async deleteProduct(actor, args) {
+    return this.catalogMutation(actor, `/catalog/products/${this.requiredId(args?.product_id, 'product_id')}`, 'DELETE', 'slimweb_products_delete', 'product_management_products', {});
+  }
+
+  async inspectProductImport(actor, args) {
+    return this.request(this.sitePath(actor, '/catalog/imports/inspect'), {
+      method: 'POST',
+      identity: actor,
+      tool: 'slimweb_products_import_inspect',
+      permission: 'product_management_import',
+      body: this.withoutSiteSelector(args)
+    });
+  }
+
+  async validateProductImport(actor, args) {
+    return this.request(this.sitePath(actor, '/catalog/imports/validate'), {
+      method: 'POST',
+      identity: actor,
+      tool: 'slimweb_products_import_validate',
+      permission: 'product_management_import',
+      body: this.withoutSiteSelector(args)
+    });
+  }
+
+  async commitProductImport(actor, args) {
+    return this.catalogMutation(actor, '/catalog/imports/commit', 'POST', 'slimweb_products_import_commit', 'product_management_import', args);
+  }
+
+  async catalogMutation(actor, suffix, method, tool, permission, args) {
+    return this.request(this.sitePath(actor, suffix), {
+      method,
+      identity: actor,
+      tool,
+      permission,
+      idempotencyKey: this.idempotencyKeyFactory(),
+      body: this.withoutSiteSelector(args)
+    });
+  }
+
+  sitePath(actor, suffix = '') {
     const siteCode = String(actor?.site?.site_code ?? '').trim();
     if (siteCode === '') {
       throw new BackendError('The resolved site has no site_code.', {
@@ -97,7 +206,27 @@ export class WeblessBackendClient {
       });
     }
 
-    return `/internal/mcp/v1/sites/${encodeURIComponent(siteCode)}/settings/basic`;
+    return `/internal/mcp/v1/sites/${encodeURIComponent(siteCode)}${suffix}`;
+  }
+
+  withoutSiteSelector(args) {
+    const { site_id: _siteId, site_code: _siteCode, ...body } = args ?? {};
+    return body;
+  }
+
+  requiredId(value, field) {
+    const id = Number.parseInt(value, 10);
+    if (!Number.isInteger(id) || id < 1) {
+      throw new BackendError(`${field} must be a positive integer.`, {
+        code: 'VALIDATION_FAILED'
+      });
+    }
+
+    return id;
+  }
+
+  settingsPath(actor) {
+    return this.sitePath(actor, '/settings/basic');
   }
 
   async request(pathname, options = {}) {
