@@ -29,6 +29,54 @@ function assertNoRemovedSiteIntegrationColumns(sql) {
   }
 }
 
+test('repository delegates migrated SaaS methods without querying PostgreSQL', async () => {
+  const calls = [];
+  const site = { site_id: 101, site_code: 'swcb_demo', name: 'Demo' };
+  const actor = {
+    email: 'owner@example.com',
+    google_id: 'google-sub',
+    site_id: 101,
+    permissions: ['system_admin'],
+    site
+  };
+  const backendClient = {
+    listSitesForAdminIdentity: async (identity) => {
+      calls.push(['list', identity]);
+      return [site];
+    },
+    resolveAdminSiteForIdentity: async (identity, args) => {
+      calls.push(['resolve', identity, args]);
+      return actor;
+    },
+    getBasicSettings: async (resolvedActor, args) => {
+      calls.push(['get', resolvedActor, args]);
+      return { site, settings: { name: 'Demo' } };
+    },
+    updateBasicSettings: async (resolvedActor, args) => {
+      calls.push(['update', resolvedActor, args]);
+      return { ok: true, site: { ...site, name: args.name }, settings: { name: args.name } };
+    }
+  };
+  const pool = {
+    async query() {
+      throw new Error('unexpected SQL');
+    }
+  };
+  const repository = new WeblessAccountRepository(pool, { backendClient });
+
+  assert.deepEqual(await repository.listSitesForAdminIdentity(actor), [site]);
+  assert.deepEqual(
+    await repository.resolveAdminSiteForIdentity(actor, { site_code: 'swcb_demo' }),
+    actor
+  );
+  assert.equal((await repository.getBasicSettings(actor, { site_id: 101 })).settings.name, 'Demo');
+  assert.equal(
+    (await repository.updateBasicSettings(actor, { site_id: 101, name: '新名稱' })).settings.name,
+    '新名稱'
+  );
+  assert.deepEqual(calls.map(([method]) => method), ['list', 'resolve', 'get', 'update']);
+});
+
 function fakePool() {
   return {
     async query(sql, params) {

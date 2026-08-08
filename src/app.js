@@ -11,6 +11,7 @@ import {
   verifySignedToken
 } from './session.js';
 import { WeblessAccountRepository } from './weblessRepository.js';
+import { WeblessBackendClient } from './backends/weblessBackendClient.js';
 
 const SERVICE_NAME = 'slimweb-mcp';
 const SERVICE_VERSION = '0.1.0';
@@ -4817,10 +4818,26 @@ function handleServiceInfo(response) {
 }
 
 function createDefaultContext(options = {}) {
+  let accountRepository = options.accountRepository;
+  if (!accountRepository) {
+    const backendBaseUrl = options.weblessBackendApiBaseUrl
+      ?? process.env.WEBLESS_BACKEND_API_BASE_URL
+      ?? '';
+    const backendClient = options.backendClient ?? (
+      String(backendBaseUrl).trim() !== ''
+        ? new WeblessBackendClient({
+            baseUrl: backendBaseUrl,
+            secret: options.weblessMcpSecret ?? process.env.WEBLESS_MCP_SECRET
+          })
+        : null
+    );
+    accountRepository = new WeblessAccountRepository(undefined, { backendClient });
+  }
+
   return {
     googleClientId: options.googleClientId ?? process.env.GOOGLE_CLIENT_ID ?? '27587628711-upin8ch154kqrl88k41978q660oc0pbg.apps.googleusercontent.com',
     googleVerifier: options.googleVerifier ?? new GoogleIdentityVerifier(options),
-    accountRepository: options.accountRepository ?? new WeblessAccountRepository(),
+    accountRepository,
     sessionSecret: options.sessionSecret ?? process.env.MCP_SESSION_SECRET,
     publicBaseUrl: options.publicBaseUrl ?? process.env.PUBLIC_BASE_URL ?? '',
     secureCookies: options.secureCookies ?? process.env.NODE_ENV === 'production'

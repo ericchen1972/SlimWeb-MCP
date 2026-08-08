@@ -345,6 +345,7 @@ export function databaseConfigFromEnv(env = process.env) {
 export class WeblessAccountRepository {
   constructor(pool = new Pool(databaseConfigFromEnv()), options = {}) {
     this.pool = pool;
+    this.backendClient = options.backendClient ?? null;
     this.storage = options.storage ?? createStorageAdapter(options);
     this.publicSiteBaseUrl = (options.publicSiteBaseUrl ?? process.env.WEBLESS_PUBLIC_BASE_URL ?? 'https://slimweb.tw').replace(/\/+$/, '');
     this.weblessAppBaseUrl = (options.weblessAppBaseUrl ?? process.env.WEBLESS_APP_BASE_URL ?? this.publicSiteBaseUrl).replace(/\/+$/, '');
@@ -383,6 +384,10 @@ export class WeblessAccountRepository {
   }
 
   async listSitesForAdminIdentity(identity) {
+    if (this.backendClient) {
+      return this.backendClient.listSitesForAdminIdentity(identity);
+    }
+
     const result = await this.pool.query(
       `
         select
@@ -436,6 +441,10 @@ export class WeblessAccountRepository {
   }
 
   async resolveAdminSiteForIdentity(identity, args) {
+    if (this.backendClient) {
+      return this.backendClient.resolveAdminSiteForIdentity(identity, args);
+    }
+
     const siteCode = String(args.site_code ?? '').trim();
     const siteId = siteCode === '' ? requireInteger(args.site_id, 'site_id') : null;
     const siteWhere = siteCode === ''
@@ -2023,6 +2032,10 @@ export class WeblessAccountRepository {
   }
 
   async getBasicSettings(accountId, args) {
+    if (this.backendClient) {
+      return this.backendClient.getBasicSettings(accountId, args);
+    }
+
     const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
     const settings = await this.findBasicSettingsForSite(site.id);
 
@@ -2082,6 +2095,10 @@ export class WeblessAccountRepository {
   }
 
   async updateBasicSettings(accountId, args) {
+    if (this.backendClient) {
+      return this.backendClient.updateBasicSettings(accountId, args);
+    }
+
     const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
     const current = { ...(await this.findBasicSettingsForSite(site.id)), name: site.name };
     const next = normalizeBasicSettings(args, current);

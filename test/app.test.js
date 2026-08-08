@@ -1817,6 +1817,80 @@ test('auth success page does not expose bearer token after OAuth login', async (
   });
 });
 
+test('default SaaS repository routes settings update through the configured backend client', async () => {
+  const calls = [];
+  const site = {
+    site_id: 101,
+    site_code: 'swcb_backend',
+    callback_code: 'swcb_backend',
+    name: 'Backend Site',
+    permissions: ['system_admin']
+  };
+  const backendClient = {
+    listSitesForAdminIdentity: async () => [site],
+    resolveAdminSiteForIdentity: async (identity, args) => ({
+      ...identity,
+      site_id: 101,
+      permissions: ['system_admin'],
+      site
+    }),
+    getBasicSettings: async () => ({ site, settings: { name: 'Backend Site' } }),
+    updateBasicSettings: async (actor, args) => {
+      calls.push({ actor, args });
+      return {
+        ok: true,
+        site: { ...site, name: args.name },
+        settings: { name: args.name }
+      };
+    }
+  };
+
+  await withServerOptions({
+    backendClient,
+    googleVerifier: {
+      verify: async () => ({
+        sub: 'google-sub-backend',
+        email: 'owner@example.com',
+        name: 'Owner'
+      })
+    },
+    sessionSecret: 'test-secret'
+  }, async (baseUrl) => {
+    const loginResponse = await fetch(`${baseUrl}/auth/google`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ credential: 'google-token' })
+    });
+    const login = await loginResponse.json();
+    assert.equal(loginResponse.status, 200);
+
+    const response = await fetch(`${baseUrl}/mcp`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${login.session.access_token}`
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 9901,
+        method: 'tools/call',
+        params: {
+          name: 'slimweb_settings_update',
+          arguments: { site_id: 101, name: 'API 新名稱' }
+        }
+      })
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(body.result.structuredContent.settings.name, 'API 新名稱');
+  });
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].actor.site.site_code, 'swcb_backend');
+  assert.equal(calls[0].args.name, 'API 新名稱');
+});
+
 test('authenticated tools can read account status and sites', async () => {
   await withServerOptions({
     googleVerifier: {
