@@ -187,6 +187,48 @@ export class WeblessBackendClient {
     return this.catalogMutation(actor, '/catalog/imports/commit', 'POST', 'slimweb_products_import_commit', 'product_management_import', args);
   }
 
+  async listArticles(actor, args) {
+    const filters = this.withoutSiteSelector(args);
+    const query = new URLSearchParams();
+    for (const field of ['page', 'per_page']) {
+      if (filters[field] !== undefined && filters[field] !== null && filters[field] !== '') query.set(field, String(filters[field]));
+    }
+    return this.request(this.sitePath(actor, `/content/articles${query.size ? `?${query}` : ''}`), {
+      identity: actor,
+      tool: 'slimweb_articles_list',
+      permission: 'page_management_articles'
+    });
+  }
+
+  async checkArticleTitle(actor, args) {
+    const query = new URLSearchParams({ title: String(args?.title ?? '') });
+    return this.request(this.sitePath(actor, `/content/articles/title-check?${query}`), {
+      identity: actor,
+      tool: 'slimweb_articles_check_title',
+      permission: 'page_management_articles'
+    });
+  }
+
+  async getArticleContent(actor, args) {
+    return this.request(this.sitePath(actor, `/content/articles/${this.requiredId(args?.article_id, 'article_id')}`), {
+      identity: actor,
+      tool: 'slimweb_articles_get_content',
+      permission: 'page_management_articles'
+    });
+  }
+
+  async createArticle(actor, args) {
+    return this.catalogMutation(actor, '/content/articles', 'PUT', 'slimweb_articles_create', 'page_management_articles', args);
+  }
+
+  async updateArticle(actor, args) {
+    return this.catalogMutation(actor, '/content/articles', 'PUT', 'slimweb_articles_update', 'page_management_articles', args);
+  }
+
+  async deleteArticle(actor, args) {
+    return this.catalogMutation(actor, `/content/articles/${this.requiredId(args?.article_id, 'article_id')}`, 'DELETE', 'slimweb_articles_delete', 'page_management_articles', {});
+  }
+
   async catalogMutation(actor, suffix, method, tool, permission, args) {
     return this.request(this.sitePath(actor, suffix), {
       method,

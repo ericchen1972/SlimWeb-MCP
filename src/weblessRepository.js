@@ -2555,170 +2555,23 @@ export class WeblessAccountRepository {
   }
 
   async listArticles(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const page = clampPositiveInteger(args.page, 1, 1, 1000);
-    const perPage = clampPositiveInteger(args.per_page, 8, 1, 50);
-    const offset = (page - 1) * perPage;
-    const [countResult, articleResult] = await Promise.all([
-      this.pool.query(
-        `
-          select count(*)::int as total
-          from articles
-          where site_id = $1
-        `,
-        [site.id]
-      ),
-      this.pool.query(
-        `
-          select id, site_id, notion_page_id, title, content, cover_path, created_at, updated_at
-          from articles
-          where site_id = $1
-          order by created_at desc, id desc
-          limit $2 offset $3
-        `,
-        [site.id, perPage, offset]
-      )
-    ]);
-    const total = Number.parseInt(countResult.rows[0]?.total ?? '0', 10);
-
-    return {
-      site,
-      articles: articleResult.rows.map((article) => formatArticle(article, site, this.publicSiteBaseUrl, false)),
-      pagination: {
-        page,
-        per_page: perPage,
-        last_page: Math.max(1, Math.ceil(total / perPage)),
-        total
-      }
-    };
+    return this.requireBackendClient('content_articles_read').listArticles(accountId, args);
   }
 
   async checkArticleTitle(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const title = requireArticleTitle(args.title);
-    const { matches } = await this.findArticleTitleMatchesForSite(site, title);
-
-    return {
-      site,
-      title,
-      normalized_title: normalizeTitleMatch(title),
-      exists: matches.length > 0,
-      matches
-    };
+    return this.requireBackendClient('content_articles_read').checkArticleTitle(accountId, args);
   }
 
   async getArticleContent(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const articleId = requireInteger(args.article_id, 'article_id');
-    const article = await this.findArticleForSite(site.id, articleId);
-
-    return {
-      site,
-      article: formatArticle(article, site, this.publicSiteBaseUrl, true)
-    };
+    return this.requireBackendClient('content_articles_read').getArticleContent(accountId, args);
   }
 
   async createArticle(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const title = requireArticleTitle(args.title);
-    const { matches } = await this.findArticleTitleMatchesForSite(site, title);
-
-    if (matches.length > 0) {
-      throw codedError('CONFLICT', 'Article title already exists.', { matches });
-    }
-
-    if (!args.cover_image) {
-      throw codedError('VALIDATION_FAILED', 'cover_image is required when creating a new article. Generate or upload a 16:9 main image first, then pass its committed media_path.');
-    }
-
-    return this.upsertArticle(accountId, {
-      ...args,
-      site_id: site.id,
-      title,
-      article_id: null
-    });
+    return this.requireBackendClient('content_articles_write').createArticle(accountId, args);
   }
 
   async updateArticle(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const articleId = requireInteger(args.article_id, 'article_id');
-    const existing = await this.findArticleForSite(site.id, articleId);
-    const nextTitle = args.title === undefined || args.title === null ? existing.title : requireArticleTitle(args.title);
-
-    if (normalizeTitleMatch(nextTitle) !== normalizeTitleMatch(existing.title)) {
-      const { matches } = await this.findArticleTitleMatchesForSite(site, nextTitle);
-      const conflictingMatches = matches.filter((match) => match.id !== existing.id);
-
-      if (conflictingMatches.length > 0) {
-        throw codedError('CONFLICT', 'Article title already exists.', { matches: conflictingMatches });
-      }
-    }
-
-    const nextContentHtml = args.content_html === undefined || args.content_html === null
-      ? (existing.content ?? '')
-      : args.content_html;
-    const nextNotionPageId = args.notion_page_id === undefined ? existing.notion_page_id : args.notion_page_id;
-
-    return this.upsertArticle(accountId, {
-      ...args,
-      site_id: site.id,
-      article_id: articleId,
-      title: nextTitle,
-      content_html: nextContentHtml,
-      notion_page_id: nextNotionPageId
-    });
-  }
-
-  async upsertArticle(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const title = requireArticleTitle(args.title);
-    const content = removeDuplicateArticleTitleHeading(extractSafeHtml(args.content_html, 'content_html'), title);
-    const notionPageId = nullableString(args.notion_page_id);
-    const articleId = args.article_id === undefined || args.article_id === null ? null : requireInteger(args.article_id, 'article_id');
-    const existing = articleId ? await this.findArticleForSite(site.id, articleId) : null;
-    const normalizedContentImages = normalizeContentImages(args.content_images);
-    let coverPath = existing?.cover_path ?? null;
-
-    if (!articleId && !args.cover_image) {
-      throw codedError('VALIDATION_FAILED', 'cover_image is required when creating a new article. Generate or upload a 16:9 main image first, then pass its committed media_path.');
-    }
-
-    if (args.cover_image) {
-      coverPath = normalizeCommittedMediaPath(args.cover_image, site.id, 'cover_image');
-    }
-
-    const result = articleId
-      ? await this.pool.query(
-        `
-          update articles
-          set notion_page_id = $1,
-              title = $2,
-              content = $3,
-              cover_path = $4,
-              updated_at = now()
-          where site_id = $5 and id = $6
-          returning id, site_id, notion_page_id, title, content, cover_path, created_at, updated_at
-        `,
-        [notionPageId, title, content, coverPath, site.id, articleId]
-      )
-      : await this.pool.query(
-        `
-          insert into articles (site_id, notion_page_id, title, content, cover_path, created_at, updated_at)
-          values ($1, $2, $3, $4, $5, now(), now())
-          returning id, site_id, notion_page_id, title, content, cover_path, created_at, updated_at
-        `,
-        [site.id, notionPageId, title, content, coverPath]
-      );
-    const article = result.rows[0];
-
-    const contentImages = await this.storeArticleContentImages(site, article.id, normalizedContentImages);
-
-    return {
-      ok: true,
-      site,
-      article: formatArticle(article, site, this.publicSiteBaseUrl, true),
-      content_images: contentImages
-    };
+    return this.requireBackendClient('content_articles_write').updateArticle(accountId, args);
   }
 
   async createUpload(accountId, args) {
@@ -3468,13 +3321,7 @@ export class WeblessAccountRepository {
   }
 
   async deleteArticle(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const article = await this.findArticleForSite(site.id, requireInteger(args.article_id, 'article_id'));
-    if (article.cover_path) {
-      await this.storage.delete(article.cover_path);
-    }
-    await this.pool.query('delete from articles where site_id = $1 and id = $2', [site.id, article.id]);
-    return { ok: true, site, deleted_article_id: article.id };
+    return this.requireBackendClient('content_articles_write').deleteArticle(accountId, args);
   }
 
   async deleteScopedRecord(accountId, args, config) {

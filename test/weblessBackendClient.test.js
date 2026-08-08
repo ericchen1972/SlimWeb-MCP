@@ -193,6 +193,38 @@ test('backend client maps all Phase 2 catalog methods without site selectors in 
   }
 });
 
+test('backend client maps Phase 3 article methods to the versioned content API', async () => {
+  const requests = [];
+  await withJsonServer(async (request, response) => {
+    requests.push({ method: request.method, url: request.url, headers: request.headers, body: await readJson(request) });
+    sendJson(response, 200, { ok: true, data: { accepted: true }, warnings: [] });
+  }, async (baseUrl) => {
+    const client = new WeblessBackendClient({
+      baseUrl,
+      secret: 'service-secret',
+      requestIdFactory: () => 'request-article-001',
+      idempotencyKeyFactory: () => 'idempotency-article-001'
+    });
+    await client.listArticles(actor, { site_id: 101, page: 2, per_page: 5 });
+    await client.checkArticleTitle(actor, { site_id: 101, title: '新文章' });
+    await client.getArticleContent(actor, { site_id: 101, article_id: 7 });
+    await client.createArticle(actor, { site_id: 101, title: '新文章', content_html: '<p>A</p>' });
+    await client.updateArticle(actor, { site_id: 101, article_id: 7, title: '更新文章' });
+    await client.deleteArticle(actor, { site_id: 101, article_id: 7 });
+  });
+
+  assert.deepEqual(requests.map(({ method, url }) => [method, url]), [
+    ['GET', '/internal/mcp/v1/sites/swcb_demo/content/articles?page=2&per_page=5'],
+    ['GET', `/internal/mcp/v1/sites/swcb_demo/content/articles/title-check?title=${encodeURIComponent('新文章')}`],
+    ['GET', '/internal/mcp/v1/sites/swcb_demo/content/articles/7'],
+    ['PUT', '/internal/mcp/v1/sites/swcb_demo/content/articles'],
+    ['PUT', '/internal/mcp/v1/sites/swcb_demo/content/articles'],
+    ['DELETE', '/internal/mcp/v1/sites/swcb_demo/content/articles/7']
+  ]);
+  assert.ok(requests.slice(3).every((request) => request.headers['idempotency-key'] === 'idempotency-article-001'));
+  assert.ok(requests.every((request) => !Object.hasOwn(request.body ?? {}, 'site_id')));
+});
+
 test('backend client maps Webless error envelopes to stable errors', async () => {
   const cases = [
     [403, 'FORBIDDEN'],

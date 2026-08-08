@@ -122,6 +122,26 @@ test('Phase 2 methods do not use PostgreSQL or storage when backend client is co
   assert.ok(calls.every(([, resolvedActor, receivedArgs]) => resolvedActor === actor && receivedArgs === args));
 });
 
+test('Phase 3 article methods require the backend client and avoid PostgreSQL and storage', async () => {
+  const actor = { site: { site_code: 'swcb_demo' } };
+  const methods = ['listArticles', 'checkArticleTitle', 'getArticleContent', 'createArticle', 'updateArticle', 'deleteArticle'];
+  const calls = [];
+  const backendClient = Object.fromEntries(methods.map((method) => [method, async (resolvedActor, args) => {
+    calls.push([method, resolvedActor, args]);
+    return { method };
+  }]));
+  const repository = new WeblessAccountRepository({ async query() { throw new Error('unexpected SQL'); } }, {
+    backendClient,
+    storage: new Proxy({}, { get() { return async () => { throw new Error('unexpected storage'); }; } })
+  });
+  const args = { site_id: 101, article_id: 7 };
+
+  for (const method of methods) {
+    assert.deepEqual(await repository[method](actor, args), { method });
+  }
+  assert.deepEqual(calls.map(([method]) => method), methods);
+});
+
 function fakePool() {
   return {
     async query(sql, params) {
@@ -2976,9 +2996,8 @@ test('repository exposes site-scoped delete methods for Web admin parity', async
   ]);
 });
 
-test('repository deletes members and articles and revokes issued coupons within one site', async () => {
+test('repository deletes members and revokes issued coupons within one site', async () => {
   const writes = [];
-  const storage = { delete: async (value) => writes.push(['storage', value]) };
   const pool = {
     async query(sql, params) {
       if (sql.includes('from sites') && sql.includes('account_id = $1 and id = $2')) {
@@ -2990,25 +3009,20 @@ test('repository deletes members and articles and revokes issued coupons within 
       if (sql.includes('from member_coupons')) {
         return { rows: [{ id: params[2] ?? params[1], site_id: 101, member_id: params[1], status: 'issued' }] };
       }
-      if (sql.trimStart().startsWith('select') && sql.includes('from articles') && sql.includes('where site_id = $1 and id = $2')) {
-        return { rows: [{ id: params[1], site_id: 101, title: '文章', cover_path: 'sites/101/mcp-uploads/committed/cover.webp' }] };
-      }
-      if (sql.includes('delete from members') || sql.includes('delete from articles') || sql.includes('update member_coupons')) {
+      if (sql.includes('delete from members') || sql.includes('update member_coupons')) {
         writes.push(['sql', sql, params]);
         return { rows: [] };
       }
       throw new Error(`Unexpected query: ${sql}`);
     }
   };
-  const repository = new WeblessAccountRepository(pool, { storage });
+  const repository = new WeblessAccountRepository(pool);
 
   await repository.deleteMember(11, { site_id: 101, member_id: 7 });
   await repository.revokeMemberCoupon(11, { site_id: 101, member_id: 7, member_coupon_id: 8 });
-  await repository.deleteArticle(11, { site_id: 101, article_id: 9 });
 
   assert.ok(writes.some((write) => write[0] === 'sql' && write[1].includes('delete from members')));
   assert.ok(writes.some((write) => write[0] === 'sql' && write[1].includes("status = 'revoked'")));
-  assert.ok(writes.some((write) => write[0] === 'storage' && write[1].endsWith('cover.webp')));
 });
 
 test('repository updates and reads mail delivery settings with SMTP fields', async () => {
@@ -3182,74 +3196,6 @@ test('repository updates ECPay and NewebPay logistics convenience-store rules', 
       }]
     }),
     /store_types for newebpay/
-  );
-});
-
-test('repository lists, creates, and updates articles with cover and content images', async () => {
-  const pool = articlesPool();
-  const storageRoot = await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-'));
-  const repository = new WeblessAccountRepository(pool, {
-    storageRoot,
-    publicSiteBaseUrl: 'https://slimweb.tw'
-  });
-  const listed = await repository.listArticles(11, { site_id: 101 });
-  const created = await repository.createArticle(11, {
-    site_id: 101,
-    title: '夏季透氣穿搭',
-    content_html: '<article><h1>夏季透氣穿搭</h1></article>',
-    cover_image: { media_path: 'sites/101/mcp-uploads/committed/article-cover.webp' },
-    content_images: [{
-      suggested_filename: 'linen-look.webp',
-      alt_text: '亞麻襯衫穿搭',
-      source: { media_path: 'sites/101/mcp-uploads/committed/linen-look.webp' }
-    }]
-  });
-
-  assert.equal(listed.articles[0].title, '春季穿搭');
-  assert.equal(created.article.title, '夏季透氣穿搭');
-  assert.match(created.article.cover_url, /\/media\/sites\/101\/mcp-uploads\/committed\/article-cover\.webp/);
-  assert.match(created.content_images[0].url, /linen-look\.webp/);
-
-  const updated = await repository.updateArticle(11, {
-    site_id: 101,
-    article_id: created.article.id,
-    title: '夏季輕透穿搭',
-    content_html: '<article><h1>夏季輕透穿搭</h1><p>更適合炎熱天氣</p></article>'
-  });
-
-  assert.equal(updated.article.title, '夏季輕透穿搭');
-  assert.equal(updated.article.cover_url, created.article.cover_url);
-});
-
-test('repository removes duplicated article title heading from content html', async () => {
-  const pool = articlesPool();
-  const repository = new WeblessAccountRepository(pool, {
-    publicSiteBaseUrl: 'https://slimweb.tw'
-  });
-
-  const created = await repository.createArticle(11, {
-    site_id: 101,
-    title: '關於 SlimWeb',
-    content_html: '<article><h1>關於 SlimWeb</h1><p>SlimWeb 介紹</p></article>',
-    cover_image: { media_path: 'sites/101/mcp-uploads/committed/article-cover.webp' }
-  });
-
-  assert.equal(created.article.content, '<article><p>SlimWeb 介紹</p></article>');
-});
-
-test('repository requires a cover image when creating an article', async () => {
-  const pool = articlesPool();
-  const repository = new WeblessAccountRepository(pool, {
-    publicSiteBaseUrl: 'https://slimweb.tw'
-  });
-
-  await assert.rejects(
-    () => repository.createArticle(11, {
-      site_id: 101,
-      title: '沒有主圖的文章',
-      content_html: '<article><h1>沒有主圖的文章</h1></article>'
-    }),
-    /cover_image is required/
   );
 });
 

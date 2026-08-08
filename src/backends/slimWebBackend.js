@@ -16,7 +16,13 @@ export const SLIMWEB_BACKEND_METHODS = Object.freeze([
   'deleteProduct',
   'inspectProductImport',
   'validateProductImport',
-  'commitProductImport'
+  'commitProductImport',
+  'listArticles',
+  'checkArticleTitle',
+  'getArticleContent',
+  'createArticle',
+  'updateArticle',
+  'deleteArticle'
 ]);
 
 export function assertSlimWebBackend(backend) {
