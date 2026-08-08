@@ -669,11 +669,13 @@ Expected: all Node tests PASS, Docker build succeeds, and Git status is clean.
 Run from `/Users/eric/Documents/webless`:
 
 ```bash
+php artisan migrate --force
+php artisan migrate:status | rg '2026_08_08_120000.*Ran'
 previous_webless_revision="$(gcloud run services describe webless --project=webless-489821 --region=asia-east1 --format=json | jq -r '.status.traffic[] | select(.percent == 100) | .revisionName' | sed -n '1p')"
 TAG=mcp-v1-settings scripts/deploy-cloud-run.sh --health-path /up
 ```
 
-Expected: candidate deploys with zero production traffic and its health check passes.
+Expected: the idempotency migration is recorded as `Ran`, then the candidate deploys with zero production traffic and its health check passes. The configured local Webless environment targets the production Synology PostgreSQL database documented in `CLOUD_RUN_DEPLOYMENT_LOCAL.md`; do not run the migration from a differently configured shell.
 
 Call the candidate `/internal/mcp/v1/version` with the configured service secret and request ID. Expected: HTTP 200, `contract=slimweb-backend`, `major=1`, and all three Phase 1 capabilities.
 
