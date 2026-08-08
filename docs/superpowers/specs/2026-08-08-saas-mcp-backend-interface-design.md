@@ -281,3 +281,21 @@ The SaaS content, template, and media slice passed automated regression, product
 - The migrated repository methods now delegate database and storage work to the Webless Backend API. The repository audit maps 123 database/storage-bound public tool paths: 52 use the Backend interface and 71 remain for Phase 4/5; no pre-Phase-4 gaps remain. The other two public tools are edge-only and do not require repository persistence.
 
 This evidence completes Phase 3 only. Phase 4 commerce operations is next; Standalone remains out of scope until the SaaS migration is accepted.
+
+## Phase 4 Acceptance Evidence — 2026-08-08
+
+The SaaS commerce slice passed automated regression, architecture enforcement, production deployment, and an authenticated read-only production check.
+
+- Migrated public tools: 37 payment/logistics settings, member/promotion, merchandising, order, return, refund, and logistics tools.
+- Webless production revision: `webless-00543-qiw` (100% traffic).
+- SlimWeb-MCP production revision: `slimweb-mcp-00132-8dm` (100% traffic).
+- SlimWeb-MCP deployment workflow: GitHub Actions run `31263500623`, conclusion `success`.
+- Webless test suite: 749 tests passed with 4,294 assertions and 0 failures.
+- SlimWeb-MCP test suite: 361 tests passed with 0 failures; the explicit frozen-contract run added 2 passing tests.
+- Frozen public tool contract remains 125 tools with SHA-256 `d6de40eb08a55927c199ae1b227fc29b7bf4010e0bc70a87b14d4d3ed1be6871`.
+- Production health checks returned HTTP 200 for Webless `/up` and SlimWeb-MCP `/readyz`; the internal API rejected a request without the service credential with HTTP 403.
+- An authenticated, tenant-scoped `slimweb_orders_list` backend read succeeded for `swcb_zog0l7zlyp3lwmlc` with HTTP 200 and a valid orders array. No production order, refund, logistics, promotion, or provider data was changed.
+- The Phase 4 architecture audit extracts all 37 migrated repository methods and rejects direct database, storage, legacy internal HTTP, and provider/order helper access. Phase 4 direct paths are zero, reducing the remaining migration inventory from 71 to 34.
+- Laravel Pint passes for every Phase 4 file. The repository-wide Pint baseline still reports unrelated pre-existing formatting violations outside this migration and was not mass-rewritten.
+
+This evidence completes Phase 4 only. Phase 5 will migrate the remaining 34 database/storage-bound paths; Standalone remains out of scope until the SaaS migration is accepted.
