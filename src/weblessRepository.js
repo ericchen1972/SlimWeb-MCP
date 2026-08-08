@@ -2029,7 +2029,7 @@ export class WeblessAccountRepository {
     return {
       site,
       settings: {
-        ...formatPublicBasicSettings(settings, this.publicSiteBaseUrl),
+        ...formatPublicBasicSettings({ ...settings, name: site.name }, this.publicSiteBaseUrl),
         client_mcp_url: clientMcpUrlForSite(site, this.clientMcpBaseUrl)
       }
     };
@@ -2083,12 +2083,15 @@ export class WeblessAccountRepository {
 
   async updateBasicSettings(accountId, args) {
     const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const current = await this.findBasicSettingsForSite(site.id);
+    const current = { ...(await this.findBasicSettingsForSite(site.id)), name: site.name };
     const next = normalizeBasicSettings(args, current);
     const existingColumns = await this.existingSiteColumns(BASIC_SETTINGS_COLUMNS);
-    const writableColumns = existingColumns.filter(
-      (column) => column !== 'icon_path' && Object.prototype.hasOwnProperty.call(args, column)
-    );
+    const writableColumns = [
+      ...(Object.prototype.hasOwnProperty.call(args, 'name') ? ['name'] : []),
+      ...existingColumns.filter(
+        (column) => column !== 'icon_path' && Object.prototype.hasOwnProperty.call(args, column)
+      )
+    ];
     const missingRequestedColumn = BASIC_SETTINGS_COLUMNS
       .filter((column) => column !== 'icon_path')
       .find((column) => Object.prototype.hasOwnProperty.call(args, column) && !existingColumns.includes(column));
@@ -2125,7 +2128,7 @@ export class WeblessAccountRepository {
             ${writableColumns.map((column, index) => `${column} = $${index + 1}`).join(',\n            ')},
             updated_at = now()
           where id = $${writableColumns.length + 1}
-          returning ${existingColumns.join(', ')}
+          returning name${existingColumns.length > 0 ? `, ${existingColumns.join(', ')}` : ''}
         `,
         [...updateValues, site.id]
       )
@@ -2147,7 +2150,7 @@ export class WeblessAccountRepository {
 
     return {
       ok: true,
-      site,
+      site: { ...site, name: updatedSettings.name ?? site.name },
       settings: formatPublicBasicSettings(
         updatedSettings,
         this.publicSiteBaseUrl,
@@ -8324,7 +8327,14 @@ function normalizeMailTemplateUpdates(value) {
 
 function normalizeBasicSettings(args, current = {}) {
   const supplied = (field) => Object.prototype.hasOwnProperty.call(args, field);
+  const name = supplied('name') ? requireNonEmptyString(args.name, 'name') : (current.name ?? null);
+
+  if (supplied('name') && Array.from(name).length > 255) {
+    throw codedError('VALIDATION_FAILED', 'name must not exceed 255 characters.');
+  }
+
   const normalized = {
+    name,
     site_status: supplied('site_status') ? String(args.site_status ?? '').trim() : (current.site_status ?? 'active'),
     member_verification: supplied('member_verification') ? String(args.member_verification ?? '').trim() : (current.member_verification ?? 'none'),
     website_type: supplied('website_type') ? String(args.website_type ?? '').trim() : (current.website_type ?? 'ecommerce'),
@@ -8363,6 +8373,7 @@ function normalizeBasicSettings(args, current = {}) {
 
 function formatBasicSettings(row) {
   return {
+    name: row.name ?? null,
     site_status: row.site_status ?? 'active',
     member_verification: row.member_verification ?? 'none',
     website_type: row.website_type ?? 'ecommerce',

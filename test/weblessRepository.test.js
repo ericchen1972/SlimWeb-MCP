@@ -2152,6 +2152,7 @@ test('repository includes consumer MCP URL in basic settings', async () => {
   const result = await repository.getBasicSettings(11, { site_id: 101 });
 
   assert.equal(result.settings.client_mcp_url, 'https://client-mcp.example.test/sites/swcb_test101/mcp');
+  assert.equal(result.settings.name, '測試網站');
   assert.equal(result.settings.category_navigation_mode, 'navbar_categories');
   assert.equal(Object.hasOwn(result.settings, 'product_category_depth'), false);
   assert.deepEqual(result.settings.logo, {
@@ -2159,6 +2160,90 @@ test('repository includes consumer MCP URL in basic settings', async () => {
     public_url: 'https://slimweb.tw/media/sites/101/settings/logo-current.webp',
     mime_type: 'image/webp'
   });
+});
+
+test('repository updates only the site name through basic settings', async () => {
+  const state = {
+    id: 101,
+    slug: 'site-1',
+    name: '原網站名稱',
+    domain: 'shop.example.com',
+    callback_code: 'swcb_test101',
+    site_status: 'active',
+    member_verification: 'none',
+    website_type: 'ecommerce',
+    default_country_code: 'TW',
+    product_load_mode: 'pagination',
+    return_days_allowed: 7,
+    category_navigation_mode: 'category_menu',
+    icon_path: null
+  };
+  const settingsColumns = [
+    'name',
+    'site_status',
+    'member_verification',
+    'website_type',
+    'default_country_code',
+    'product_load_mode',
+    'return_days_allowed',
+    'category_navigation_mode',
+    'icon_path'
+  ];
+  const pool = {
+    async query(sql, params) {
+      if (sql.includes('from sites') && sql.includes('account_id = $1 and id = $2')) {
+        return { rows: [state] };
+      }
+      if (sql.includes('from information_schema.columns')) {
+        return { rows: settingsColumns.map((column_name) => ({ column_name })) };
+      }
+      if (sql.includes('select ') && sql.includes('from sites') && sql.includes('where id = $1')) {
+        return { rows: [state] };
+      }
+      if (sql.includes('update sites')) {
+        assert.match(sql, /name = \$1/);
+        assert.doesNotMatch(sql, /slug\s*=/);
+        assert.doesNotMatch(sql, /domain\s*=/);
+        assert.doesNotMatch(sql, /callback_code\s*=/);
+        assert.deepEqual(params, ['新的網站名稱', 101]);
+        state.name = params[0];
+        return { rows: [state] };
+      }
+      throw new Error(`Unexpected query: ${sql}`);
+    }
+  };
+  const repository = new WeblessAccountRepository(pool);
+
+  const result = await repository.updateBasicSettings(11, {
+    site_id: 101,
+    name: '  新的網站名稱  '
+  });
+
+  assert.equal(result.site.name, '新的網站名稱');
+  assert.equal(result.settings.name, '新的網站名稱');
+  assert.equal(result.site.slug, 'site-1');
+  assert.equal(result.site.domain, 'shop.example.com');
+  assert.equal(result.site.callback_code, 'swcb_test101');
+});
+
+test('repository rejects a blank site name', async () => {
+  const repository = new WeblessAccountRepository(readinessPool());
+
+  await assert.rejects(
+    () => repository.updateBasicSettings(11, { site_id: 101, name: '   ' }),
+    (error) => error?.code === 'VALIDATION_FAILED'
+      && error.message === 'name is required.'
+  );
+});
+
+test('repository rejects a site name longer than 255 characters', async () => {
+  const repository = new WeblessAccountRepository(readinessPool());
+
+  await assert.rejects(
+    () => repository.updateBasicSettings(11, { site_id: 101, name: 'a'.repeat(256) }),
+    (error) => error?.code === 'VALIDATION_FAILED'
+      && error.message === 'name must not exceed 255 characters.'
+  );
 });
 
 test('repository partially updates category navigation mode without overwriting unrelated settings', async () => {

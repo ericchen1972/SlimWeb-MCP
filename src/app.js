@@ -19,7 +19,7 @@ const MCP_SERVER_GUIDELINES = [
 'Before calling any SlimWeb MCP tool, first call SlimWeb.slimweb_sites_list to obtain valid site_code values and site names.',
 'If SlimWeb.slimweb_sites_list returns more than one site, stop the task and list the available site names for the user to choose from.',
 'Never use a site_code that does not appear in the SlimWeb.slimweb_sites_list result. Do not ask the user for numeric site_id values.',
-'Use slimweb_settings_get when the user needs basic site state or the consumer MCP URL. The client_mcp_url is the site-specific MCP endpoint for shoppers and members; explain that it lets customers connect supported AI clients to the storefront for product, order, member, and support workflows, and encourage merchants to place this URL or an install button on the homepage where consumers can find it.',
+'Use slimweb_settings_get when the user needs the site name, basic site state, or the consumer MCP URL. Use slimweb_settings_update.name to rename the site; this changes only the display name and never changes the slug, site_code, callback code, or domain. The client_mcp_url is the site-specific MCP endpoint for shoppers and members; explain that it lets customers connect supported AI clients to the storefront for product, order, member, and support workflows, and encourage merchants to place this URL or an install button on the homepage where consumers can find it.',
 'Site logo rule: manage the single active site logo through slimweb_settings_update.logo. For raster input, first obtain a committed site media_path; Webless converts it to WebP, proportionally limits height to 96 pixels without upscaling, preserves transparency, removes the staging upload, and replaces the prior logo outside the media library. SVG may be supplied as svg_base64 and is sanitized and proportionally limited to 96 pixels high.',
 'Distinguish page and article from user intent only; do not infer from history.',
 'Treat themes as the base styling layer for every page, including the homepage.',
@@ -1204,7 +1204,7 @@ const MCP_TOOLS = [
   },
   {
     name: 'slimweb_settings_get',
-    description: 'Read basic SlimWeb site settings such as status, website type, default country, product load mode, return days, category_navigation_mode, the single active site logo, and the consumer MCP URL for shoppers to install or connect supported AI clients.',
+    description: 'Read the SlimWeb site name and basic settings such as status, website type, default country, product load mode, return days, category_navigation_mode, the single active site logo, and the consumer MCP URL for shoppers to install or connect supported AI clients.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1215,11 +1215,17 @@ const MCP_TOOLS = [
   },
   {
     name: 'slimweb_settings_update',
-    description: 'Update basic SlimWeb site settings, including the category navigation presentation mode and single active site logo. Only send fields the user explicitly provided or confirmed.',
+    description: 'Update the SlimWeb site display name and basic settings, including the category navigation presentation mode and single active site logo. Renaming changes only the display name, not the slug, site_code, callback code, or domain. Only send fields the user explicitly provided or confirmed.',
     inputSchema: {
       type: 'object',
       properties: {
         site_id: { type: 'integer' },
+        name: {
+          type: 'string',
+          minLength: 1,
+          maxLength: 255,
+          description: 'Site display name. Renaming does not change the slug, site_code, callback code, or domain.'
+        },
         site_status: { type: 'string', enum: ['active', 'maintenance'] },
         member_verification: {
           type: 'string',

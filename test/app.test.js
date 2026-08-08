@@ -446,6 +446,7 @@ test('MCP tools list includes homepage editing contract tools', async () => {
     assert.equal(toolsByName.get('slimweb_site_theme_mode_update').inputSchema.properties.theme_mode.enum.includes('dark'), true);
     assert.equal(toolsByName.get('slimweb_site_select').inputSchema.required.includes('site_code'), true);
     const logoSchema = toolsByName.get('slimweb_settings_update').inputSchema.properties.logo;
+    const siteNameSchema = toolsByName.get('slimweb_settings_update').inputSchema.properties.name;
     const categoryNavigationModeSchema = toolsByName.get('slimweb_settings_update').inputSchema.properties.category_navigation_mode;
     assert.equal(toolsByName.get('slimweb_settings_update').inputSchema.properties.product_category_depth, undefined);
     assert.deepEqual(categoryNavigationModeSchema.enum, ['category_menu', 'navbar_categories']);
@@ -453,6 +454,10 @@ test('MCP tools list includes homepage editing contract tools', async () => {
     assert.match(categoryNavigationModeSchema.description, /never creates navigation items/i);
     assert.doesNotMatch(toolsByName.get('slimweb_settings_get').description, /category depth/i);
     assert.match(toolsByName.get('slimweb_settings_get').description, /category_navigation_mode/);
+    assert.equal(siteNameSchema.type, 'string');
+    assert.equal(siteNameSchema.minLength, 1);
+    assert.equal(siteNameSchema.maxLength, 255);
+    assert.match(siteNameSchema.description, /slug/i);
     assert.equal(logoSchema.type, 'object');
     assert.equal(logoSchema.additionalProperties, false);
     assert.equal(logoSchema.properties.media_path.type, 'string');
@@ -933,6 +938,7 @@ test('homepage editing tools call repository implementations', async () => {
       return {
         site: { id: args.site_id },
         settings: {
+          name: '測試網站',
           site_status: 'active',
           logo: {
             media_path: 'sites/101/settings/logo-current.webp',
@@ -960,6 +966,7 @@ test('homepage editing tools call repository implementations', async () => {
         ok: true,
         site: { id: args.site_id },
         settings: {
+          name: args.name ?? '測試網站',
           site_status: args.site_status,
           logo: args.logo ? {
             media_path: 'sites/101/settings/logo-new.webp',
@@ -1385,15 +1392,18 @@ test('homepage editing tools call repository implementations', async () => {
     assert.equal((await callTool(50, 'slimweb_refunds_create', { site_id: 101, order_no: 'SWR', provider: 'ecpay' })).result.structuredContent.order.refund_status, 'created');
     assert.equal((await callTool(51, 'slimweb_dashboard_summary', { site_id: 101 })).result.structuredContent.stats.totalProducts, 1);
     const settings = (await callTool(52, 'slimweb_settings_get', { site_id: 101 })).result.structuredContent.settings;
+    assert.equal(settings.name, '測試網站');
     assert.equal(settings.site_status, 'active');
     assert.equal(settings.logo.mime_type, 'image/webp');
     assert.equal(settings.client_mcp_url, 'https://client-mcp.example.test/sites/swcb_test101/mcp');
     const updatedSettings = (await callTool(53, 'slimweb_settings_update', {
       site_id: 101,
+      name: '新的網站名稱',
       site_status: 'maintenance',
       logo: { media_path: 'sites/101/mcp-uploads/committed/sweety-logo.png' }
     })).result.structuredContent.settings;
     assert.equal(updatedSettings.site_status, 'maintenance');
+    assert.equal(updatedSettings.name, '新的網站名稱');
     assert.equal(updatedSettings.logo.height, 96);
     assert.equal((await callTool(54, 'slimweb_admins_list', { site_id: 101 })).result.structuredContent.admins[0].canDelete, false);
     assert.equal((await callTool(55, 'slimweb_admins_upsert', { site_id: 101, google_email: 'staff@example.com', permissions: ['product_management'] })).result.structuredContent.admin.google_email, 'staff@example.com');
