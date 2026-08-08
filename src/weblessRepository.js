@@ -439,16 +439,7 @@ export class WeblessAccountRepository {
   }
 
   async selectSiteForAdminIdentity(identity, args) {
-    const actor = await this.resolveAdminSiteForIdentity(identity, args);
-    const themes = await this.listThemesForSite(actor.site_id);
-
-    return {
-      selected_site: actor.site,
-      site_admin_id: actor.site_admin_id,
-      permissions: actor.permissions,
-      themes,
-      requires_site_code_for_mutations: true
-    };
+    return this.requireBackendClient('site_selection').selectSiteForAdminIdentity(identity, args);
   }
 
   async resolveAdminSiteForIdentity(identity, args) {
@@ -1986,22 +1977,7 @@ export class WeblessAccountRepository {
   }
 
   async listExternalAssets(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const result = await this.pool.query(
-      `
-        select id, site_id, site_page_id, page_key, scope, asset_type, url, placement, load_mode,
-               sort_order, is_enabled, purpose, attributes, created_at, updated_at
-        from site_external_assets
-        where site_id = $1
-        order by sort_order asc, id asc
-      `,
-      [site.id]
-    );
-
-    return {
-      site,
-      assets: result.rows.map((asset) => formatExternalAsset(asset))
-    };
+    return this.requireBackendClient('content_external_assets_read').listExternalAssets(accountId, args);
   }
 
   async upsertExternalAsset(accountId, args) {
@@ -2080,17 +2056,7 @@ export class WeblessAccountRepository {
   }
 
   async deleteExternalAsset(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const asset = await this.findExternalAssetForSite(site.id, requireInteger(args.asset_id, 'asset_id'));
-
-    await this.pool.query('delete from site_external_assets where site_id = $1 and id = $2', [site.id, asset.id]);
-
-    return {
-      ok: true,
-      site,
-      deleted_asset_id: asset.id,
-      assets: (await this.listExternalAssets(accountId, { site_id: site.id })).assets
-    };
+    return this.requireBackendClient('content_external_assets_write').deleteExternalAsset(accountId, args);
   }
 
   async reorderExternalAssets(accountId, args) {
@@ -2205,23 +2171,14 @@ export class WeblessAccountRepository {
     const filename = requireNonEmptyString(args.filename ?? image.filename, 'filename');
     const targetUsage = requireUploadTargetUsage(args.target_usage);
 
-    const imported = await this.importExternalImageUrl(accountId, {
+    return this.requireBackendClient('media_chatgpt_attachment').importChatGptAttachment(accountId, {
       site_id: args.site_id,
       image_url: image.download_url,
+      file_id: image.file_id,
       filename,
       mime_type: image.mime_type,
-      target_usage: targetUsage,
-      source_label: 'OpenAI file parameter'
+      target_usage: targetUsage
     });
-
-    return {
-      ...imported,
-      upload: {
-        ...imported.upload,
-        source: 'openai_file_params',
-        file_id: image.file_id ?? null
-      }
-    };
   }
 
   async importExternalImageUrl(accountId, args) {
@@ -3710,66 +3667,7 @@ export class WeblessAccountRepository {
   }
 
   async updateContentSeo(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const workflowContext = requireContentSeoWorkflowContext(args.workflow_context);
-    const contentType = requireContentSeoType(args.content_type);
-    validateContentSeoWorkflow(contentType, workflowContext);
-    const seo = normalizeContentSeoPayload(args, site, this.publicSiteBaseUrl);
-
-    if (contentType === 'page') {
-      const pageName = requireNonEmptyString(args.page_name ?? args.page_key, 'page_name');
-      const pageRecord = await this.getPageContent(accountId, {
-        site_id: site.id,
-        page_name: pageName
-      });
-      const metadataPath = customPageMetadataStoragePath(site.id, pageRecord.page_key);
-      const metadata = {
-        ...parseJsonObject(await this.storage.readText(metadataPath)),
-        key: pageRecord.page_key,
-        name: pageRecord.title,
-        seo,
-        seo_updated_at: new Date().toISOString()
-      };
-
-      await this.storage.write(metadataPath, Buffer.from(JSON.stringify(metadata, null, 2) + '\n', 'utf8'), 'application/json; charset=utf-8');
-
-      return {
-        ok: true,
-        site,
-        content_type: contentType,
-        workflow_context: workflowContext,
-        page: {
-          page_key: pageRecord.page_key,
-          title: pageRecord.title,
-          public_url: pageRecord.public_url,
-          preview_url: pageRecord.preview_url
-        },
-        seo,
-        metadata_path: metadataPath
-      };
-    }
-
-    const articleId = requireInteger(args.article_id, 'article_id');
-    const article = await this.findArticleForSite(site.id, articleId);
-    const metadataPath = articleSeoMetadataStoragePath(site.id, articleId);
-    const metadata = {
-      article_id: articleId,
-      title: article.title,
-      seo,
-      seo_updated_at: new Date().toISOString()
-    };
-
-    await this.storage.write(metadataPath, Buffer.from(JSON.stringify(metadata, null, 2) + '\n', 'utf8'), 'application/json; charset=utf-8');
-
-    return {
-      ok: true,
-      site,
-      content_type: contentType,
-      workflow_context: workflowContext,
-      article: formatArticle(article, site, this.publicSiteBaseUrl, false),
-      seo,
-      metadata_path: metadataPath
-    };
+    return this.requireBackendClient('content_seo_write').updateContentSeo(accountId, args);
   }
 
   async listCustomPagesForSite(site, { includeHtml = false, previewThemeId = 'default' } = {}) {

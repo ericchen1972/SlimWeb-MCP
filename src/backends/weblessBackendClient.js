@@ -68,6 +68,23 @@ export class WeblessBackendClient {
     };
   }
 
+  async selectSiteForAdminIdentity(identity, args) {
+    const actor = await this.resolveAdminSiteForIdentity(identity, args);
+    const data = await this.request(this.sitePath(actor, '/themes?include_default=1'), {
+      identity: actor,
+      tool: 'slimweb_site_select',
+      permission: 'page_management_templates'
+    });
+
+    return {
+      selected_site: actor.site,
+      site_admin_id: actor.site_admin_id,
+      permissions: actor.permissions,
+      themes: data.themes,
+      requires_site_code_for_mutations: true
+    };
+  }
+
   async getBasicSettings(actor) {
     return this.request(this.settingsPath(actor), {
       identity: actor,
@@ -347,6 +364,28 @@ export class WeblessBackendClient {
 
   async registerAsset(actor, args) {
     return this.request(this.sitePath(actor, '/media/assets/register'), { method: 'POST', identity: actor, tool: 'slimweb_assets_upload', idempotencyKey: this.idempotencyKeyFactory(), body: this.withoutSiteSelector(args) });
+  }
+
+  async listExternalAssets(actor) {
+    return this.request(this.sitePath(actor, '/external-assets'), { identity: actor, tool: 'slimweb_external_assets_list', permission: 'page_management_external_assets' });
+  }
+
+  async deleteExternalAsset(actor, args) {
+    return this.request(this.sitePath(actor, `/external-assets/${this.requiredId(args?.asset_id, 'asset_id')}`), {
+      method: 'DELETE', identity: actor, tool: 'slimweb_external_assets_delete', permission: 'page_management_external_assets', idempotencyKey: this.idempotencyKeyFactory(), body: {}
+    });
+  }
+
+  async updateContentSeo(actor, args) {
+    return this.request(this.sitePath(actor, '/content/seo'), {
+      method: 'PUT', identity: actor, tool: 'slimweb_content_seo_update', idempotencyKey: this.idempotencyKeyFactory(), body: this.withoutSiteSelector(args)
+    });
+  }
+
+  async importChatGptAttachment(actor, args) {
+    return this.request(this.sitePath(actor, '/media/imports/chatgpt-attachment'), {
+      method: 'POST', identity: actor, tool: 'slimweb_images_import_chatgpt_attachment', idempotencyKey: this.idempotencyKeyFactory(), body: this.withoutSiteSelector(args)
+    });
   }
 
   async catalogMutation(actor, suffix, method, tool, permission, args) {

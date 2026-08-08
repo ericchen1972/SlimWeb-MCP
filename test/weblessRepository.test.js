@@ -77,6 +77,23 @@ test('repository delegates migrated SaaS methods without querying PostgreSQL', a
   assert.deepEqual(calls.map(([method]) => method), ['list', 'resolve', 'get', 'update']);
 });
 
+test('site selection delegates the complete operation to the backend client', async () => {
+  const expected = { selected_site: { site_code: 'swcb_demo' }, themes: [{ id: 1, is_default: true }] };
+  const calls = [];
+  const backendClient = {
+    selectSiteForAdminIdentity: async (identity, args) => {
+      calls.push([identity, args]);
+      return expected;
+    }
+  };
+  const repository = new WeblessAccountRepository({ async query() { throw new Error('unexpected SQL'); } }, { backendClient });
+  const identity = { email: 'owner@example.com', google_id: 'google-sub' };
+  const args = { site_code: 'swcb_demo' };
+
+  assert.deepEqual(await repository.selectSiteForAdminIdentity(identity, args), expected);
+  assert.deepEqual(calls, [[identity, args]]);
+});
+
 test('Phase 2 methods do not use PostgreSQL or storage when backend client is configured', async () => {
   const calls = [];
   const actor = {
@@ -195,6 +212,81 @@ test('Phase 3 media methods use only the backend client', async () => {
   assert.deepEqual(await repository.deleteUnusedMedia(actor, args), { kind: 'cleanup' });
   assert.deepEqual(await repository.uploadAsset(actor, args), { kind: 'asset' });
   assert.deepEqual(calls.map(([kind]) => kind), ['stats', 'cleanup', 'asset']);
+});
+
+test('Phase 3 external asset methods use only the backend client', async () => {
+  const actor = { site: { site_code: 'swcb_demo' } };
+  const calls = [];
+  const backendClient = {
+    listExternalAssets: async (resolvedActor, args) => { calls.push(['list', resolvedActor, args]); return { assets: [] }; },
+    deleteExternalAsset: async (resolvedActor, args) => { calls.push(['delete', resolvedActor, args]); return { ok: true }; }
+  };
+  const repository = new WeblessAccountRepository({ async query() { throw new Error('unexpected SQL'); } }, { backendClient });
+  const args = { site_id: 101, asset_id: 8 };
+
+  assert.deepEqual(await repository.listExternalAssets(actor, args), { assets: [] });
+  assert.deepEqual(await repository.deleteExternalAsset(actor, args), { ok: true });
+  assert.deepEqual(calls.map(([kind]) => kind), ['list', 'delete']);
+});
+
+test('Phase 3 content SEO uses only the backend client', async () => {
+  const actor = { site: { site_code: 'swcb_demo' } };
+  const args = { site_id: 101, content_type: 'page', workflow_context: 'page_update', page_name: 'brand-story' };
+  const calls = [];
+  const backendClient = { updateContentSeo: async (resolvedActor, received) => { calls.push([resolvedActor, received]); return { ok: true }; } };
+  const repository = new WeblessAccountRepository({ async query() { throw new Error('unexpected SQL'); } }, {
+    backendClient,
+    storage: new Proxy({}, { get() { return async () => { throw new Error('unexpected storage'); }; } })
+  });
+
+  assert.deepEqual(await repository.updateContentSeo(actor, args), { ok: true });
+  assert.deepEqual(calls, [[actor, args]]);
+});
+
+test('ChatGPT attachment import normalizes fileParams then delegates download and storage to the backend client', async () => {
+  const actor = { site: { site_code: 'swcb_demo' } };
+  const calls = [];
+  const backendClient = {
+    importChatGptAttachment: async (resolvedActor, args) => {
+      calls.push([resolvedActor, args]);
+      return { ok: true, asset: { media_path: 'sites/101/mcp-uploads/committed/a.png' } };
+    }
+  };
+  const repository = new WeblessAccountRepository({ async query() { throw new Error('unexpected SQL'); } }, { backendClient, fetchImpl: async () => { throw new Error('unexpected MCP download'); } });
+
+  const result = await repository.importChatGptAttachment(actor, {
+    site_id: 101,
+    target_usage: 'page_asset',
+    image: { download_link: 'https://files.openai.example/a.png', id: 'file-1', name: 'a.png', mime_type: 'image/png' }
+  });
+
+  assert.equal(result.asset.media_path, 'sites/101/mcp-uploads/committed/a.png');
+  assert.equal(calls[0][0], actor);
+  assert.deepEqual(calls[0][1], {
+    site_id: 101,
+    target_usage: 'page_asset',
+    image_url: 'https://files.openai.example/a.png',
+    file_id: 'file-1',
+    filename: 'a.png',
+    mime_type: 'image/png'
+  });
+});
+
+test('pre-Phase-4 repository methods contain no direct database or storage fallback', async () => {
+  const source = await readFile(new URL('../src/weblessRepository.js', import.meta.url), 'utf8');
+  const definitions = [...source.matchAll(/^  async ([A-Za-z0-9_]+)\(/gm)];
+  const bodies = new Map(definitions.map((definition, index) => [
+    definition[1],
+    source.slice(definition.index, definitions[index + 1]?.index ?? source.length)
+  ]));
+  const methods = ['selectSiteForAdminIdentity', 'listExternalAssets', 'deleteExternalAsset', 'updateContentSeo', 'importChatGptAttachment'];
+
+  for (const method of methods) {
+    const body = bodies.get(method);
+    assert.ok(body, `missing ${method}()`);
+    assert.doesNotMatch(body, /this\.pool|this\.storage|listThemesForSite|importExternalImageUrl|this\.fetch/);
+    assert.match(body, /requireBackendClient/);
+  }
 });
 
 function fakePool() {
@@ -3080,93 +3172,6 @@ test('repository assigns active manual coupons to one member', async () => {
       coupon_template_id: 2
     }),
     /already has an active copy/
-  );
-});
-
-test('repository rejects unrelated content canonical hosts before writing metadata', async () => {
-  const repository = new WeblessAccountRepository(fakePool(), {
-    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
-    publicSiteBaseUrl: 'https://slimweb.tw'
-  });
-
-  await assert.rejects(
-    () => repository.updateContentSeo(11, {
-      site_id: 101,
-      content_type: 'page',
-      page_name: '京都三日遊',
-      workflow_context: 'page_update',
-      canonical_url: 'https://other.example.com/page',
-      og_image_url: 'ftp://files.example.com/image.jpg'
-    }),
-    (error) => error?.code === 'VALIDATION_FAILED' && /canonical_url/.test(error.message)
-  );
-
-  await assert.rejects(
-    () => repository.updateContentSeo(11, {
-      site_id: 101,
-      content_type: 'page',
-      page_name: '京都三日遊',
-      workflow_context: 'page_update',
-      canonical_url: 'https://slimweb.tw/sites/site-1/pages/page-101',
-      og_image_url: 'ftp://files.example.com/image.jpg'
-    }),
-    (error) => error?.code === 'VALIDATION_FAILED' && /og_image_url/.test(error.message)
-  );
-});
-
-test('repository writes article SEO to the documented storage contract', async () => {
-  const storageRoot = await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-'));
-  const basePool = fakePool();
-  const repository = new WeblessAccountRepository({
-    async query(sql, params) {
-      if (sql.includes('from articles') && sql.includes('where site_id = $1 and id = $2')) {
-        assert.deepEqual(params, [101, 88]);
-        return { rows: [{
-          id: 88,
-          site_id: 101,
-          title: 'SEO Article',
-          content: '<p>Article</p>',
-          cover_path: null,
-          created_at: new Date('2026-08-01T00:00:00Z'),
-          updated_at: new Date('2026-08-02T00:00:00Z')
-        }] };
-      }
-      return basePool.query(sql, params);
-    }
-  }, {
-    storageRoot,
-    publicSiteBaseUrl: 'https://slimweb.tw'
-  });
-
-  const updated = await repository.updateContentSeo(11, {
-    site_id: 101,
-    content_type: 'article',
-    article_id: 88,
-    workflow_context: 'article_update',
-    seo_title: 'SEO Article Title'
-  });
-  const metadata = JSON.parse(await readFile(path.join(storageRoot, updated.metadata_path), 'utf8'));
-
-  assert.equal(updated.metadata_path, 'sites/101/articles/88/seo.json');
-  assert.equal(metadata.article_id, 88);
-  assert.equal(metadata.seo.seo_title, 'SEO Article Title');
-  assert.match(metadata.seo_updated_at, /^\d{4}-\d{2}-\d{2}T/);
-});
-
-test('repository rejects standalone content SEO updates without workflow context', async () => {
-  const repository = new WeblessAccountRepository(fakePool(), {
-    storageRoot: await mkdtemp(path.join(os.tmpdir(), 'slimweb-mcp-storage-')),
-    publicSiteBaseUrl: 'https://slimweb.tw'
-  });
-
-  await assert.rejects(
-    () => repository.updateContentSeo(11, {
-      site_id: 101,
-      content_type: 'page',
-      page_name: '京都三日遊',
-      seo_title: '京都三日遊'
-    }),
-    /workflow_context must be page_create, page_update, article_create, or article_update/
   );
 });
 

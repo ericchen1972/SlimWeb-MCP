@@ -1,6 +1,7 @@
 export const SLIMWEB_BACKEND_METHODS = Object.freeze([
   'listSitesForAdminIdentity',
   'resolveAdminSiteForIdentity',
+  'selectSiteForAdminIdentity',
   'getBasicSettings',
   'updateBasicSettings',
   'listCategories',
@@ -46,7 +47,11 @@ export const SLIMWEB_BACKEND_METHODS = Object.freeze([
   'appendThemeStyleProfileRequest',
   'getMediaLibraryStats',
   'deleteUnusedMedia',
-  'registerAsset'
+  'registerAsset',
+  'listExternalAssets',
+  'deleteExternalAsset',
+  'updateContentSeo',
+  'importChatGptAttachment'
 ]);
 
 export function assertSlimWebBackend(backend) {

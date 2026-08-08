@@ -133,6 +133,30 @@ test('backend client maps site context and settings methods to Webless HTTP', as
   assert.deepEqual(requests[3].body, { name: '新名稱' });
 });
 
+test('backend client selects a site through resolved context and an internal theme list including Default', async () => {
+  const requests = [];
+
+  await withJsonServer(async (request, response) => {
+    requests.push({ method: request.method, url: request.url, headers: request.headers, body: await readJson(request) });
+    if (request.url === '/internal/mcp/v1/site-context/resolve') {
+      sendJson(response, 200, { ok: true, data: { actor: { site_id: 101, permissions: ['system_admin'] }, site }, warnings: [] });
+      return;
+    }
+    sendJson(response, 200, { ok: true, data: { themes: [{ id: 1, name: 'Default', is_default: true }] }, warnings: [] });
+  }, async (baseUrl) => {
+    const client = new WeblessBackendClient({ baseUrl, secret: 'service-secret' });
+    const selected = await client.selectSiteForAdminIdentity(identity, { site_code: 'swcb_demo' });
+    assert.equal(selected.selected_site.site_code, 'swcb_demo');
+    assert.equal(selected.themes[0].is_default, true);
+  });
+
+  assert.deepEqual(requests.map(({ method, url }) => [method, url]), [
+    ['POST', '/internal/mcp/v1/site-context/resolve'],
+    ['GET', '/internal/mcp/v1/sites/swcb_demo/themes?include_default=1']
+  ]);
+  assert.equal(requests[1].headers['x-slimweb-tool'], 'slimweb_site_select');
+});
+
 test('backend client maps all Phase 2 catalog methods without site selectors in bodies', async () => {
   const requests = [];
 
@@ -327,6 +351,57 @@ test('backend client maps remaining Phase 3 media methods to Webless-owned stora
   assert.equal(requests[0].headers['idempotency-key'], undefined);
   assert.equal(requests[1].headers['idempotency-key'], 'idempotency-media-001');
   assert.equal(requests[2].headers['idempotency-key'], 'idempotency-media-001');
+});
+
+test('backend client maps external asset reads and deletes to site-scoped Webless endpoints', async () => {
+  const requests = [];
+  await withJsonServer(async (request, response) => {
+    requests.push({ method: request.method, url: request.url, headers: request.headers, body: await readJson(request) });
+    sendJson(response, 200, { ok: true, data: { assets: [] }, warnings: [] });
+  }, async (baseUrl) => {
+    const client = new WeblessBackendClient({ baseUrl, secret: 'service-secret', idempotencyKeyFactory: () => 'idempotency-assets-001' });
+    await client.listExternalAssets(actor, { site_id: 101 });
+    await client.deleteExternalAsset(actor, { site_id: 101, asset_id: 8 });
+  });
+
+  assert.deepEqual(requests.map(({ method, url }) => [method, url]), [
+    ['GET', '/internal/mcp/v1/sites/swcb_demo/external-assets'],
+    ['DELETE', '/internal/mcp/v1/sites/swcb_demo/external-assets/8']
+  ]);
+  assert.equal(requests[0].headers['idempotency-key'], undefined);
+  assert.equal(requests[1].headers['idempotency-key'], 'idempotency-assets-001');
+});
+
+test('backend client maps content SEO updates to one idempotent Webless operation', async () => {
+  const requests = [];
+  await withJsonServer(async (request, response) => {
+    requests.push({ method: request.method, url: request.url, headers: request.headers, body: await readJson(request) });
+    sendJson(response, 200, { ok: true, data: { ok: true }, warnings: [] });
+  }, async (baseUrl) => {
+    const client = new WeblessBackendClient({ baseUrl, secret: 'service-secret', idempotencyKeyFactory: () => 'idempotency-seo-001' });
+    await client.updateContentSeo(actor, { site_id: 101, content_type: 'page', workflow_context: 'page_update', page_name: 'brand-story', seo_title: 'Brand' });
+  });
+
+  assert.deepEqual(requests.map(({ method, url }) => [method, url]), [['PUT', '/internal/mcp/v1/sites/swcb_demo/content/seo']]);
+  assert.equal(requests[0].headers['idempotency-key'], 'idempotency-seo-001');
+  assert.equal(requests[0].body.site_id, undefined);
+  assert.equal(requests[0].body.seo_title, 'Brand');
+});
+
+test('backend client maps ChatGPT attachment imports to Webless-owned image handling', async () => {
+  const requests = [];
+  await withJsonServer(async (request, response) => {
+    requests.push({ method: request.method, url: request.url, headers: request.headers, body: await readJson(request) });
+    sendJson(response, 200, { ok: true, data: { ok: true }, warnings: [] });
+  }, async (baseUrl) => {
+    const client = new WeblessBackendClient({ baseUrl, secret: 'service-secret', idempotencyKeyFactory: () => 'idempotency-chatgpt-001' });
+    await client.importChatGptAttachment(actor, { site_id: 101, image_url: 'https://files.openai.example/a.png', filename: 'a.png', file_id: 'file-1', target_usage: 'page_asset' });
+  });
+
+  assert.deepEqual(requests.map(({ method, url }) => [method, url]), [['POST', '/internal/mcp/v1/sites/swcb_demo/media/imports/chatgpt-attachment']]);
+  assert.equal(requests[0].headers['idempotency-key'], 'idempotency-chatgpt-001');
+  assert.equal(requests[0].body.site_id, undefined);
+  assert.equal(requests[0].body.image_url, 'https://files.openai.example/a.png');
 });
 
 test('backend client maps Webless error envelopes to stable errors', async () => {
