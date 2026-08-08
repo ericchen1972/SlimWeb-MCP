@@ -48,7 +48,7 @@ This plan is the first independently deployable slice of the approved SaaS desig
 - Modify `bootstrap/app.php`: exempt only the protected versioned MCP API prefix from browser CSRF validation.
 - Create `tests/Feature/McpV1SiteContextTest.php`: service authentication, identity, permissions, and tenant isolation.
 - Create `tests/Unit/McpActorResolverTest.php`: direct actor-resolution and permission tests.
-- Create `tests/Feature/McpV1BasicSettingsTest.php`: read, patch, website-name, SMTP prerequisite, and logo behavior.
+- Create `tests/Feature/McpV1BasicSettingsTest.php`: read, patch, website-name, removed-field compatibility, idempotency, and logo behavior.
 - Modify `.env.example`: document the shared service secret already used by the bridge.
 - Modify `DB_SCHEMA.md`: document the `mcp_idempotency_keys` table and its retention purpose.
 
@@ -293,7 +293,7 @@ git commit -m "feat: expose MCP site context API"
 
 - [ ] **Step 1: Write failing settings feature tests**
 
-Cover exact patch semantics: omitted fields remain unchanged; a trimmed `name` updates only `sites.name`; blank or 256-character names return `VALIDATION_FAILED`; invalid enum values return 422; `member_verification=email` fails unless all SMTP fields are configured; a foreign actor is rejected; a repeated request with the same `Idempotency-Key` produces the same response without a second model update; logo `media_path` and `svg_base64` continue through `SiteLogoManager`.
+Cover exact patch semantics: omitted fields remain unchanged; a trimmed `name` updates only `sites.name`; blank or 256-character names return `VALIDATION_FAILED`; invalid enum values return 422; the source-of-truth migration that removed `member_verification` is respected and writes to that absent column return `VALIDATION_FAILED`; a foreign actor is rejected; a repeated request with the same `Idempotency-Key` produces the same response without a second model update; logo `media_path` and `svg_base64` continue through `SiteLogoManager`.
 
 The name test must assert immutable identifiers:
 
@@ -359,7 +359,7 @@ Update `DB_SCHEMA.md` with the table columns, unique scope, foreign key, and the
 2. resolve the actor with `basic_settings`;
 3. validate only submitted fields with the same enums and limits as the MCP schema;
 4. trim `name`, reject empty/over-255 values, and never modify slug, callback code, or domain;
-5. require complete SMTP settings before changing `member_verification` to `email`;
+5. return `VALIDATION_FAILED` for `member_verification` writes while the authoritative `sites` schema does not contain that retired column;
 6. call `SiteLogoManager` for exactly one logo source;
 7. execute the save and logo replacement through `McpIdempotencyStore::run()`;
 8. return the same shape as `show()` with `ok: true` inside `data`.
