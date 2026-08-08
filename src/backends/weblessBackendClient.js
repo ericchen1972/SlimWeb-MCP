@@ -407,6 +407,73 @@ export class WeblessBackendClient {
     });
   }
 
+  async listCouponTemplates(actor, args) {
+    return this.commerceList(actor, '/commerce/coupon-templates', 'slimweb_coupon_templates_list', 'coupon_management', args, ['issue_trigger', 'keyword', 'status', 'page', 'per_page']);
+  }
+
+  async upsertCouponTemplate(actor, args) {
+    return this.commerceMutation(actor, '/commerce/coupon-templates', 'PUT', 'slimweb_coupon_templates_upsert', 'coupon_management', args);
+  }
+
+  async issueMemberCoupon(actor, args) {
+    return this.commerceMutation(actor, `/commerce/members/${this.requiredId(args?.member_id, 'member_id')}/coupons`, 'POST', 'slimweb_members_coupons_issue', 'coupon_management', args, ['member_id']);
+  }
+
+  async listMembers(actor, args) {
+    return this.commerceList(actor, '/commerce/members', 'slimweb_members_list', 'member_list', args, ['keyword', 'status', 'min_spent', 'max_spent', 'page', 'per_page']);
+  }
+
+  async getMember(actor, args) {
+    return this.request(this.sitePath(actor, `/commerce/members/${this.requiredId(args?.member_id, 'member_id')}`), { identity: actor, tool: 'slimweb_members_get', permission: 'member_list' });
+  }
+
+  async deleteMember(actor, args) {
+    return this.commerceMutation(actor, `/commerce/members/${this.requiredId(args?.member_id, 'member_id')}`, 'DELETE', 'slimweb_members_delete', 'member_list', args, ['member_id']);
+  }
+
+  async revokeMemberCoupon(actor, args) {
+    return this.commerceMutation(actor, `/commerce/members/${this.requiredId(args?.member_id, 'member_id')}/coupons/${this.requiredId(args?.member_coupon_id, 'member_coupon_id')}`, 'DELETE', 'slimweb_members_coupons_revoke', 'member_list', args, ['member_id', 'member_coupon_id']);
+  }
+
+  async listDiscountCodes(actor, args) {
+    return this.commerceList(actor, '/commerce/discount-codes', 'slimweb_discount_codes_list', 'discount_code_management', args, ['keyword', 'platform', 'page', 'per_page']);
+  }
+
+  async upsertDiscountCode(actor, args) {
+    return this.commerceMutation(actor, '/commerce/discount-codes', 'PUT', 'slimweb_discount_codes_upsert', 'discount_code_management', args);
+  }
+
+  async deleteDiscountCode(actor, args) {
+    return this.commerceMutation(actor, `/commerce/discount-codes/${this.requiredId(args?.discount_code_id, 'discount_code_id')}`, 'DELETE', 'slimweb_discount_codes_delete', 'discount_code_management', args, ['discount_code_id']);
+  }
+
+  async listMemberTiers(actor) {
+    return this.request(this.sitePath(actor, '/commerce/member-tiers'), { identity: actor, tool: 'slimweb_member_tiers_list', permission: 'member_levels' });
+  }
+
+  async upsertMemberTier(actor, args) {
+    return this.commerceMutation(actor, '/commerce/member-tiers', 'PUT', 'slimweb_member_tiers_upsert', 'member_levels', args);
+  }
+
+  async deleteMemberTier(actor, args) {
+    return this.commerceMutation(actor, `/commerce/member-tiers/${this.requiredId(args?.member_tier_id, 'member_tier_id')}`, 'DELETE', 'slimweb_member_tiers_delete', 'member_levels', args, ['member_tier_id']);
+  }
+
+  async commerceList(actor, suffix, tool, permission, args, fields) {
+    const filters = this.withoutSiteSelector(args);
+    const query = new URLSearchParams();
+    for (const field of fields) {
+      if (filters[field] !== undefined && filters[field] !== null && filters[field] !== '') query.set(field, String(filters[field]));
+    }
+    return this.request(this.sitePath(actor, `${suffix}${query.size ? `?${query}` : ''}`), { identity: actor, tool, permission });
+  }
+
+  async commerceMutation(actor, suffix, method, tool, permission, args, removedFields = []) {
+    const body = this.withoutSiteSelector(args);
+    for (const field of removedFields) delete body[field];
+    return this.request(this.sitePath(actor, suffix), { method, identity: actor, tool, permission, idempotencyKey: this.idempotencyKeyFactory(), body });
+  }
+
   async catalogMutation(actor, suffix, method, tool, permission, args) {
     return this.request(this.sitePath(actor, suffix), {
       method,

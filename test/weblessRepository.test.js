@@ -304,6 +304,19 @@ test('Phase 4 payment and logistics settings use only the backend client', async
   assert.deepEqual(calls.map(([method]) => method), ['get', 'update']);
 });
 
+test('Phase 4 member and promotion methods use only the backend client', async () => {
+  const actor = { site: { site_code: 'swcb_demo' } };
+  const args = { site_id: 101, member_id: 7, member_coupon_id: 8, coupon_template_id: 9, discount_code_id: 10, member_tier_id: 11 };
+  const methods = ['listCouponTemplates', 'upsertCouponTemplate', 'issueMemberCoupon', 'listMembers', 'getMember', 'deleteMember', 'revokeMemberCoupon', 'listDiscountCodes', 'upsertDiscountCode', 'deleteDiscountCode', 'listMemberTiers', 'upsertMemberTier', 'deleteMemberTier'];
+  const calls = [];
+  const backendClient = Object.fromEntries(methods.map((method) => [method, async (resolvedActor, received) => { calls.push([method, resolvedActor, received]); return { method }; }]));
+  const repository = new WeblessAccountRepository({ async query() { throw new Error('unexpected SQL'); } }, { backendClient });
+
+  for (const method of methods) assert.deepEqual(await repository[method](actor, args), { method });
+  assert.deepEqual(calls.map(([method]) => method), methods);
+  assert.ok(calls.every(([, resolvedActor, received]) => resolvedActor === actor && received === args));
+});
+
 function fakePool() {
   return {
     async query(sql, params) {
@@ -2878,72 +2891,6 @@ test('repository updates and reads all contact settings with patch and null sema
   assert.equal(read.settings.contact_phone, '0200000000');
 });
 
-test('repository exposes site-scoped delete methods for Web admin parity', async () => {
-  const deleted = [];
-  const pool = {
-    async query(sql, params) {
-      if (sql.includes('from sites') && sql.includes('account_id = $1 and id = $2')) {
-        return { rows: [{ id: 101, slug: 'site-1', name: '測試網站', callback_code: 'swcb_test101' }] };
-      }
-      if (/select id(?:, [a-z_]+)* from (discount_codes|member_tiers|threshold_gifts|product_add_ons|site_newsletters|customer_service_logs)/.test(sql)) {
-        return { rows: [{ id: params[1], site_id: params[0] }] };
-      }
-      const match = sql.match(/delete from (discount_codes|member_tiers|threshold_gifts|product_add_ons|site_newsletters|customer_service_logs)/);
-      if (match) {
-        deleted.push([match[1], params]);
-        return { rows: [] };
-      }
-      throw new Error(`Unexpected query: ${sql}`);
-    }
-  };
-  const repository = new WeblessAccountRepository(pool);
-
-  await repository.deleteDiscountCode(11, { site_id: 101, discount_code_id: 1 });
-  await repository.deleteMemberTier(11, { site_id: 101, member_tier_id: 2 });
-  await repository.deleteThresholdGift(11, { site_id: 101, threshold_gift_id: 3 });
-  await repository.deleteProductAddOn(11, { site_id: 101, product_add_on_id: 4 });
-  await repository.deleteNewsletter(11, { site_id: 101, newsletter_id: 5 });
-  await repository.deleteCustomerServiceLog(11, { site_id: 101, customer_service_log_id: 6 });
-
-  assert.deepEqual(deleted.map(([table]) => table), [
-    'discount_codes',
-    'member_tiers',
-    'threshold_gifts',
-    'product_add_ons',
-    'site_newsletters',
-    'customer_service_logs'
-  ]);
-});
-
-test('repository deletes members and revokes issued coupons within one site', async () => {
-  const writes = [];
-  const pool = {
-    async query(sql, params) {
-      if (sql.includes('from sites') && sql.includes('account_id = $1 and id = $2')) {
-        return { rows: [{ id: 101, slug: 'site-1', name: '測試網站', callback_code: 'swcb_test101' }] };
-      }
-      if (sql.trimStart().startsWith('select') && sql.includes('from members') && sql.includes('where site_id = $1 and id = $2')) {
-        return { rows: [{ id: params[1], site_id: 101, name: '會員' }] };
-      }
-      if (sql.includes('from member_coupons')) {
-        return { rows: [{ id: params[2] ?? params[1], site_id: 101, member_id: params[1], status: 'issued' }] };
-      }
-      if (sql.includes('delete from members') || sql.includes('update member_coupons')) {
-        writes.push(['sql', sql, params]);
-        return { rows: [] };
-      }
-      throw new Error(`Unexpected query: ${sql}`);
-    }
-  };
-  const repository = new WeblessAccountRepository(pool);
-
-  await repository.deleteMember(11, { site_id: 101, member_id: 7 });
-  await repository.revokeMemberCoupon(11, { site_id: 101, member_id: 7, member_coupon_id: 8 });
-
-  assert.ok(writes.some((write) => write[0] === 'sql' && write[1].includes('delete from members')));
-  assert.ok(writes.some((write) => write[0] === 'sql' && write[1].includes("status = 'revoked'")));
-});
-
 test('repository updates and reads mail delivery settings with SMTP fields', async () => {
   const pool = mailDeliverySettingsPool();
   const repository = new WeblessAccountRepository(pool, {
@@ -2979,214 +2926,6 @@ test('repository rejects email member verification when SMTP is incomplete', asy
       member_verification: 'email'
     }),
     /SMTP/
-  );
-});
-
-test.skip('legacy direct repository payment/logistics implementation is replaced by Webless feature coverage', async () => {
-  const pool = paymentLogisticsPool();
-  const repository = new WeblessAccountRepository(pool, {
-    laravelAppKey: 'base64:' + Buffer.from('12345678901234567890123456789012').toString('base64')
-  });
-
-  const context = await repository.getPaymentLogisticsSettings(11, { site_id: 101 });
-  assert.equal(context.callback_urls.site_callback_code, 'swcb_test101');
-  assert.equal(context.callback_urls.payment.ecpay.notify_url, 'https://slimweb.tw/callbacks/swcb_test101/payment/ecpay/notify');
-  assert.equal(context.callback_urls.logistics.hct.notify_url, 'https://slimweb.tw/callbacks/swcb_test101/logistics/hct/notify');
-  const updated = await repository.updatePaymentLogisticsSettings(11, {
-    site_id: 101,
-    payments: [
-      {
-        provider: 'ecpay',
-        mode: 'production',
-        is_enabled: true,
-        merchant_id: '2000132',
-        hash_key: 'hash-key',
-        hash_iv: 'hash-iv',
-        language: 'jp'
-      },
-      {
-        provider: 'linepay',
-        mode: 'production',
-        is_enabled: true,
-        merchant_id: 'line-merchant',
-        hash_key: 'line-key'
-      }
-    ],
-    logistics: [{
-      provider: 'hct',
-      mode: 'production',
-      is_enabled: true,
-      merchant_id: 'hct-id',
-      password: 'hct-key',
-      sender_name: '測試商店',
-      sender_phone: '0223456789',
-      sender_zip: '114',
-      sender_address: '台北市內湖區康樂街101號',
-      collect_payment_enabled: true
-    }]
-  });
-
-  assert.deepEqual(context.supported_payment_providers.map((provider) => provider.provider), ['ecpay', 'newebpay', 'linepay']);
-  assert.deepEqual(context.supported_payment_providers.find((provider) => provider.provider === 'linepay').language_options, ['zh-tw', 'zh-cn', 'en', 'jp', 'ko', 'th']);
-  assert.deepEqual(context.supported_logistics_providers.find((provider) => provider.provider === 'ecpay').supported_store_types, ['seven', 'family', 'hilife', 'ok']);
-  assert.equal(context.supported_logistics_providers.find((provider) => provider.provider === 'ecpay').follows_payment_provider, true);
-  assert.deepEqual(context.supported_logistics_providers.find((provider) => provider.provider === 'newebpay').supported_store_types, ['seven', 'family', 'hilife']);
-  assert.equal(context.supported_logistics_providers.find((provider) => provider.provider === 'hct').follows_payment_provider, false);
-  assert.match(context.answer_policy.convenience_store_logistics_question, /reverse logistics/);
-  assert.match(context.answer_policy.slimweb_site_payment_question, /綠界 ECPay/);
-  assert.equal(updated.payment_providers.find((provider) => provider.provider === 'ecpay').is_enabled, true);
-  assert.equal(updated.payment_providers.find((provider) => provider.provider === 'ecpay').settings.language, 'jp');
-  assert.equal(updated.payment_providers.find((provider) => provider.provider === 'newebpay').is_enabled, false);
-  assert.equal(updated.payment_providers.find((provider) => provider.provider === 'linepay').is_enabled, true);
-  assert.equal(updated.logistics_providers.find((provider) => provider.provider === 'hct').settings.senderName, '測試商店');
-
-  await assert.rejects(
-    () => repository.updatePaymentLogisticsSettings(11, {
-      site_id: 101,
-      payments: [
-        { provider: 'ecpay', is_enabled: true, merchant_id: 'a', hash_key: 'b', hash_iv: 'c' },
-        { provider: 'newebpay', is_enabled: true, merchant_id: 'd', hash_key: 'e', hash_iv: 'f' }
-      ]
-    }),
-    /Only one online card payment provider/
-  );
-});
-
-test.skip('legacy direct repository convenience-store implementation is replaced by Webless feature coverage', async () => {
-  const pool = paymentLogisticsPool();
-  const repository = new WeblessAccountRepository(pool, {
-    laravelAppKey: 'base64:' + Buffer.from('12345678901234567890123456789012').toString('base64')
-  });
-
-  await repository.updatePaymentLogisticsSettings(11, {
-    site_id: 101,
-    payments: [{
-      provider: 'ecpay',
-      mode: 'production',
-      is_enabled: true,
-      merchant_id: '2000132',
-      hash_key: 'hash-key',
-      hash_iv: 'hash-iv'
-    }],
-    logistics: [{
-      provider: 'ecpay',
-      is_enabled: false,
-      sender_name: '測試商店',
-      sender_phone: '0223456789',
-      sender_zip: '114',
-      sender_address: '台北市內湖區康樂街101號',
-      store_types: ['seven', 'family', 'hilife', 'ok'],
-      logistics_type: 'b2c'
-    }]
-  });
-
-  const ecpay = (await repository.getPaymentLogisticsSettings(11, { site_id: 101 }))
-    .logistics_providers.find((provider) => provider.provider === 'ecpay');
-  assert.equal(ecpay.mode, 'production');
-  assert.equal(ecpay.is_enabled, true);
-  assert.equal(ecpay.settings.merchantId, '2000132');
-  assert.deepEqual(ecpay.settings.storeTypes, ['seven', 'family', 'hilife', 'ok']);
-  assert.equal(ecpay.settings.logisticsType, 'b2c');
-  assert.equal(ecpay.settings.hashKey, undefined);
-
-  await repository.updatePaymentLogisticsSettings(11, {
-    site_id: 101,
-    payments: [{
-      provider: 'newebpay',
-      mode: 'test',
-      is_enabled: true,
-      merchant_id: 'MS123456789',
-      hash_key: 'hash-key',
-      hash_iv: 'hash-iv'
-    }]
-  });
-
-  await assert.rejects(
-    () => repository.updatePaymentLogisticsSettings(11, {
-      site_id: 101,
-      logistics: [{
-        provider: 'newebpay',
-        is_enabled: true,
-        sender_name: '測試商店',
-        sender_phone: '0223456789',
-        sender_zip: '114',
-        sender_address: '台北市內湖區康樂街101號',
-        store_types: ['ok']
-      }]
-    }),
-    /store_types for newebpay/
-  );
-});
-
-test('repository manages coupon templates with admin coupon rules', async () => {
-  const pool = couponPool();
-  const repository = new WeblessAccountRepository(pool);
-
-  const listed = await repository.listCouponTemplates(11, { site_id: 101 });
-  const created = await repository.upsertCouponTemplate(11, {
-    site_id: 101,
-    name: '母親節全館券',
-    discount_amount: 200,
-    minimum_spend: 0,
-    issue_trigger: 'all_members',
-    starts_at: '2099-05-01',
-    ends_at: '2099-05-12'
-  });
-  const threshold = await repository.upsertCouponTemplate(11, {
-    site_id: 101,
-    name: '滿額禮券',
-    discount_amount: 150,
-    issue_trigger: 'order_threshold',
-    trigger_amount: 2000,
-    starts_at: '2099-05-01',
-    ends_at: '2099-05-31'
-  });
-  const birthday = await repository.upsertCouponTemplate(11, {
-    site_id: 101,
-    name: '生日禮券',
-    discount_amount: 100,
-    issue_trigger: 'birthday'
-  });
-
-  assert.equal(listed.coupon_templates[0].name, '手動客服券');
-  assert.equal(created.coupon_template.issue_trigger, 'all_members');
-  assert.equal(threshold.coupon_template.trigger_amount, 2000);
-  assert.equal(birthday.coupon_template.starts_at, null);
-  assert.equal(birthday.coupon_template.ends_at, null);
-  assert.deepEqual(created.guidance.issue_trigger_choices.map((choice) => choice.value), ['manual', 'all_members', 'order_threshold', 'birthday', 'product_bundle']);
-
-  await assert.rejects(
-    () => repository.upsertCouponTemplate(11, {
-      site_id: 101,
-      name: '缺日期',
-      discount_amount: 100,
-      issue_trigger: 'all_members'
-    }),
-    /starts_at is required/
-  );
-});
-
-test('repository assigns active manual coupons to one member', async () => {
-  const pool = couponPool();
-  const repository = new WeblessAccountRepository(pool);
-
-  const issued = await repository.issueMemberCoupon(11, {
-    site_id: 101,
-    member_id: 88,
-    coupon_template_id: 2
-  });
-
-  assert.equal(issued.member.email, 'member@example.com');
-  assert.equal(issued.member_coupon.status, 'issued');
-  assert.equal(issued.member_coupon.issued_reason, 'manual');
-
-  await assert.rejects(
-    () => repository.issueMemberCoupon(11, {
-      site_id: 101,
-      member_id: 88,
-      coupon_template_id: 2
-    }),
-    /already has an active copy/
   );
 });
 

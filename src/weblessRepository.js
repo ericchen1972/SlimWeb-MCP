@@ -2213,294 +2213,24 @@ export class WeblessAccountRepository {
   }
 
   async listCouponTemplates(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const page = clampPositiveInteger(args.page, 1, 1, 1000);
-    const perPage = clampPositiveInteger(args.per_page, 8, 1, 50);
-    const offset = (page - 1) * perPage;
-    const filters = ['site_id = $1'];
-    const params = [site.id];
-    const issueTrigger = nullableString(args.issue_trigger);
-    const keyword = nullableString(args.keyword);
-    const status = nullableString(args.status) ?? 'all';
-
-    if (issueTrigger) {
-      filters.push(`issue_trigger = $${params.length + 1}`);
-      params.push(normalizeCouponIssueTrigger(issueTrigger));
-    }
-
-    if (keyword) {
-      filters.push(`name ilike $${params.length + 1}`);
-      params.push(`%${keyword}%`);
-    }
-
-    if (status === 'active') {
-      filters.push("(ends_at is null or ends_at >= current_date)");
-    } else if (status === 'expired') {
-      filters.push("ends_at is not null and ends_at < current_date");
-    } else if (status !== 'all') {
-      throw codedError('VALIDATION_FAILED', 'status must be all, active, or expired.');
-    }
-
-    const whereSql = filters.join(' and ');
-    const [countResult, couponResult] = await Promise.all([
-      this.pool.query(
-        `
-          select count(*)::int as total
-          from coupon_templates
-          where ${whereSql}
-        `,
-        params
-      ),
-      this.pool.query(
-        `
-          select id, site_id, name, discount_amount, minimum_spend, issue_trigger, trigger_amount, starts_at, ends_at, created_at, updated_at
-          from coupon_templates
-          where ${whereSql}
-          order by updated_at desc, id desc
-          limit $${params.length + 1} offset $${params.length + 2}
-        `,
-        [...params, perPage, offset]
-      )
-    ]);
-    const total = Number.parseInt(countResult.rows[0]?.total ?? '0', 10);
-
-    return {
-      site,
-      coupon_templates: couponResult.rows.map((couponTemplate) => formatCouponTemplate(couponTemplate)),
-      guidance: couponToolGuidance(),
-      pagination: {
-        page,
-        per_page: perPage,
-        last_page: Math.max(1, Math.ceil(total / perPage)),
-        total
-      }
-    };
+    return this.requireBackendClient("member_promotions").listCouponTemplates(accountId, args);
   }
 
   async upsertCouponTemplate(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const couponTemplateId = args.coupon_template_id === undefined || args.coupon_template_id === null
-      ? null
-      : requireInteger(args.coupon_template_id, 'coupon_template_id');
-    const existing = couponTemplateId ? await this.findCouponTemplateForSite(site.id, couponTemplateId) : null;
-    const couponTemplate = normalizeCouponTemplate(args, existing);
-    const result = couponTemplateId
-      ? await this.pool.query(
-        `
-          update coupon_templates
-          set name = $1,
-              discount_amount = $2,
-              minimum_spend = $3,
-              issue_trigger = $4,
-              trigger_amount = $5,
-              starts_at = $6,
-              ends_at = $7,
-              updated_at = now()
-          where site_id = $8 and id = $9
-          returning id, site_id, name, discount_amount, minimum_spend, issue_trigger, trigger_amount, starts_at, ends_at, created_at, updated_at
-        `,
-        [
-          couponTemplate.name,
-          couponTemplate.discount_amount,
-          couponTemplate.minimum_spend,
-          couponTemplate.issue_trigger,
-          couponTemplate.trigger_amount,
-          couponTemplate.starts_at,
-          couponTemplate.ends_at,
-          site.id,
-          couponTemplateId
-        ]
-      )
-      : await this.pool.query(
-        `
-          insert into coupon_templates (site_id, name, discount_amount, minimum_spend, issue_trigger, trigger_amount, starts_at, ends_at, created_at, updated_at)
-          values ($1, $2, $3, $4, $5, $6, $7, $8, now(), now())
-          returning id, site_id, name, discount_amount, minimum_spend, issue_trigger, trigger_amount, starts_at, ends_at, created_at, updated_at
-        `,
-        [
-          site.id,
-          couponTemplate.name,
-          couponTemplate.discount_amount,
-          couponTemplate.minimum_spend,
-          couponTemplate.issue_trigger,
-          couponTemplate.trigger_amount,
-          couponTemplate.starts_at,
-          couponTemplate.ends_at
-        ]
-      );
-
-    return {
-      ok: true,
-      site,
-      coupon_template: formatCouponTemplate(result.rows[0]),
-      guidance: couponToolGuidance()
-    };
+    return this.requireBackendClient("member_promotions").upsertCouponTemplate(accountId, args);
   }
 
-	  async issueMemberCoupon(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const memberId = requireInteger(args.member_id, 'member_id');
-    const couponTemplateId = requireInteger(args.coupon_template_id, 'coupon_template_id');
-    const [member, couponTemplate] = await Promise.all([
-      this.findMemberForSite(site.id, memberId),
-      this.findCouponTemplateForSite(site.id, couponTemplateId)
-    ]);
+  async issueMemberCoupon(accountId, args) {
+    return this.requireBackendClient("member_promotions").issueMemberCoupon(accountId, args);
+  }
 
-    if ((couponTemplate.issue_trigger ?? 'manual') !== 'manual') {
-      throw codedError('VALIDATION_FAILED', 'slimweb_members_coupons_issue can only assign manual coupon templates. Use coupon_templates.upsert for all_members, order_threshold, birthday, or product_bundle rules.');
-    }
+  async listMembers(accountId, args) {
+    return this.requireBackendClient("member_promotions").listMembers(accountId, args);
+  }
 
-    if (!couponDateRangeIsActive(couponTemplate)) {
-      throw codedError('VALIDATION_FAILED', 'Manual coupon template is not active today.');
-    }
-
-    const duplicateResult = await this.pool.query(
-      `
-        select id
-        from member_coupons
-        where site_id = $1
-          and member_id = $2
-          and coupon_template_id = $3
-          and status = 'issued'
-          and revoked_at is null
-          and (expires_at is null or expires_at >= current_date)
-        limit 1
-      `,
-      [site.id, member.id, couponTemplate.id]
-    );
-
-    if (duplicateResult.rows.length > 0) {
-      throw codedError('VALIDATION_FAILED', 'This member already has an active copy of this manual coupon.');
-    }
-
-    const result = await this.pool.query(
-      `
-        insert into member_coupons (site_id, member_id, coupon_template_id, status, issued_reason, issued_at, starts_at, expires_at, created_at, updated_at)
-        values ($1, $2, $3, 'issued', 'manual', now(), $4, $5, now(), now())
-        returning id, site_id, member_id, coupon_template_id, status, issued_reason, issued_at, starts_at, expires_at, revoked_at
-      `,
-      [site.id, member.id, couponTemplate.id, couponTemplate.starts_at, couponTemplate.ends_at]
-    );
-
-    return {
-      ok: true,
-      site,
-      member: formatMemberSummary(member),
-      coupon_template: formatCouponTemplate(couponTemplate),
-      member_coupon: formatMemberCoupon(result.rows[0]),
-	      guidance: couponToolGuidance()
-	    };
-	  }
-
-	  async listMembers(accountId, args) {
-	    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-	    const page = clampPositiveInteger(args.page, 1, 1, 1000);
-	    const perPage = clampPositiveInteger(args.per_page, 20, 1, 100);
-	    const offset = (page - 1) * perPage;
-	    const filters = ['site_id = $1'];
-	    const params = [site.id];
-	    const keyword = nullableString(args.keyword);
-	    const status = nullableString(args.status) ?? 'all';
-
-	    if (keyword) {
-	      filters.push(`(name ilike $${params.length + 1} or email ilike $${params.length + 1} or mobile ilike $${params.length + 1})`);
-	      params.push(`%${keyword}%`);
-	    }
-	    if (status !== 'all') {
-	      filters.push(`status = $${params.length + 1}`);
-	      params.push(status);
-	    }
-	    if (args.min_spent !== undefined && args.min_spent !== null) {
-	      filters.push(`total_spent_amount >= $${params.length + 1}`);
-	      params.push(requireNonNegativeAmount(args.min_spent, 'min_spent'));
-	    }
-	    if (args.max_spent !== undefined && args.max_spent !== null) {
-	      filters.push(`total_spent_amount <= $${params.length + 1}`);
-	      params.push(requireNonNegativeAmount(args.max_spent, 'max_spent'));
-	    }
-
-	    const whereSql = filters.join(' and ');
-	    const [countResult, membersResult] = await Promise.all([
-	      this.pool.query(`select count(*)::int as total from members where ${whereSql}`, params),
-	      this.pool.query(
-	        `
-	          select id, site_id, email, name, birthday, gender, mobile, status, country, zip, address,
-	                 total_spent_amount, last_login_at, created_at, updated_at
-	          from members
-	          where ${whereSql}
-	          order by updated_at desc, id desc
-	          limit $${params.length + 1} offset $${params.length + 2}
-	        `,
-	        [...params, perPage, offset]
-	      )
-	    ]);
-	    const total = Number.parseInt(countResult.rows[0]?.total ?? '0', 10);
-
-	    return {
-	      site,
-	      members: membersResult.rows.map((member) => formatMemberDetail(member)),
-	      pagination: {
-	        page,
-	        per_page: perPage,
-	        last_page: Math.max(1, Math.ceil(total / perPage)),
-	        total
-	      }
-	    };
-	  }
-
-	  async getMember(accountId, args) {
-	    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-	    const member = await this.findMemberForSite(site.id, requireInteger(args.member_id, 'member_id'));
-	    const [ordersResult, couponsResult, templatesResult] = await Promise.all([
-	      this.pool.query(
-	        `
-	          select id, order_no, status, grand_total_amount, item_count, placed_at, created_at
-	          from orders
-	          where site_id = $1 and member_id = $2
-	          order by placed_at desc nulls last, created_at desc
-	          limit 10
-	        `,
-	        [site.id, member.id]
-	      ),
-	      this.pool.query(
-	        `
-	          select id, site_id, member_id, coupon_template_id, status, issued_reason, issued_at, starts_at, expires_at, revoked_at
-	          from member_coupons
-	          where site_id = $1 and member_id = $2
-	          order by issued_at desc nulls last, id desc
-	          limit 20
-	        `,
-	        [site.id, member.id]
-	      ),
-	      this.pool.query(
-	        `
-	          select id, site_id, name, discount_amount, minimum_spend, issue_trigger, trigger_amount, starts_at, ends_at, created_at, updated_at
-	          from coupon_templates
-	          where site_id = $1 and issue_trigger = 'manual'
-	            and (starts_at is null or starts_at <= current_date)
-	            and (ends_at is null or ends_at >= current_date)
-	          order by name asc
-	        `,
-	        [site.id]
-	      )
-	    ]);
-
-	    return {
-	      site,
-	      member: formatMemberDetail(member),
-	      orders: ordersResult.rows.map((order) => ({
-	        id: order.id,
-	        order_no: order.order_no,
-	        status: order.status,
-	        grand_total_amount: Number.parseInt(order.grand_total_amount ?? '0', 10),
-	        item_count: Number.parseInt(order.item_count ?? '0', 10),
-	        placed_at: dateString(order.placed_at),
-	        created_at: dateString(order.created_at)
-	      })),
-	      member_coupons: couponsResult.rows.map((coupon) => formatMemberCoupon(coupon)),
-	      coupon_templates: templatesResult.rows.map((template) => formatCouponTemplate(template))
-	    };
-	  }
+  async getMember(accountId, args) {
+    return this.requireBackendClient("member_promotions").getMember(accountId, args);
+  }
 
   async createNewsletter(accountId, args) {
     const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
@@ -2691,19 +2421,11 @@ export class WeblessAccountRepository {
   }
 
   async deleteDiscountCode(accountId, args) {
-    return this.deleteScopedRecord(accountId, args, {
-      table: 'discount_codes',
-      idField: 'discount_code_id',
-      resultField: 'deleted_discount_code_id'
-    });
+    return this.requireBackendClient("member_promotions").deleteDiscountCode(accountId, args);
   }
 
   async deleteMemberTier(accountId, args) {
-    return this.deleteScopedRecord(accountId, args, {
-      table: 'member_tiers',
-      idField: 'member_tier_id',
-      resultField: 'deleted_member_tier_id'
-    });
+    return this.requireBackendClient("member_promotions").deleteMemberTier(accountId, args);
   }
 
   async deleteThresholdGift(accountId, args) {
@@ -2731,28 +2453,11 @@ export class WeblessAccountRepository {
   }
 
   async deleteMember(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const member = await this.findMemberForSite(site.id, requireInteger(args.member_id, 'member_id'));
-    await this.pool.query('delete from members where site_id = $1 and id = $2', [site.id, member.id]);
-    return { ok: true, site, deleted_member_id: member.id };
+    return this.requireBackendClient("member_promotions").deleteMember(accountId, args);
   }
 
   async revokeMemberCoupon(accountId, args) {
-    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-    const member = await this.findMemberForSite(site.id, requireInteger(args.member_id, 'member_id'));
-    const memberCouponId = requireInteger(args.member_coupon_id, 'member_coupon_id');
-    const found = await this.pool.query(
-      'select id, site_id, member_id, status from member_coupons where site_id = $1 and member_id = $2 and id = $3 limit 1',
-      [site.id, member.id, memberCouponId]
-    );
-    if (found.rows.length === 0) {
-      throw codedError('NOT_FOUND', 'member_coupon_id was not found for this member and site.');
-    }
-    await this.pool.query(
-      "update member_coupons set status = 'revoked', revoked_at = now(), updated_at = now() where site_id = $1 and member_id = $2 and id = $3",
-      [site.id, member.id, memberCouponId]
-    );
-    return { ok: true, site, member_id: member.id, revoked_member_coupon_id: memberCouponId };
+    return this.requireBackendClient("member_promotions").revokeMemberCoupon(accountId, args);
   }
 
   async deleteArticle(accountId, args) {
@@ -3061,158 +2766,21 @@ export class WeblessAccountRepository {
     };
   }
 
-	  async listDiscountCodes(accountId, args) {
-	    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-	    const page = clampPositiveInteger(args.page, 1, 1, 1000);
-	    const perPage = clampPositiveInteger(args.per_page, 20, 1, 100);
-	    const offset = (page - 1) * perPage;
-	    const filters = ['site_id = $1'];
-	    const params = [site.id];
-	    const keyword = nullableString(args.keyword);
-	    const platform = nullableString(args.platform);
+  async listDiscountCodes(accountId, args) {
+    return this.requireBackendClient("member_promotions").listDiscountCodes(accountId, args);
+  }
 
-	    if (keyword) {
-	      filters.push(`code ilike $${params.length + 1}`);
-	      params.push(`%${keyword}%`);
-	    }
-	    if (platform) {
-	      filters.push(`platform = $${params.length + 1}`);
-	      params.push(platform);
-	    }
+  async upsertDiscountCode(accountId, args) {
+    return this.requireBackendClient("member_promotions").upsertDiscountCode(accountId, args);
+  }
 
-	    const whereSql = filters.join(' and ');
-	    const [countResult, result] = await Promise.all([
-	      this.pool.query(`select count(*)::int as total from discount_codes where ${whereSql}`, params),
-	      this.pool.query(
-	        `
-	          select id, site_id, code, discount_percent, platform, order_count, order_total_amount, created_at, updated_at
-	          from discount_codes
-	          where ${whereSql}
-	          order by updated_at desc, id desc
-	          limit $${params.length + 1} offset $${params.length + 2}
-	        `,
-	        [...params, perPage, offset]
-	      )
-	    ]);
-	    const total = Number.parseInt(countResult.rows[0]?.total ?? '0', 10);
+  async listMemberTiers(accountId, args) {
+    return this.requireBackendClient("member_promotions").listMemberTiers(accountId, args);
+  }
 
-	    return {
-	      site,
-	      discount_codes: result.rows.map((row) => formatDiscountCode(row)),
-	      pagination: {
-	        page,
-	        per_page: perPage,
-	        last_page: Math.max(1, Math.ceil(total / perPage)),
-	        total
-	      }
-	    };
-	  }
-
-	  async upsertDiscountCode(accountId, args) {
-	    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-	    const discountCodeId = args.discount_code_id === undefined || args.discount_code_id === null ? null : requireInteger(args.discount_code_id, 'discount_code_id');
-	    const code = requireNonEmptyString(args.code, 'code').toUpperCase();
-	    const discountPercent = requireRatio(args.discount_percent, 'discount_percent');
-	    const platform = nullableString(args.platform);
-
-	    if (!/^[A-Z0-9]{1,10}$/.test(code)) {
-	      throw codedError('VALIDATION_FAILED', 'code must contain only letters and numbers and be at most 10 characters.');
-	    }
-
-	    const duplicate = await this.pool.query(
-	      `
-	        select id
-	        from discount_codes
-	        where site_id = $1 and code = $2 and ($3::bigint is null or id != $3::bigint)
-	        limit 1
-	      `,
-	      [site.id, code, discountCodeId]
-	    );
-	    if (duplicate.rows.length > 0) {
-	      throw codedError('VALIDATION_FAILED', 'This discount code already exists.');
-	    }
-
-	    const result = discountCodeId
-	      ? await this.pool.query(
-	        `
-	          update discount_codes
-	          set code = $1, discount_percent = $2, platform = $3, updated_at = now()
-	          where site_id = $4 and id = $5
-	          returning id, site_id, code, discount_percent, platform, order_count, order_total_amount, created_at, updated_at
-	        `,
-	        [code, discountPercent, platform, site.id, discountCodeId]
-	      )
-	      : await this.pool.query(
-	        `
-	          insert into discount_codes (site_id, code, discount_percent, platform, created_at, updated_at)
-	          values ($1, $2, $3, $4, now(), now())
-	          returning id, site_id, code, discount_percent, platform, order_count, order_total_amount, created_at, updated_at
-	        `,
-	        [site.id, code, discountPercent, platform]
-	      );
-
-	    return { ok: true, site, discount_code: formatDiscountCode(result.rows[0]) };
-	  }
-
-	  async listMemberTiers(accountId, args) {
-	    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-	    const result = await this.pool.query(
-	      `
-	        select id, site_id, name, min_spend, discount_percent, created_at, updated_at
-	        from member_tiers
-	        where site_id = $1
-	        order by min_spend desc, id asc
-	      `,
-	      [site.id]
-	    );
-
-	    return {
-	      site,
-	      member_tiers: result.rows.map((tier) => formatMemberTier(tier))
-	    };
-	  }
-
-	  async upsertMemberTier(accountId, args) {
-	    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));
-	    const memberTierId = args.member_tier_id === undefined || args.member_tier_id === null ? null : requireInteger(args.member_tier_id, 'member_tier_id');
-	    const name = requireNonEmptyString(args.name, 'name');
-	    const minSpend = requireNonNegativeAmount(args.min_spend ?? args.threshold_amount ?? 0, 'min_spend');
-	    const discountPercent = args.discount_percent === undefined || args.discount_percent === null ? 1 : requireRatio(args.discount_percent, 'discount_percent', true);
-
-	    const duplicate = await this.pool.query(
-	      `
-	        select id
-	        from member_tiers
-	        where site_id = $1 and (name = $2 or min_spend = $3) and ($4::bigint is null or id != $4::bigint)
-	        limit 1
-	      `,
-	      [site.id, name, minSpend, memberTierId]
-	    );
-	    if (duplicate.rows.length > 0) {
-	      throw codedError('VALIDATION_FAILED', 'Member tier name or min_spend already exists.');
-	    }
-
-	    const result = memberTierId
-	      ? await this.pool.query(
-	        `
-	          update member_tiers
-	          set name = $1, min_spend = $2, discount_percent = $3, updated_at = now()
-	          where site_id = $4 and id = $5
-	          returning id, site_id, name, min_spend, discount_percent, created_at, updated_at
-	        `,
-	        [name, minSpend, discountPercent, site.id, memberTierId]
-	      )
-	      : await this.pool.query(
-	        `
-	          insert into member_tiers (site_id, name, min_spend, discount_percent, created_at, updated_at)
-	          values ($1, $2, $3, $4, now(), now())
-	          returning id, site_id, name, min_spend, discount_percent, created_at, updated_at
-	        `,
-	        [site.id, name, minSpend, discountPercent]
-	      );
-
-	    return { ok: true, site, member_tier: formatMemberTier(result.rows[0]) };
-	  }
+  async upsertMemberTier(accountId, args) {
+    return this.requireBackendClient("member_promotions").upsertMemberTier(accountId, args);
+  }
 
 	  async listThresholdGifts(accountId, args) {
 	    const site = await this.getSiteForAccount(accountId, requireInteger(args.site_id, 'site_id'));

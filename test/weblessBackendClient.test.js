@@ -425,6 +425,48 @@ test('backend client maps Phase 4 payment and logistics settings to the versione
   assert.equal(requests[1].body.site_id, undefined);
 });
 
+test('backend client maps all Phase 4 member and promotion methods to site-scoped commerce endpoints', async () => {
+  const requests = [];
+  await withJsonServer(async (request, response) => {
+    requests.push({ method: request.method, url: request.url, headers: request.headers, body: await readJson(request) });
+    sendJson(response, 200, { ok: true, data: { accepted: true }, warnings: [] });
+  }, async (baseUrl) => {
+    const client = new WeblessBackendClient({ baseUrl, secret: 'service-secret', idempotencyKeyFactory: () => 'idempotency-member-001' });
+    await client.listCouponTemplates(actor, { site_id: 101, status: 'active', page: 2 });
+    await client.upsertCouponTemplate(actor, { site_id: 101, name: 'Coupon' });
+    await client.issueMemberCoupon(actor, { site_id: 101, member_id: 7, coupon_template_id: 8 });
+    await client.listMembers(actor, { site_id: 101, keyword: 'eric', page: 2 });
+    await client.getMember(actor, { site_id: 101, member_id: 7 });
+    await client.deleteMember(actor, { site_id: 101, member_id: 7 });
+    await client.revokeMemberCoupon(actor, { site_id: 101, member_id: 7, member_coupon_id: 9 });
+    await client.listDiscountCodes(actor, { site_id: 101, platform: 'web' });
+    await client.upsertDiscountCode(actor, { site_id: 101, code: 'SAVE10' });
+    await client.deleteDiscountCode(actor, { site_id: 101, discount_code_id: 10 });
+    await client.listMemberTiers(actor, { site_id: 101 });
+    await client.upsertMemberTier(actor, { site_id: 101, name: 'VIP' });
+    await client.deleteMemberTier(actor, { site_id: 101, member_tier_id: 11 });
+  });
+
+  assert.deepEqual(requests.map(({ method, url }) => [method, url]), [
+    ['GET', '/internal/mcp/v1/sites/swcb_demo/commerce/coupon-templates?status=active&page=2'],
+    ['PUT', '/internal/mcp/v1/sites/swcb_demo/commerce/coupon-templates'],
+    ['POST', '/internal/mcp/v1/sites/swcb_demo/commerce/members/7/coupons'],
+    ['GET', '/internal/mcp/v1/sites/swcb_demo/commerce/members?keyword=eric&page=2'],
+    ['GET', '/internal/mcp/v1/sites/swcb_demo/commerce/members/7'],
+    ['DELETE', '/internal/mcp/v1/sites/swcb_demo/commerce/members/7'],
+    ['DELETE', '/internal/mcp/v1/sites/swcb_demo/commerce/members/7/coupons/9'],
+    ['GET', '/internal/mcp/v1/sites/swcb_demo/commerce/discount-codes?platform=web'],
+    ['PUT', '/internal/mcp/v1/sites/swcb_demo/commerce/discount-codes'],
+    ['DELETE', '/internal/mcp/v1/sites/swcb_demo/commerce/discount-codes/10'],
+    ['GET', '/internal/mcp/v1/sites/swcb_demo/commerce/member-tiers'],
+    ['PUT', '/internal/mcp/v1/sites/swcb_demo/commerce/member-tiers'],
+    ['DELETE', '/internal/mcp/v1/sites/swcb_demo/commerce/member-tiers/11']
+  ]);
+  for (const index of [1, 2, 5, 6, 8, 9, 11, 12]) assert.equal(requests[index].headers['idempotency-key'], 'idempotency-member-001');
+  for (const index of [0, 3, 4, 7, 10]) assert.equal(requests[index].headers['idempotency-key'], undefined);
+  assert.ok(requests.every((request) => !Object.hasOwn(request.body ?? {}, 'site_id') && !Object.hasOwn(request.body ?? {}, 'site_code')));
+});
+
 test('backend client maps Webless error envelopes to stable errors', async () => {
   const cases = [
     [403, 'FORBIDDEN'],

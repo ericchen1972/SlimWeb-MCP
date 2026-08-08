@@ -53,7 +53,20 @@ export const SLIMWEB_BACKEND_METHODS = Object.freeze([
   'updateContentSeo',
   'importChatGptAttachment',
   'getPaymentLogisticsSettings',
-  'updatePaymentLogisticsSettings'
+  'updatePaymentLogisticsSettings',
+  'listCouponTemplates',
+  'upsertCouponTemplate',
+  'issueMemberCoupon',
+  'listMembers',
+  'getMember',
+  'deleteMember',
+  'revokeMemberCoupon',
+  'listDiscountCodes',
+  'upsertDiscountCode',
+  'deleteDiscountCode',
+  'listMemberTiers',
+  'upsertMemberTier',
+  'deleteMemberTier'
 ]);
 
 export function assertSlimWebBackend(backend) {
