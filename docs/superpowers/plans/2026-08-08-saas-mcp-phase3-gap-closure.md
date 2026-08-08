@@ -22,10 +22,10 @@
 - Test: `/Users/eric/Documents/SlimWeb-MCP/test/weblessBackendClient.test.js`
 - Test: `/Users/eric/Documents/SlimWeb-MCP/test/weblessRepository.test.js`
 
-- [ ] Add a failing Webless test proving `GET /themes?include_default=1` returns Default while the ordinary list still omits it.
-- [ ] Add failing Node tests proving site selection resolves the actor and requests the internal theme list with `include_default=1`.
-- [ ] Extend `ThemeService::listing(Site $site, bool $includeDefault = false)` and map `selectSiteForAdminIdentity()` entirely through `WeblessBackendClient`.
-- [ ] Run the focused PHP and Node tests and confirm they pass.
+- [x] Add a failing Webless test proving `GET /themes?include_default=1` returns Default while the ordinary list still omits it.
+- [x] Add failing Node tests proving site selection resolves the actor and requests the internal theme list with `include_default=1`.
+- [x] Extend `ThemeService::listing(Site $site, bool $includeDefault = false)` and map `selectSiteForAdminIdentity()` entirely through `WeblessBackendClient`.
+- [x] Run the focused PHP and Node tests and confirm they pass.
 
 ### Task 2: Move external assets behind Webless
 
@@ -40,10 +40,10 @@
 - Test: `/Users/eric/Documents/SlimWeb-MCP/test/weblessBackendClient.test.js`
 - Test: `/Users/eric/Documents/SlimWeb-MCP/test/weblessRepository.test.js`
 
-- [ ] Write failing site-scope, permission, list, and delete tests for `GET/DELETE /external-assets`.
-- [ ] Implement `ExternalAssetService` using `SiteExternalAsset` and stable payload formatting.
-- [ ] Add `listExternalAssets()` and `deleteExternalAsset()` Backend Client methods and replace both direct SQL repository bodies.
-- [ ] Run focused PHP and Node tests and confirm they pass.
+- [x] Write failing site-scope, permission, list, and delete tests for `GET/DELETE /external-assets`.
+- [x] Implement `ExternalAssetService` using `SiteExternalAsset` and stable payload formatting.
+- [x] Add `listExternalAssets()` and `deleteExternalAsset()` Backend Client methods and replace both direct SQL repository bodies.
+- [x] Run focused PHP and Node tests and confirm they pass.
 
 ### Task 3: Move content SEO persistence behind Webless
 
@@ -58,10 +58,10 @@
 - Test: `/Users/eric/Documents/SlimWeb-MCP/test/weblessBackendClient.test.js`
 - Test: `/Users/eric/Documents/SlimWeb-MCP/test/weblessRepository.test.js`
 
-- [ ] Write failing page/article workflow tests covering required workflow context, tenant scope, validation, and storage output.
-- [ ] Implement one idempotent `PUT /content/seo` operation that writes the existing page/article metadata paths through `GcsStorage`.
-- [ ] Add `updateContentSeo()` to the Backend Client and replace the direct storage/SQL repository body.
-- [ ] Run focused PHP and Node tests and confirm they pass.
+- [x] Write failing page/article workflow tests covering required workflow context, tenant scope, validation, and storage output.
+- [x] Implement one idempotent `PUT /content/seo` operation that writes the existing page/article metadata paths through `GcsStorage`.
+- [x] Add `updateContentSeo()` to the Backend Client and replace the direct storage/SQL repository body.
+- [x] Run focused PHP and Node tests and confirm they pass.
 
 ### Task 4: Move ChatGPT attachment image handling behind Webless
 
@@ -76,10 +76,10 @@
 - Test: `/Users/eric/Documents/SlimWeb-MCP/test/weblessBackendClient.test.js`
 - Test: `/Users/eric/Documents/SlimWeb-MCP/test/weblessRepository.test.js`
 
-- [ ] Write failing tests proving Webless downloads a public PNG/JPEG/WebP URL, rejects private/invalid targets, stores it under the selected site, and returns the existing `asset` and `upload` shape.
-- [ ] Add idempotent `POST /media/imports/chatgpt-attachment` and service logic that owns download and storage.
-- [ ] Keep pure OpenAI file-parameter normalization in MCP, then delegate the normalized URL/filename/mime/target usage to Webless.
-- [ ] Run focused PHP and Node tests and confirm they pass.
+- [x] Write failing tests proving Webless downloads a public PNG/JPEG/WebP URL, rejects private/invalid targets, stores it under the selected site, and returns the existing `asset` and `upload` shape.
+- [x] Add idempotent `POST /media/imports/chatgpt-attachment` and service logic that owns download and storage.
+- [x] Keep pure OpenAI file-parameter normalization in MCP, then delegate the normalized URL/filename/mime/target usage to Webless.
+- [x] Run focused PHP and Node tests and confirm they pass.
 
 ### Task 5: Harden, verify, deploy, and correct acceptance evidence
 
@@ -88,8 +88,8 @@
 - Modify: `/Users/eric/Documents/SlimWeb-MCP/docs/superpowers/specs/2026-08-08-saas-mcp-backend-interface-design.md`
 - Test: `/Users/eric/Documents/SlimWeb-MCP/test/weblessRepository.test.js`
 
-- [ ] Add an architecture test that extracts the five repository methods and rejects direct `.pool`, `.storage`, signed-upload orchestration, and direct theme-list helpers.
-- [ ] Update the Webless v1 capability list for external assets, content SEO, and external image import.
-- [ ] Run PHP formatting, the full Webless suite, the full MCP suite, and the frozen 125-tool hash test.
-- [ ] Deploy Webless first, then SlimWeb-MCP; verify `/up`, `/readyz`, authorization failure, authenticated safe reads, and a same-value/reversible write.
-- [ ] Correct Phase 3 acceptance evidence with final test counts and production revisions, then commit and push `main`.
+- [x] Add an architecture test that extracts the five repository methods and rejects direct `.pool`, `.storage`, signed-upload orchestration, and direct theme-list helpers.
+- [x] Update the Webless v1 capability list for external assets, content SEO, and external image import.
+- [x] Run PHP formatting, the full Webless suite, the full MCP suite, and the frozen 125-tool hash test.
+- [x] Deploy Webless first, then SlimWeb-MCP; verify `/up`, `/readyz`, authorization failure, authenticated safe reads, and a same-value/reversible write.
+- [x] Correct Phase 3 acceptance evidence with final test counts and production revisions, then commit and push `main`.
