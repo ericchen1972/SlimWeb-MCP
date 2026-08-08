@@ -274,7 +274,7 @@ test('ChatGPT attachment import normalizes fileParams then delegates download an
 
 test('pre-Phase-4 repository methods contain no direct database or storage fallback', async () => {
   const source = await readFile(new URL('../src/weblessRepository.js', import.meta.url), 'utf8');
-  const definitions = [...source.matchAll(/^  async ([A-Za-z0-9_]+)\(/gm)];
+  const definitions = [...source.matchAll(/^(?:  |\t  )async ([A-Za-z0-9_]+)\(/gm)];
   const bodies = new Map(definitions.map((definition, index) => [
     definition[1],
     source.slice(definition.index, definitions[index + 1]?.index ?? source.length)
@@ -339,6 +339,29 @@ test('Phase 4 order transaction methods use only the backend client', async () =
 
   for (const method of methods) assert.deepEqual(await repository[method](actor, args), { method });
   assert.deepEqual(calls.map(([method]) => method), methods);
+});
+
+test('all Phase 4 repository methods contain no direct database storage provider or legacy HTTP path', async () => {
+  const source = await readFile(new URL('../src/weblessRepository.js', import.meta.url), 'utf8');
+  const definitions = [...source.matchAll(/^(?:  |\t  )async ([A-Za-z0-9_]+)\(/gm)];
+  const bodies = new Map(definitions.map((definition, index) => [definition[1], source.slice(definition.index, definitions[index + 1]?.index ?? source.length)]));
+  const methods = [
+    'getPaymentLogisticsSettings', 'updatePaymentLogisticsSettings',
+    'listCouponTemplates', 'upsertCouponTemplate', 'issueMemberCoupon', 'listMembers', 'getMember', 'deleteMember', 'revokeMemberCoupon',
+    'listDiscountCodes', 'upsertDiscountCode', 'deleteDiscountCode', 'listMemberTiers', 'upsertMemberTier', 'deleteMemberTier',
+    'listThresholdGifts', 'upsertThresholdGift', 'deleteThresholdGift', 'listProductAddOns', 'upsertProductAddOn', 'deleteProductAddOn',
+    'listOrders', 'calculateOrderProfitStatistics', 'getOrder', 'createOrderLogistics', 'markOrderShipped', 'listPendingReturns',
+    'createReturnLogistics', 'cancelReturn', 'completeReturn', 'completeRefund', 'createRefund', 'updateOrdersStatus',
+    'updateOrdersRecipient', 'deleteOrders', 'getWaybillUrl', 'getReturnWaybillUrl'
+  ];
+
+  assert.equal(methods.length, 37);
+  for (const method of methods) {
+    const body = bodies.get(method);
+    assert.ok(body, `missing ${method}()`);
+    assert.doesNotMatch(body, /this\.pool|this\.storage|postWeblessInternal|requestWeblessInternal|this\.fetch|findOrderForSite|listPaymentProvidersForSite|listLogisticsProvidersForSite/);
+    assert.match(body, /requireBackendClient/);
+  }
 });
 
 function fakePool() {
