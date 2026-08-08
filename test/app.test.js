@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
@@ -316,6 +317,15 @@ test('MCP tools list includes homepage editing contract tools', async () => {
 
     const body = await response.json();
     const toolsByName = new Map(body.result.tools.map((tool) => [tool.name, tool]));
+    const toolsContractHash = createHash('sha256')
+      .update(JSON.stringify(body.result.tools))
+      .digest('hex');
+
+    assert.equal(body.result.tools.length, 125);
+    assert.equal(
+      toolsContractHash,
+      'd6de40eb08a55927c199ae1b227fc29b7bf4010e0bc70a87b14d4d3ed1be6871'
+    );
 
     for (const toolName of [
       'slimweb_site_select',
