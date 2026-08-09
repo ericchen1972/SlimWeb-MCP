@@ -1,5 +1,6 @@
-import { WeblessBackendClient } from './backends/weblessBackendClient.js';
-import { WeblessAccountRepository } from './weblessRepository.js';
+import { SlimWebBackendRepository } from '@slimweb/mcp-core/backend-repository';
+
+import { WeblessBackendTransport } from './backends/weblessBackendTransport.js';
 
 export function createSaasContext(options = {}) {
   if (options.accountRepository) {
@@ -9,16 +10,23 @@ export function createSaasContext(options = {}) {
   const backendBaseUrl = options.weblessBackendApiBaseUrl
     ?? process.env.WEBLESS_BACKEND_API_BASE_URL
     ?? '';
-  const backendClient = options.backendClient ?? (
+  const transport = options.backendTransport ?? (
     String(backendBaseUrl).trim() !== ''
-      ? new WeblessBackendClient({
+      ? new WeblessBackendTransport({
           baseUrl: backendBaseUrl,
-          secret: options.weblessMcpSecret ?? process.env.WEBLESS_MCP_SECRET
+          secret: options.weblessMcpSecret ?? process.env.WEBLESS_MCP_SECRET,
+          fetchImpl: options.fetchImpl
         })
-      : null
+      : {
+          async request() {
+            const error = new Error('Webless backend API is required.');
+            error.code = 'UPSTREAM_NOT_CONFIGURED';
+            throw error;
+          }
+        }
   );
 
   return {
-    accountRepository: new WeblessAccountRepository(undefined, { backendClient })
+    accountRepository: new SlimWebBackendRepository({ transport })
   };
 }

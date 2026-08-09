@@ -1845,9 +1845,13 @@ test('default SaaS repository routes settings update through the configured back
       };
     }
   };
+  const accountRepository = {
+    ...backendClient,
+    listAdminSitesForGoogleProfile: async () => [site]
+  };
 
   await withServerOptions({
-    backendClient,
+    accountRepository,
     googleVerifier: {
       verify: async () => ({
         sub: 'google-sub-backend',

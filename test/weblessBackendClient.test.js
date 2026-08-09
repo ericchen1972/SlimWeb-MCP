@@ -3,10 +3,28 @@ import { createServer } from 'node:http';
 import { test } from 'node:test';
 
 import {
+  BackendRepositoryError,
+  SlimWebBackendRepository,
+  assertSlimWebBackend
+} from '@slimweb/mcp-core/backend-repository';
+import {
   BackendError,
-  WeblessBackendClient
-} from '../src/backends/weblessBackendClient.js';
-import { assertSlimWebBackend } from '../src/backends/slimWebBackend.js';
+  WeblessBackendTransport
+} from '../src/backends/weblessBackendTransport.js';
+
+function createRepository({
+  idempotencyKeyFactory,
+  posterPollIntervalMs,
+  posterTimeoutMs,
+  ...transportOptions
+}) {
+  return new SlimWebBackendRepository({
+    transport: new WeblessBackendTransport(transportOptions),
+    idempotencyKeyFactory,
+    posterPollIntervalMs,
+    posterTimeoutMs
+  });
+}
 
 async function withJsonServer(handler, run) {
   const server = createServer(async (request, response) => {
@@ -100,7 +118,7 @@ test('backend client maps site context and settings methods to Webless HTTP', as
       warnings: []
     });
   }, async (baseUrl) => {
-    const client = new WeblessBackendClient({
+    const client = createRepository({
       baseUrl,
       secret: 'service-secret',
       requestIdFactory: () => 'request-client-001',
@@ -139,7 +157,7 @@ test('backend client maps Phase 5 operational settings to versioned Webless endp
     requests.push({ method: request.method, url: request.url, headers: request.headers, body: await readJson(request) });
     sendJson(response, 200, { ok: true, data: { ok: true, site }, warnings: [] });
   }, async (baseUrl) => {
-    const client = new WeblessBackendClient({ baseUrl, secret: 'service-secret', requestIdFactory: () => 'phase5-request-001', idempotencyKeyFactory: () => 'phase5-idempotency-001' });
+    const client = createRepository({ baseUrl, secret: 'service-secret', requestIdFactory: () => 'phase5-request-001', idempotencyKeyFactory: () => 'phase5-idempotency-001' });
     await client.getSiteReadiness(actor, { site_id: 101, include_optional: true });
     await client.getSiteLaunchProgress(actor, { site_id: 101 });
     await client.getSeoSettings(actor, { site_id: 101 });
@@ -175,7 +193,7 @@ test('backend client maps Phase 5 communications and admin tools to versioned We
     requests.push({ method: request.method, url: request.url, headers: request.headers, body: await readJson(request) });
     sendJson(response, 200, { ok: true, data: { ok: true, site }, warnings: [] });
   }, async (baseUrl) => {
-    const client = new WeblessBackendClient({ baseUrl, secret: 'service-secret', requestIdFactory: () => 'phase5-request-002', idempotencyKeyFactory: () => 'phase5-idempotency-002' });
+    const client = createRepository({ baseUrl, secret: 'service-secret', requestIdFactory: () => 'phase5-request-002', idempotencyKeyFactory: () => 'phase5-idempotency-002' });
     await client.getMailDeliverySettings(actor, { site_id: 101 });
     await client.updateMailDeliverySettings(actor, { site_id: 101, notification_smtp_host: 'smtp.example.com' });
     await client.getMailTemplates(actor, { site_id: 101 });
@@ -215,7 +233,7 @@ test('backend client maps Phase 5 integration and operational tools to versioned
     requests.push({ method: request.method, url: request.url, body: await readJson(request) });
     sendJson(response, 200, { ok: true, data: { ok: true, site }, warnings: [] });
   }, async (baseUrl) => {
-    const client = new WeblessBackendClient({ baseUrl, secret: 'service-secret', requestIdFactory: () => 'phase5-request-003', idempotencyKeyFactory: () => 'phase5-idempotency-003' });
+    const client = createRepository({ baseUrl, secret: 'service-secret', requestIdFactory: () => 'phase5-request-003', idempotencyKeyFactory: () => 'phase5-idempotency-003' });
     await client.searchNotionPages(actor, { site_id: 101, title: 'KAI' });
     await client.getNotionPageContent(actor, { site_id: 101, notion_page_id: 'page-1' });
     await client.createPoster(actor, { site_id: 101, product_names: ['商品'], drawing_prompt: '促銷' });
@@ -250,7 +268,7 @@ test('backend client keeps poster polling behind the versioned Webless API', asy
     }
     sendJson(response, 200, { ok: true, data: { queued: false, job_id: 'poster-job-1', status: 'completed', image_url: 'https://example.com/poster.webp' }, warnings: [] });
   }, async (baseUrl) => {
-    const client = new WeblessBackendClient({ baseUrl, secret: 'service-secret', posterPollIntervalMs: 0, posterTimeoutMs: 1_000 });
+    const client = createRepository({ baseUrl, secret: 'service-secret', posterPollIntervalMs: 0, posterTimeoutMs: 1_000 });
     const result = await client.createPoster(actor, { product_names: ['商品'], drawing_prompt: '促銷' });
     assert.equal(result.status, 'completed');
     assert.equal(result.image_url, 'https://example.com/poster.webp');
@@ -269,10 +287,10 @@ test('backend client surfaces a failed Webless poster job', async () => {
       : { queued: false, job_id: 'poster-job-failed', status: 'failed', message: 'Poster failed.' };
     sendJson(response, 200, { ok: true, data, warnings: [] });
   }, async (baseUrl) => {
-    const client = new WeblessBackendClient({ baseUrl, secret: 'service-secret', posterPollIntervalMs: 0, posterTimeoutMs: 1_000 });
+    const client = createRepository({ baseUrl, secret: 'service-secret', posterPollIntervalMs: 0, posterTimeoutMs: 1_000 });
     await assert.rejects(
       () => client.createPoster(actor, { product_names: ['商品'], drawing_prompt: '促銷' }),
-      (error) => error instanceof BackendError && error.code === 'UPSTREAM_ERROR' && error.message === 'Poster failed.'
+      (error) => error instanceof BackendRepositoryError && error.code === 'UPSTREAM_ERROR' && error.message === 'Poster failed.'
     );
   });
 });
@@ -288,7 +306,7 @@ test('backend client selects a site through resolved context and an internal the
     }
     sendJson(response, 200, { ok: true, data: { themes: [{ id: 1, name: 'Default', is_default: true }] }, warnings: [] });
   }, async (baseUrl) => {
-    const client = new WeblessBackendClient({ baseUrl, secret: 'service-secret' });
+    const client = createRepository({ baseUrl, secret: 'service-secret' });
     const selected = await client.selectSiteForAdminIdentity(identity, { site_code: 'swcb_demo' });
     assert.equal(selected.selected_site.site_code, 'swcb_demo');
     assert.equal(selected.themes[0].is_default, true);
@@ -308,7 +326,7 @@ test('backend client maps all Phase 2 catalog methods without site selectors in 
     requests.push({ method: request.method, url: request.url, headers: request.headers, body: await readJson(request) });
     sendJson(response, 200, { ok: true, data: { accepted: true }, warnings: [] });
   }, async (baseUrl) => {
-    const client = new WeblessBackendClient({
+    const client = createRepository({
       baseUrl,
       secret: 'service-secret',
       requestIdFactory: () => 'request-catalog-001',
@@ -367,7 +385,7 @@ test('backend client maps Phase 3 article methods to the versioned content API',
     requests.push({ method: request.method, url: request.url, headers: request.headers, body: await readJson(request) });
     sendJson(response, 200, { ok: true, data: { accepted: true }, warnings: [] });
   }, async (baseUrl) => {
-    const client = new WeblessBackendClient({
+    const client = createRepository({
       baseUrl,
       secret: 'service-secret',
       requestIdFactory: () => 'request-article-001',
@@ -399,7 +417,7 @@ test('backend client maps Phase 3 page methods to storage-backed content endpoin
     requests.push({ method: request.method, url: request.url, headers: request.headers, body: await readJson(request) });
     sendJson(response, 200, { ok: true, data: { accepted: true }, warnings: [] });
   }, async (baseUrl) => {
-    const client = new WeblessBackendClient({ baseUrl, secret: 'service-secret', idempotencyKeyFactory: () => 'idempotency-page-001' });
+    const client = createRepository({ baseUrl, secret: 'service-secret', idempotencyKeyFactory: () => 'idempotency-page-001' });
     await client.listPages(actor, { site_id: 101 });
     await client.checkPageTitle(actor, { site_id: 101, title: '品牌故事' });
     await client.getPageContent(actor, { site_id: 101, page_name: 'brand-story' });
@@ -427,7 +445,7 @@ test('backend client maps signed upload create and commit without database site 
     requests.push({ method: request.method, url: request.url, body: await readJson(request) });
     sendJson(response, 200, { ok: true, data: { accepted: true }, warnings: [] });
   }, async (baseUrl) => {
-    const client = new WeblessBackendClient({ baseUrl, secret: 'service-secret' });
+    const client = createRepository({ baseUrl, secret: 'service-secret' });
     await client.createUpload(actor, { site_id: 101, filename: 'a.png', mime_type: 'image/png', size_bytes: 10, target_usage: 'page_asset' });
     await client.commitUpload(actor, { site_id: 101, upload_id: 'upload-123', upload_token: 'token-123' });
   });
@@ -444,7 +462,7 @@ test('backend client maps remaining Phase 3 theme methods to versioned content e
     requests.push({ method: request.method, url: request.url, headers: request.headers, body: await readJson(request) });
     sendJson(response, 200, { ok: true, data: { accepted: true }, warnings: [] });
   }, async (baseUrl) => {
-    const client = new WeblessBackendClient({ baseUrl, secret: 'service-secret', idempotencyKeyFactory: () => 'idempotency-theme-001' });
+    const client = createRepository({ baseUrl, secret: 'service-secret', idempotencyKeyFactory: () => 'idempotency-theme-001' });
     await client.listThemes(actor, { site_id: 101 });
     await client.getSiteThemeMode(actor, { site_id: 101 });
     await client.getDesignContext(actor, { site_id: 101 });
@@ -482,7 +500,7 @@ test('backend client maps remaining Phase 3 media methods to Webless-owned stora
     requests.push({ method: request.method, url: request.url, headers: request.headers, body: await readJson(request) });
     sendJson(response, 200, { ok: true, data: { accepted: true }, warnings: [] });
   }, async (baseUrl) => {
-    const client = new WeblessBackendClient({ baseUrl, secret: 'service-secret', idempotencyKeyFactory: () => 'idempotency-media-001' });
+    const client = createRepository({ baseUrl, secret: 'service-secret', idempotencyKeyFactory: () => 'idempotency-media-001' });
     await client.getMediaLibraryStats(actor, { site_id: 101, include_unused_assets: true });
     await client.deleteUnusedMedia(actor, { site_id: 101 });
     await client.registerAsset(actor, { site_id: 101, source: { media_path: 'sites/101/mcp-uploads/committed/a.png' }, target_usage: 'home_page' });
@@ -503,7 +521,7 @@ test('backend client maps external asset reads and deletes to site-scoped Webles
     requests.push({ method: request.method, url: request.url, headers: request.headers, body: await readJson(request) });
     sendJson(response, 200, { ok: true, data: { assets: [] }, warnings: [] });
   }, async (baseUrl) => {
-    const client = new WeblessBackendClient({ baseUrl, secret: 'service-secret', idempotencyKeyFactory: () => 'idempotency-assets-001' });
+    const client = createRepository({ baseUrl, secret: 'service-secret', idempotencyKeyFactory: () => 'idempotency-assets-001' });
     await client.listExternalAssets(actor, { site_id: 101 });
     await client.deleteExternalAsset(actor, { site_id: 101, asset_id: 8 });
   });
@@ -522,7 +540,7 @@ test('backend client maps content SEO updates to one idempotent Webless operatio
     requests.push({ method: request.method, url: request.url, headers: request.headers, body: await readJson(request) });
     sendJson(response, 200, { ok: true, data: { ok: true }, warnings: [] });
   }, async (baseUrl) => {
-    const client = new WeblessBackendClient({ baseUrl, secret: 'service-secret', idempotencyKeyFactory: () => 'idempotency-seo-001' });
+    const client = createRepository({ baseUrl, secret: 'service-secret', idempotencyKeyFactory: () => 'idempotency-seo-001' });
     await client.updateContentSeo(actor, { site_id: 101, content_type: 'page', workflow_context: 'page_update', page_name: 'brand-story', seo_title: 'Brand' });
   });
 
@@ -538,7 +556,7 @@ test('backend client maps ChatGPT attachment imports to Webless-owned image hand
     requests.push({ method: request.method, url: request.url, headers: request.headers, body: await readJson(request) });
     sendJson(response, 200, { ok: true, data: { ok: true }, warnings: [] });
   }, async (baseUrl) => {
-    const client = new WeblessBackendClient({ baseUrl, secret: 'service-secret', idempotencyKeyFactory: () => 'idempotency-chatgpt-001' });
+    const client = createRepository({ baseUrl, secret: 'service-secret', idempotencyKeyFactory: () => 'idempotency-chatgpt-001' });
     await client.importChatGptAttachment(actor, { site_id: 101, image_url: 'https://files.openai.example/a.png', filename: 'a.png', file_id: 'file-1', target_usage: 'page_asset' });
   });
 
@@ -554,7 +572,7 @@ test('backend client maps Phase 4 payment and logistics settings to the versione
     requests.push({ method: request.method, url: request.url, headers: request.headers, body: await readJson(request) });
     sendJson(response, 200, { ok: true, data: { accepted: true }, warnings: [] });
   }, async (baseUrl) => {
-    const client = new WeblessBackendClient({ baseUrl, secret: 'service-secret', idempotencyKeyFactory: () => 'idempotency-commerce-001' });
+    const client = createRepository({ baseUrl, secret: 'service-secret', idempotencyKeyFactory: () => 'idempotency-commerce-001' });
     await client.getPaymentLogisticsSettings(actor, { site_id: 101 });
     await client.updatePaymentLogisticsSettings(actor, { site_id: 101, payments: [{ provider: 'ecpay', is_enabled: false }] });
   });
@@ -575,7 +593,7 @@ test('backend client maps all Phase 4 member and promotion methods to site-scope
     requests.push({ method: request.method, url: request.url, headers: request.headers, body: await readJson(request) });
     sendJson(response, 200, { ok: true, data: { accepted: true }, warnings: [] });
   }, async (baseUrl) => {
-    const client = new WeblessBackendClient({ baseUrl, secret: 'service-secret', idempotencyKeyFactory: () => 'idempotency-member-001' });
+    const client = createRepository({ baseUrl, secret: 'service-secret', idempotencyKeyFactory: () => 'idempotency-member-001' });
     await client.listCouponTemplates(actor, { site_id: 101, status: 'active', page: 2 });
     await client.upsertCouponTemplate(actor, { site_id: 101, name: 'Coupon' });
     await client.issueMemberCoupon(actor, { site_id: 101, member_id: 7, coupon_template_id: 8 });
@@ -617,7 +635,7 @@ test('backend client maps all Phase 4 merchandising methods to site-scoped comme
     requests.push({ method: request.method, url: request.url, headers: request.headers, body: await readJson(request) });
     sendJson(response, 200, { ok: true, data: { accepted: true }, warnings: [] });
   }, async (baseUrl) => {
-    const client = new WeblessBackendClient({ baseUrl, secret: 'service-secret', idempotencyKeyFactory: () => 'merchandising-key-001' });
+    const client = createRepository({ baseUrl, secret: 'service-secret', idempotencyKeyFactory: () => 'merchandising-key-001' });
     await client.listThresholdGifts(actor, { site_id: 101, is_active: true });
     await client.upsertThresholdGift(actor, { site_id: 101, threshold_amount: 2000, product_id: 7 });
     await client.deleteThresholdGift(actor, { site_id: 101, threshold_gift_id: 8 });
@@ -643,7 +661,7 @@ test('backend client maps all Phase 4 order transaction methods to site-scoped c
     requests.push({ method: request.method, url: request.url, headers: request.headers, body: await readJson(request) });
     sendJson(response, 200, { ok: true, data: { accepted: true }, warnings: [] });
   }, async (baseUrl) => {
-    const client = new WeblessBackendClient({ baseUrl, secret: 'service-secret', idempotencyKeyFactory: () => 'order-key-001' });
+    const client = createRepository({ baseUrl, secret: 'service-secret', idempotencyKeyFactory: () => 'order-key-001' });
     await client.listOrders(actor, { site_id: 101, search_order_no: 'SW', limit: 10 });
     await client.calculateOrderProfitStatistics(actor, { site_id: 101, date_from: '2026-08-01' });
     await client.getOrder(actor, { site_id: 101, order_no: 'SW1' });
@@ -702,7 +720,7 @@ test('backend client maps Webless error envelopes to stable errors', async () =>
         request_id: `request-${status}`
       });
     }, async (baseUrl) => {
-      const client = new WeblessBackendClient({ baseUrl, secret: 'service-secret' });
+      const client = createRepository({ baseUrl, secret: 'service-secret' });
 
       await assert.rejects(
         () => client.listSitesForAdminIdentity(identity),
@@ -720,7 +738,7 @@ test('backend client rejects malformed successful envelopes', async () => {
   await withJsonServer(async (_request, response) => {
     sendJson(response, 200, { data: { sites: [] } });
   }, async (baseUrl) => {
-    const client = new WeblessBackendClient({ baseUrl, secret: 'service-secret' });
+    const client = createRepository({ baseUrl, secret: 'service-secret' });
 
     await assert.rejects(
       () => client.listSitesForAdminIdentity(identity),
@@ -735,7 +753,7 @@ test('backend client reports request timeout without falling back', async () => 
     await new Promise((resolve) => setTimeout(resolve, 60));
     sendJson(response, 200, { ok: true, data: { sites: [] }, warnings: [] });
   }, async (baseUrl) => {
-    const client = new WeblessBackendClient({
+    const client = createRepository({
       baseUrl,
       secret: 'service-secret',
       timeoutMs: 10
