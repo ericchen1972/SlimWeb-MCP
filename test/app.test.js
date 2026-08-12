@@ -324,7 +324,7 @@ test('MCP tools list includes homepage editing contract tools', async () => {
     assert.equal(body.result.tools.length, 125);
     assert.equal(
       toolsContractHash,
-      'e5e4c662fd241829f532d1a567987698ad6a16e22759dfdea6eeea6c44c7e95b'
+      '9f63fb8ca81bc464b816f7d441efd08bb9f687947e954582108627a5f104808e'
     );
 
     for (const toolName of [
