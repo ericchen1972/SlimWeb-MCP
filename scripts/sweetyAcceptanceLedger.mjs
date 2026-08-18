@@ -10,7 +10,7 @@ export const ACCEPTANCE = Object.freeze({
 
 const SITE_CODE = 'swcb_g3fg1bpnjulrr75o';
 const EXPECTED_COUNT = 125;
-const EXPECTED_HASH = '9f63fb8ca81bc464b816f7d441efd08bb9f687947e954582108627a5f104808e';
+const EXPECTED_HASH = '158cdf30821435d4d3348b5eb9e30f42184bdaf12adb780c6eb1317e677e6ea4';
 
 const DOMAIN_RULES = [
   ['identity', /_(auth_status|sites_list|site_select)$/],

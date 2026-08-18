@@ -1,6 +1,6 @@
 {
   "count": 125,
-  "sha256": "9f63fb8ca81bc464b816f7d441efd08bb9f687947e954582108627a5f104808e",
+  "sha256": "158cdf30821435d4d3348b5eb9e30f42184bdaf12adb780c6eb1317e677e6ea4",
   "tools": [
     {
       "name": "slimweb_media_library_stats",
@@ -1425,7 +1425,7 @@
     },
     {
       "name": "slimweb_mail_delivery_settings_get",
-      "description": "Read SlimWeb mail delivery settings, including SMTP server fields and order/reminder notification options shown in the admin mail settings page.",
+      "description": "Read SlimWeb mail delivery settings, including SMTP server fields, mail server availability, AI marketing email settings, and order/reminder notification options shown in the admin mail settings page.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1446,7 +1446,7 @@
     },
     {
       "name": "slimweb_mail_delivery_settings_update",
-      "description": "Update SlimWeb mail delivery settings, including SMTP server fields and order/reminder notification options shown in the admin mail settings page.",
+      "description": "Update SlimWeb mail delivery settings shown in the admin mail settings page. SMTP fields must be all blank or fully configured; AI marketing email interval must be at least 7 days.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1482,6 +1482,14 @@
           },
           "notification_smtp_ssl": {
             "type": "boolean"
+          },
+          "use_ai_marketing_email": {
+            "type": "boolean"
+          },
+          "ai_marketing_email_interval_days": {
+            "type": "integer",
+            "minimum": 7,
+            "description": "Minimum 7 days. This only stores the setting; automated AI marketing delivery is not enabled by this field alone."
           },
           "site_code": {
             "type": "string",

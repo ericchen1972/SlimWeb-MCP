@@ -324,7 +324,7 @@ test('MCP tools list includes homepage editing contract tools', async () => {
     assert.equal(body.result.tools.length, 125);
     assert.equal(
       toolsContractHash,
-      '9f63fb8ca81bc464b816f7d441efd08bb9f687947e954582108627a5f104808e'
+      '158cdf30821435d4d3348b5eb9e30f42184bdaf12adb780c6eb1317e677e6ea4'
     );
 
     for (const toolName of [
@@ -864,7 +864,10 @@ test('homepage editing tools call repository implementations', async () => {
           notification_smtp_password: 'secret',
           notification_smtp_port: '465',
           notification_smtp_from_email: 'noreply@example.com',
-          notification_smtp_ssl: true
+          notification_smtp_ssl: true,
+          mail_server_available: true,
+          use_ai_marketing_email: false,
+          ai_marketing_email_interval_days: 7
         }
       };
     },
@@ -879,7 +882,10 @@ test('homepage editing tools call repository implementations', async () => {
           notification_smtp_password: args.notification_smtp_password ?? null,
           notification_smtp_port: args.notification_smtp_port ?? null,
           notification_smtp_from_email: args.notification_smtp_from_email ?? null,
-          notification_smtp_ssl: Boolean(args.notification_smtp_ssl)
+          notification_smtp_ssl: Boolean(args.notification_smtp_ssl),
+          mail_server_available: true,
+          use_ai_marketing_email: Boolean(args.use_ai_marketing_email),
+          ai_marketing_email_interval_days: args.ai_marketing_email_interval_days ?? 7
         }
       };
     },
@@ -1386,8 +1392,10 @@ test('homepage editing tools call repository implementations', async () => {
       notification_smtp_password: 'sg-key',
       notification_smtp_port: '587',
       notification_smtp_from_email: 'hello@example.com',
-      notification_smtp_ssl: false
-    })).result.structuredContent.settings.notification_smtp_port, '587');
+      notification_smtp_ssl: false,
+      use_ai_marketing_email: true,
+      ai_marketing_email_interval_days: 7
+    })).result.structuredContent.settings.use_ai_marketing_email, true);
     assert.equal((await callTool(38, 'slimweb_payment_logistics_get', { site_id: 101 })).result.structuredContent.supported_payment_providers[0].provider, 'ecpay');
     assert.equal((await callTool(39, 'slimweb_payment_logistics_update', { site_id: 101, payments: [{ provider: 'ecpay', is_enabled: true }] })).result.structuredContent.payment_providers[0].provider, 'ecpay');
     assert.equal((await callTool(40, 'slimweb_orders_list', { site_id: 101 })).result.structuredContent.orders[0].order_no, 'SW1');
