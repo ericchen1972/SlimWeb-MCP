@@ -321,10 +321,10 @@ test('MCP tools list includes homepage editing contract tools', async () => {
       .update(JSON.stringify(body.result.tools))
       .digest('hex');
 
-    assert.equal(body.result.tools.length, 125);
+    assert.equal(body.result.tools.length, 127);
     assert.equal(
       toolsContractHash,
-      '158cdf30821435d4d3348b5eb9e30f42184bdaf12adb780c6eb1317e677e6ea4'
+      'bb86586ea1668d4da1863a737272e6b581bbb0529e24c8717b182409253124a8'
     );
 
     for (const toolName of [
@@ -541,11 +541,13 @@ test('MCP tools list includes homepage editing contract tools', async () => {
     assert.ok(toolsByName.get('slimweb_orders_list').inputSchema.properties.search_field.enum.includes('buyer_name'));
     assert.ok(toolsByName.get('slimweb_orders_list').inputSchema.properties.search_field.enum.includes('payment_incomplete'));
     assert.match(toolsByName.get('slimweb_orders_list').inputSchema.properties.logistics_status.description, /payment is completed/);
-assert.deepEqual(toolsByName.get('slimweb_newsletters_create').inputSchema.properties.recipient_scope.enum, ['members', 'all_members']);
+assert.equal(toolsByName.get('slimweb_newsletters_create').inputSchema.properties.recipient_scope, undefined);
 assert.equal(toolsByName.get('slimweb_newsletters_create').inputSchema.properties.member_ids, undefined);
 assert.equal(toolsByName.get('slimweb_newsletters_create').inputSchema.properties.member_id, undefined);
-assert.equal(toolsByName.get('slimweb_newsletters_create').inputSchema.properties.member_names.type, 'array');
-assert.equal(toolsByName.get('slimweb_newsletters_create').inputSchema.properties.member_emails.type, 'array');
+assert.equal(toolsByName.get('slimweb_newsletters_create').inputSchema.properties.member_names, undefined);
+assert.equal(toolsByName.get('slimweb_newsletters_create').inputSchema.properties.member_emails, undefined);
+assert.equal(toolsByName.get('slimweb_member_email_send').inputSchema.properties.cc_emails.maxItems, 5);
+assert.equal(toolsByName.get('slimweb_member_email_send').inputSchema.properties.bcc_emails.maxItems, 5);
 assert.match(toolsByName.get('slimweb_newsletters_create').description, /Create/);
 assert.match(toolsByName.get('slimweb_newsletters_create').description, /does not send/);
 assert.equal(toolsByName.get('slimweb_posters_create').inputSchema.properties.product_names.maxItems, 5);
@@ -1135,7 +1137,7 @@ test('homepage editing tools call repository implementations', async () => {
 	    },
     createNewsletter: async (accountId, args) => {
       calls.push(['newsletter_create', accountId, args]);
-      return { ok: true, newsletter: { id: 9, title: args.title, recipient_scope: args.recipient_scope, scheduled_at: args.scheduled_at ?? '2026-06-10T10:05:00+08:00' } };
+      return { ok: true, newsletter: { id: 9, title: args.title, scheduled_at: args.scheduled_at ?? '2026-06-10T10:05:00+08:00' } };
     },
     createPoster: async (accountId, args) => {
       calls.push(['poster_create', accountId, args]);
@@ -1502,7 +1504,7 @@ test('homepage editing tools call repository implementations', async () => {
 	    assert.equal((await callTool(60, 'slimweb_members_coupons_issue', { site_id: 101, member_id: 88, coupon_template_id: 3 })).result.structuredContent.member_coupon.member_id, 88);
 	    assert.equal((await callTool(61, 'slimweb_members_list', { site_id: 101, keyword: 'member@example.com' })).result.structuredContent.members[0].email, 'member@example.com');
 	    assert.equal((await callTool(62, 'slimweb_members_get', { site_id: 101, member_id: 88 })).result.structuredContent.member.id, 88);
-assert.equal((await callTool(621, 'slimweb_newsletters_create', { site_id: 101, recipient_scope: 'members', member_names: ['Eric'], member_emails: ['eric@example.test'], title: '到貨通知', html_content: '<p>到貨了</p>' })).result.structuredContent.newsletter.id, 9);
+assert.equal((await callTool(621, 'slimweb_newsletters_create', { site_id: 101, title: '到貨通知', html_content: '<p>到貨了</p>' })).result.structuredContent.newsletter.id, 9);
 const posterResult = (await callTool(622, 'slimweb_posters_create', { site_id: 101, product_names: ['商品A'], drawing_prompt: '母親節促銷7折優惠' })).result;
 assert.equal(posterResult.structuredContent.image_url, 'https://tmp.example.test/poster.webp');
 assert.equal(posterResult._meta['openai/outputTemplate'], 'ui://slimweb/poster-preview.html');

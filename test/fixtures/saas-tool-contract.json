@@ -1,6 +1,6 @@
 {
-  "count": 125,
-  "sha256": "158cdf30821435d4d3348b5eb9e30f42184bdaf12adb780c6eb1317e677e6ea4",
+  "count": 127,
+  "sha256": "bb86586ea1668d4da1863a737272e6b581bbb0529e24c8717b182409253124a8",
   "tools": [
     {
       "name": "slimweb_media_library_stats",
@@ -424,7 +424,7 @@
     },
     {
       "name": "slimweb_newsletters_get",
-      "description": "Read one existing newsletter and its selected recipients.",
+      "description": "Read one existing newsletter. Newsletters always target all currently active members at send time and do not store recipient rows.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -449,19 +449,12 @@
     },
     {
       "name": "slimweb_newsletters_update",
-      "description": "Patch one existing newsletter. Omitted content and scheduling fields remain unchanged.",
+      "description": "Patch one existing all-member newsletter. Omitted content and scheduling fields remain unchanged.",
       "inputSchema": {
         "type": "object",
         "properties": {
           "newsletter_id": {
             "type": "integer"
-          },
-          "recipient_scope": {
-            "type": "string",
-            "enum": [
-              "members",
-              "all_members"
-            ]
           },
           "title": {
             "type": "string"
@@ -3966,35 +3959,138 @@
       }
     },
     {
-      "name": "slimweb_newsletters_create",
-      "description": "Create a SlimWeb newsletter record for all members or selected members. This tool stores the newsletter for Webless admin scheduling and does not send email directly. If scheduled_at is omitted, SlimWeb-MCP sets it to the current time plus 5 minutes.",
+      "name": "slimweb_member_email_preview",
+      "description": "Preview one non-marketing operational email before sending it to selected members. This does not send or queue email. After the user approves the preview, call slimweb_member_email_send with the same recipient and content fields.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "recipient_scope": {
-            "type": "string",
-            "enum": [
-              "members",
-              "all_members"
-            ],
-            "description": "Use members for explicit named recipients. Use all_members only when the user clearly asked to create a newsletter for every member."
+          "member_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "minItems": 1,
+            "maxItems": 5,
+            "description": "Active member IDs used as To recipients."
           },
-          "title": {
+          "cc_emails": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "email"
+            },
+            "maxItems": 5,
+            "description": "Optional arbitrary valid CC addresses."
+          },
+          "bcc_emails": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "email"
+            },
+            "maxItems": 5,
+            "description": "Optional arbitrary valid BCC addresses. To, CC, and BCC combined may contain at most five unique addresses."
+          },
+          "subject": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "rendered_html": {
+            "type": "string",
+            "description": "Operational email HTML body; do not use this tool for marketing or all-member mail."
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "member_ids",
+          "subject",
+          "rendered_html"
+        ]
+      },
+      "_meta": {
+        "ui": {
+          "resourceUri": "ui://slimweb/member-email-preview.html",
+          "visibility": [
+            "model",
+            "app"
+          ]
+        },
+        "openai/outputTemplate": "ui://slimweb/member-email-preview.html",
+        "openai/widgetAccessible": true
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_member_email_send",
+      "description": "Synchronously send one non-marketing operational email to selected active members, with optional arbitrary CC and BCC addresses. To, CC, and BCC are deduplicated together and limited to five unique addresses. This never creates a newsletter or queue job. SMTP errors may identify the address rejected during the SMTP transaction, but delayed bounce results are unavailable.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "member_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "minItems": 1,
+            "maxItems": 5
+          },
+          "cc_emails": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "email"
+            },
+            "maxItems": 5
+          },
+          "bcc_emails": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "email"
+            },
+            "maxItems": 5
+          },
+          "subject": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "rendered_html": {
             "type": "string"
           },
-          "member_names": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "Optional recipient names. When only names are provided, SlimWeb-MCP looks up members one by one and may return candidate emails when a name matches multiple members."
-          },
-          "member_emails": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "Optional recipient emails. When member_names and member_emails are both provided with the same length, the tool stores the newsletter recipients directly without member lookup."
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "member_ids",
+          "subject",
+          "rendered_html"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_newsletters_create",
+      "description": "Create a scheduled SlimWeb newsletter for all active members. This stores no recipient rows and does not send email directly. At the scheduled time SlimWeb queries the current active-member emails. If scheduled_at is omitted, SlimWeb-MCP sets it to the current time plus 5 minutes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
           },
           "html_content": {
             "type": "string",
@@ -4011,7 +4107,6 @@
         },
         "required": [
           "site_code",
-          "recipient_scope",
           "title",
           "html_content"
         ]

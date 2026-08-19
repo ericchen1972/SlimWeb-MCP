@@ -263,9 +263,11 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 | `slimweb_members_coupons_issue` | Available | member write + promotion write | 手動發券給指定會員，只接受 active manual coupon template。 |
 | `slimweb_members_coupons_revoke` | Available | member write + promotion write | 撤銷指定會員已發優惠券並保留歷史。 |
 | `slimweb_members_delete` | Available | member write | 刪除指定會員。 |
-| `slimweb_newsletters_create` | Available | member write | 建立電子報資料，支援全部會員或指定名單；不直接寄送，未指定發送時間時預設為當下時間 + 5 分鐘。 |
+| `slimweb_member_email_preview` | Available | member read | 預覽一次性的非行銷會員通知信，不寄送、不排程。 |
+| `slimweb_member_email_send` | Available | member write | 同步寄送一次性的非行銷會員通知信，可指定 CC/BCC，合計最多 5 個信箱。 |
+| `slimweb_newsletters_create` | Available | member write | 建立寄給當下所有有效會員的電子報排程，不保存收件名單；未指定時間時預設為當下時間 + 5 分鐘。 |
 | `slimweb_newsletters_list` | Available | member read | 列出既有電子報。 |
-| `slimweb_newsletters_get` | Available | member read | 讀取單一電子報與指定收件者。 |
+| `slimweb_newsletters_get` | Available | member read | 讀取單一全會員電子報。 |
 | `slimweb_newsletters_update` | Available | member write | 更新既有電子報內容與排程。 |
 | `slimweb_newsletters_delete` | Available | member write | 刪除既有電子報。 |
 | `slimweb_posters_create` | Available | product read | 依商品名稱與繪圖需求產生 AI 商品海報，後端以商品主圖作為 image edit 參考並存成素材庫媒體；商品名稱模糊搜尋若有多筆結果會先返回候選讓使用者確認。 |
@@ -1123,23 +1125,31 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 錯誤情境: member not found、coupon template not found、non-manual template、inactive template、duplicate active coupon、validation failed、permission denied
 - Audit fields: request ID、user ID、account ID、site ID、member ID、coupon template ID
 
+### `slimweb_member_email_preview` / `slimweb_member_email_send`
+
+- 狀態: Available
+- 權限: member read / member write
+- Scope: active site
+- 用途: 寄送訂單異動、等待通知等一次性且非行銷的會員信；先 preview，使用者確認後再 send。
+- Input: `site_code`、`member_ids`、optional `cc_emails`、optional `bcc_emails`、`subject`、`rendered_html`
+- 收件規則: `member_ids` 對應 active 會員的 To；CC/BCC 可填任意有效 Email；To、CC、BCC 依序去重後合計最多 5 個信箱。
+- Side effects: preview 不寄送；send 在同一個 MCP request 內同步呼叫 SMTP，不建立 queue、電子報或專用寄送紀錄，也不自動 BCC 網站聯絡信箱。
+- 錯誤回報: SMTP 當下若指出拒絕的收件信箱，結果會包含該地址；SMTP 接受後才發生的 delayed bounce 無法由同步結果得知。
+
 ### `slimweb_newsletters_create`
 
 - 狀態: Available
 - 權限: member write
 - Scope: active site
 - 用途: 建立 Webless 後台電子報資料；此工具只儲存電子報與排程，不直接寄送 email。
-- 收件範圍:
-  - `recipient_scope=all_members`: 建立給全部會員的電子報，不傳 `member_names` / `member_emails`。
-  - `recipient_scope=members`: 可傳 `member_names` 讓 MCP 逐一查找會員；若同名會員超過一個，工具會回傳候選 email 讓 AI 讓使用者選擇。
-  - `recipient_scope=members`: 若同時提供 `member_names` 與 `member_emails`，且兩邊數量相同，工具不做會員查找，直接建立收件者資料。
-- Input: `site_code`、`recipient_scope=members|all_members`、`member_names`、`member_emails`、`title`、`html_content`、optional `scheduled_at`
+- 收件範圍: 固定為排程執行當下所有 active 且 Email 有效的會員，不接受對象或指定會員欄位。
+- Input: `site_code`、`title`、`html_content`、optional `scheduled_at`
 - Output: site summary、newsletter summary、recipient summary、delivery guidance
-- Side effects: creates `site_newsletters` and `site_newsletter_recipients`; does not send or queue email directly.
+- Side effects: creates `site_newsletters`; does not store recipient rows or send email directly.
 - 發送時間: 如果使用者沒有指定 `scheduled_at`，AI 應省略欄位，由 MCP 端自動填入「當下時間 + 5 分鐘」。
 - 安全規則: 移除 `<script>`、`<iframe>` 與 inline event handler；內容為電子報 HTML，之後由 Webless 後台寄送流程處理。
-- 錯誤情境: member not found、ambiguous recipient name、empty title/content、invalid recipient scope、past scheduled time、permission denied
-- Audit fields: request ID、user ID、account ID、site ID、member names、member emails、recipient scope、newsletter ID
+- 錯誤情境: empty title/content、past scheduled time、permission denied
+- Audit fields: request ID、user ID、account ID、site ID、newsletter ID
 
 ### `slimweb_posters_create`
 
