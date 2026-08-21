@@ -4,7 +4,7 @@
 
 **Goal:** Make Default Theme immutable across SaaS and Standalone, route AI Theme edits according to the active Theme, support cloning the current Theme, and safely migrate EasyDays' historical Default customization into a new active Theme.
 
-**Architecture:** Put the public tool workflow and literal-Default preflight guard in the shared `SlimWeb-MCP-Core`, while Webless and SlimWeb Standalone remain the authoritative data-integrity boundary for numeric Default IDs and active-custom confirmation. Add a source-Theme clone path through the existing backend `POST /themes` endpoint. Handle EasyDays with a separately tested internal maintenance command that backs up and removes only historical Default shell overrides after the new Theme is active.
+**Architecture:** Put the public tool workflow and literal-Default preflight guard in the shared `SlimWeb-MCP-Core`, while Webless and SlimWeb Standalone remain the authoritative data-integrity boundary for numeric Default IDs and active-custom confirmation. Default never persists root-elements; creating from Default produces an empty custom shell that renders through canonical runtime fallback, while cloning a non-Default Theme copies that custom shell. Handle EasyDays with a separately tested internal migration command that copies its historical Default overrides to a new custom Theme before backing up and removing only those legacy overrides.
 
 **Tech Stack:** Node.js 20 MCP Core and consumers, Laravel/PHPUnit SaaS and Standalone backends, GCS-backed Theme storage, Cloud Run, GitHub Actions, SlimWeb MCP live acceptance.
 
@@ -24,8 +24,8 @@
 - `/Users/eric/Documents/SlimWeb-MCP/package.json`, `package-lock.json`: consume the released Core version.
 - `/Users/eric/Documents/SlimWeb-MCP/test/app.test.js`, `test/toolContract.test.js`, `test/fixtures/saas-tool-contract.json`, `README.md`: SaaS consumer contract and documentation.
 - `/Users/eric/Documents/SlimWeb-Standalone-MCP/package.json`, `package-lock.json`, `test/app.test.js`, `README.md`: Standalone consumer contract and documentation.
-- `/Users/eric/Documents/webless/app/Console/Commands/RepairEasyDaysDefaultTheme.php`: internal, non-MCP EasyDays backup/dry-run/apply command.
-- `/Users/eric/Documents/webless/tests/Feature/RepairEasyDaysDefaultThemeTest.php`: exact safety and backup tests for the maintenance command.
+- `/Users/eric/Documents/webless/app/Console/Commands/MigrateEasyDaysDefaultTheme.php`: internal, non-MCP EasyDays copy/backup/cleanup command.
+- `/Users/eric/Documents/webless/tests/Feature/MigrateEasyDaysDefaultThemeTest.php`: exact copy, safety, and backup tests for the migration command.
 - `/Users/eric/Documents/SlimWeb-MCP/docs/acceptance/easydays-theme-migration-2026-08-22.md`: persisted migration evidence and viewport results.
 
 Do not stage or modify unrelated dirty files already present in `/Users/eric/Documents/webless`, especially `videos/`, `output/`, `outputs/`, `tmp/`, and `storage/template-backups/`.
@@ -191,13 +191,15 @@ foreach (['default', (string) $default->id] as $themeId) {
 
 Also cover the append-request endpoint.
 
+Add a creation assertion that `slimweb_themes_create_from_default` does not copy any object from `templates/default/root-elements` or `templates/default/assets/root-elements`; the new Theme must render through fallback until it receives its own custom fragment.
+
 - [ ] **Step 2: Test active-custom confirmation**
 
 Create an active custom Theme and assert root/profile writes fail without `confirmed_active_theme_edit`, pass with it set to `true`, and pass without it for an inactive custom Theme.
 
 - [ ] **Step 3: Test source-Theme cloning**
 
-Seed source shell files, root CSS, one page body, and a style profile. POST `/themes` with `source_theme_id` and assert:
+Seed a non-Default source Theme with shell files, root CSS, one page body, and a style profile. POST `/themes` with `source_theme_id` and assert:
 
 ```php
 $this->assertSame($sourceNavbar, $this->storage->body($newNavbarPath));
@@ -252,9 +254,9 @@ Call it immediately after `resolve()` in `updateRootElements`, `upsertProfile`, 
 
 - [ ] **Step 2: Clone an explicit source Theme**
 
-Refactor `create()` to resolve `source_theme_id` when supplied, otherwise resolve Default. Copy only non-page storage objects from `directory($sourceTheme)` to `directory($newTheme)`. Clone the source style-profile row with new create/update account IDs, timestamps, `version: 1`, and the new `site_page_id`.
+Refactor `create()` so the absence of `source_theme_id` creates the non-Default Theme record without copying Default storage objects or a Default style profile. When `source_theme_id` is supplied, resolve it, reject it if `is_default`, copy only non-page storage objects from `directory($sourceTheme)` to `directory($newTheme)`, and clone the source style-profile row with new create/update account IDs, timestamps, `version: 1`, and the new `site_page_id`.
 
-Return:
+For a custom source return:
 
 ```php
 'source_theme' => $this->theme($sourceTheme),
@@ -307,6 +309,8 @@ Expected: FAIL for the same missing behavior as SaaS.
 - [ ] **Step 3: Apply the same focused ThemeService implementation**
 
 Port the exact `assertMutableTheme`, source clone, style-profile clone, and `themeEditPolicy` behavior from Webless. Do not introduce SaaS account/site selection behavior into Standalone.
+
+Also preserve the same Default creation invariant: `create_from_default` creates no stored shell, and custom-source cloning rejects a Default `source_theme_id`.
 
 - [ ] **Step 4: Run Standalone verification**
 
@@ -388,37 +392,39 @@ git add package.json package-lock.json README.md test
 git commit -m "feat: publish standalone immutable themes"
 ```
 
-### Task 7: Build the EasyDays one-time maintenance command with TDD
+### Task 7: Build the EasyDays one-time migration command with TDD
 
 **Files:**
-- Create: `/Users/eric/Documents/webless/app/Console/Commands/RepairEasyDaysDefaultTheme.php`
-- Create: `/Users/eric/Documents/webless/tests/Feature/RepairEasyDaysDefaultThemeTest.php`
+- Create: `/Users/eric/Documents/webless/app/Console/Commands/MigrateEasyDaysDefaultTheme.php`
+- Create: `/Users/eric/Documents/webless/tests/Feature/MigrateEasyDaysDefaultThemeTest.php`
 
 - [ ] **Step 1: Write failing safety tests**
 
 Test these exact cases:
 
 ```php
-$this->artisan('slimweb:repair-easydays-default-theme', [
+$this->artisan('slimweb:migrate-easydays-default-theme', [
     'site_code' => 'swcb_wrong',
 ])->assertFailed();
 
-$this->artisan('slimweb:repair-easydays-default-theme', [
+$this->artisan('slimweb:migrate-easydays-default-theme', [
     'site_code' => 'swcb_bofnoha3vtoiehmq',
+    '--target-theme-id' => $targetTheme->id,
+    '--phase' => 'copy',
 ])->expectsOutputToContain('DRY RUN')->assertSuccessful();
 ```
 
-Also assert apply fails when Default is still active, when the expected new Theme ID is not active, or when the backup manifest is absent.
+Assert copy rejects a Default target ID and an already-active target. Assert cleanup fails when the expected target Theme is not active or when the backup manifest is absent.
 
 - [ ] **Step 2: Test exact backup and cleanup scope**
 
-Seed Default root elements, root CSS, a Default page body, and a style profile. Assert dry-run deletes nothing. Assert apply copies only root-elements and root-assets objects to a timestamped `sites/{site}/template-backups/easydays-default-theme-*` prefix, writes `manifest.json` with path/size/SHA-256, deletes the original root objects and style-profile row, and preserves `templates/default/pages/index/content.blade.php` byte-for-byte.
+Seed Default root elements, root CSS, a Default page body, and a style profile. Assert copy dry-run writes nothing. Assert copy apply writes the historical root objects into the target custom Theme, clones the style profile, backs up the sources to a timestamped `sites/{site}/template-backups/easydays-default-theme-*` prefix, and writes `manifest.json` with path/size/SHA-256. Then activate the target in the test and assert cleanup apply deletes the original Default root objects and style-profile row while preserving `templates/default/pages/index/content.blade.php` byte-for-byte.
 
 - [ ] **Step 3: Run and confirm RED**
 
 ```bash
 cd /Users/eric/Documents/webless
-php artisan test tests/Feature/RepairEasyDaysDefaultThemeTest.php
+php artisan test tests/Feature/MigrateEasyDaysDefaultThemeTest.php
 ```
 
 Expected: FAIL because the command does not exist.
@@ -428,27 +434,28 @@ Expected: FAIL because the command does not exist.
 Use this command contract:
 
 ```php
-protected $signature = 'slimweb:repair-easydays-default-theme
+protected $signature = 'slimweb:migrate-easydays-default-theme
     {site_code}
-    {--active-theme-id= : Required non-Default EasyDays Theme ID}
-    {--apply : Back up and remove the historical Default shell overrides}';
+    {--target-theme-id= : Required non-Default EasyDays Theme ID}
+    {--phase=copy : copy or cleanup}
+    {--apply : Apply the selected migration phase}';
 ```
 
-Hard-code the allowed site code constant `swcb_bofnoha3vtoiehmq`. Resolve Default and the expected active non-Default Theme. Build the candidate object list only from:
+Hard-code the allowed site code constant `swcb_bofnoha3vtoiehmq`. Resolve Default and the target non-Default Theme. Build the candidate object list only from:
 
 ```text
 sites/{site_id}/templates/default/root-elements/
 sites/{site_id}/templates/default/assets/root-elements/
 ```
 
-Back up each object through `GcsStorage::downloadIfExists()` and `upload()`, create the JSON manifest, verify the copied hashes, then delete the source objects individually. Delete only the Default Theme's style-profile row. Never call `deleteDirectory("sites/{site_id}/templates/default")`.
+In copy apply, back up each object through `GcsStorage::downloadIfExists()` and `upload()`, create and verify the JSON manifest, copy each source to the matching `schemes/{target_theme_id}` path, and clone the Default profile to the target. In cleanup apply, require that target Theme is active and the manifest hashes still match, then delete sources individually and delete only the Default Theme's style-profile row. Never call `deleteDirectory("sites/{site_id}/templates/default")`.
 
 - [ ] **Step 5: Run GREEN tests and commit**
 
 ```bash
-php artisan test tests/Feature/RepairEasyDaysDefaultThemeTest.php tests/Feature/McpV1ThemeTest.php
-git add app/Console/Commands/RepairEasyDaysDefaultTheme.php tests/Feature/RepairEasyDaysDefaultThemeTest.php
-git commit -m "chore: add EasyDays default theme repair"
+php artisan test tests/Feature/MigrateEasyDaysDefaultThemeTest.php tests/Feature/McpV1ThemeTest.php
+git add app/Console/Commands/MigrateEasyDaysDefaultTheme.php tests/Feature/MigrateEasyDaysDefaultThemeTest.php
+git commit -m "chore: add EasyDays default theme migration"
 ```
 
 ### Task 8: Deploy and verify contracts before touching EasyDays
@@ -488,11 +495,11 @@ Call `slimweb_sites_list`, select `swcb_bofnoha3vtoiehmq`, and record active Def
 
 - [ ] **Step 2: Create the new Theme before cleanup**
 
-Call `slimweb_themes_create_from_theme` with name `EasyDays` and the current Default numeric source ID. Confirm the result is non-Default and inactive, and record the new Theme ID.
+Call `slimweb_themes_create_from_default` with name `EasyDays`. Confirm the result is non-Default and inactive, has no stored custom shell/profile, and record the new Theme ID.
 
-- [ ] **Step 3: Verify the complete copy**
+- [ ] **Step 3: Copy and verify the historical EasyDays shell**
 
-Read the new shell context and style profile. Confirm root CSS is byte-identical, the profile fields match, and preview behavior matches the current storefront. If any comparison fails, stop without activation or cleanup.
+Run `slimweb:migrate-easydays-default-theme` with the new Theme ID and `--phase=copy` first as a dry run, then with `--apply`. Read the new shell context and style profile. Confirm root CSS is byte-identical, the profile fields match, and preview behavior matches the current storefront. If any comparison fails, stop without activation or cleanup.
 
 - [ ] **Step 4: Activate and verify the new Theme**
 
@@ -504,9 +511,10 @@ Set the execution-environment variable `EASYDAYS_THEME_ID` to the exact positive
 
 ```bash
 test "$EASYDAYS_THEME_ID" -gt 0
-php artisan slimweb:repair-easydays-default-theme \
+php artisan slimweb:migrate-easydays-default-theme \
   swcb_bofnoha3vtoiehmq \
-  --active-theme-id="$EASYDAYS_THEME_ID"
+  --target-theme-id="$EASYDAYS_THEME_ID" \
+  --phase=cleanup
 ```
 
 Save the exact object/profile deletion list to the acceptance report. Confirm no `templates/default/pages/` path appears.
@@ -516,9 +524,10 @@ Save the exact object/profile deletion list to the acceptance report. Confirm no
 After dry-run review:
 
 ```bash
-php artisan slimweb:repair-easydays-default-theme \
+php artisan slimweb:migrate-easydays-default-theme \
   swcb_bofnoha3vtoiehmq \
-  --active-theme-id="$EASYDAYS_THEME_ID" \
+  --target-theme-id="$EASYDAYS_THEME_ID" \
+  --phase=cleanup \
   --apply
 ```
 
@@ -539,7 +548,7 @@ Open the Default preview and confirm it uses the canonical system navbar/footer 
 cd /Users/eric/Documents/SlimWeb-MCP-Core && npm test
 cd /Users/eric/Documents/SlimWeb-MCP && npm test
 cd /Users/eric/Documents/SlimWeb-Standalone-MCP && npm test
-cd /Users/eric/Documents/webless && php artisan test tests/Feature/McpV1ThemeTest.php tests/Feature/RepairEasyDaysDefaultThemeTest.php
+cd /Users/eric/Documents/webless && php artisan test tests/Feature/McpV1ThemeTest.php tests/Feature/MigrateEasyDaysDefaultThemeTest.php
 cd /Users/eric/Documents/SlimWeb-Standalone && php artisan test tests/Feature/Standalone/McpThemePolicyTest.php tests/Feature/Standalone/InternalMcpFullContractTest.php
 ```
 

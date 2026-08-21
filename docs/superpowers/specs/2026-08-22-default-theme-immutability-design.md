@@ -69,7 +69,7 @@ Default 可以持續接收並呈現上述網站資料。不可變限制只保護
 AI 不詢問是否直接修改 Default，因為此選項不存在。流程為：
 
 1. 讀取目前 Default shell context。
-2. 建立一個非 Default Theme，來源為目前使用中的 Default。
+2. 建立一個非 Default Theme；不把 Default 的 root-elements 寫入或複製到 storage，新 Theme 在尚未客製的插槽上使用系統 Default runtime fallback。
 3. 在新建且尚未啟用的 Theme 上寫入 root fragments、CSS 與 style profile。
 4. 預覽並完成 Theme 所需的桌面、手機、導覽、會員、購物車與浮動操作驗證。
 5. 啟用新版型。
@@ -88,7 +88,7 @@ AI 必須先詢問使用者二選一：
 
 ### 建立新版型的來源
 
-現有 `slimweb_themes_create_from_default` 保留相容性，繼續建立以 Default 為來源的新 Theme。
+現有 `slimweb_themes_create_from_default` 保留相容性，但必須停止從 `templates/default/root-elements` 複製檔案。它只建立非 Default Theme 身分與目錄；未客製的 root elements 由 runtime 使用系統 Default Blade partials fallback，因此新 Theme 在修改前仍與 Default 一致。
 
 新增 `slimweb_themes_create_from_theme`，使「目前為自訂 Theme，使用者選擇建立新版型」不會退回系統 Default 或遺失既有 shell：
 
@@ -99,9 +99,9 @@ AI 必須先詢問使用者二選一：
 }
 ```
 
-來源 Theme 可以是 Default 或非 Default，但只能讀取與複製；此動作不修改來源 Theme。複製範圍包含 root fragments、root-elements assets 與 style profile，不複製首頁或其他 page body。
+`source_theme_id` 只接受非 Default Theme。來源 Theme 只能讀取與複製；此動作不修改來源 Theme。複製範圍包含 root fragments、root-elements assets 與 style profile，不複製首頁或其他 page body。若來源 ID 指向 Default，後端必須拒絕並指示使用 `slimweb_themes_create_from_default`。
 
-後端使用現有 `POST /themes` 路由建立 Theme：`slimweb_themes_create_from_default` 不傳 `source_theme_id`，`slimweb_themes_create_from_theme` 必須傳入 `source_theme_id`。Theme service 依是否存在 `source_theme_id` 選擇 Default 或指定來源，並回傳實際 `source_theme`。
+後端使用現有 `POST /themes` 路由建立 Theme：`slimweb_themes_create_from_default` 不傳 `source_theme_id`，因此只建立 Theme 身分且不選取任何可複製來源；`slimweb_themes_create_from_theme` 必須傳入非 Default 的 `source_theme_id`，Theme service 才解析並回傳實際 `source_theme`。
 
 ## 強制保護
 
@@ -145,7 +145,7 @@ Default theme is immutable. Create a new theme before changing theme-managed ele
 
 ## EasyDays 一次性遷移
 
-EasyDays 目前 active Theme 是 Default，且 Default 已含客製 navbar、footer、root CSS 與 style profile。遷移採 copy-first、verify-first，不直接搬移或覆寫來源。
+EasyDays 目前 active Theme 是 Default，且 Default 已含不符合新規則的歷史客製 navbar、footer、root CSS 與 style profile。這些歷史檔案不能透過一般 Theme clone MCP 搬運；遷移採內部 copy-first、verify-first 程序，不直接搬移或覆寫來源。
 
 ### 遷移前備份
 
@@ -163,8 +163,8 @@ EasyDays 目前 active Theme 是 Default，且 Default 已含客製 navbar、foo
 
 ### 建立並驗證新 Theme
 
-1. 在清理 Default 前建立名稱為 `EasyDays` 的非 Default Theme。
-2. 複製目前 Default 的完整 Theme shell、root assets 與 style profile。
+1. 在清理 Default 前使用 `slimweb_themes_create_from_default` 建立名稱為 `EasyDays` 的非 Default Theme；此時它只依賴系統 fallback，尚未包含 EasyDays 歷史客製 shell。
+2. 使用具名內部遷移命令，把目前 Default 的歷史 Theme shell、root assets 與 style profile 複製到新的 `EasyDays` Theme。
 3. 比對來源與新 Theme 的 fragment 內容及 SHA-256。
 4. 使用 preview URL 驗證新版型。
 5. 啟用 `EasyDays` Theme。
@@ -174,7 +174,7 @@ EasyDays 目前 active Theme 是 Default，且 Default 已含客製 navbar、foo
 
 ### 清理 Default 歷史覆寫
 
-新版型啟用並通過驗證後，使用 Webless 內部維護命令清除以下 Default 客製資料：
+新版型啟用並通過驗證後，使用同一個 Webless 內部遷移命令的 cleanup 階段清除以下 Default 客製資料：
 
 - `templates/default/root-elements/**`
 - `templates/default/assets/root-elements/**`
