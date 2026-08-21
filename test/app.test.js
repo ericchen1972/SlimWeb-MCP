@@ -321,10 +321,10 @@ test('MCP tools list includes homepage editing contract tools', async () => {
       .update(JSON.stringify(body.result.tools))
       .digest('hex');
 
-    assert.equal(body.result.tools.length, 127);
+    assert.equal(body.result.tools.length, 128);
     assert.equal(
       toolsContractHash,
-      'bb86586ea1668d4da1863a737272e6b581bbb0529e24c8717b182409253124a8'
+      '65a80a13c9945173f0b8169d3a4e02e5ef80524d4c67021ad67ddc8906a97eed'
     );
 
     for (const toolName of [
@@ -335,6 +335,7 @@ test('MCP tools list includes homepage editing contract tools', async () => {
       'slimweb_design_context_get',
       'slimweb_theme_shell_get_context',
       'slimweb_themes_create_from_default',
+      'slimweb_themes_create_from_theme',
       'slimweb_themes_delete',
       'slimweb_themes_update_root_elements',
       'slimweb_theme_style_profile_get',
@@ -451,6 +452,9 @@ test('MCP tools list includes homepage editing contract tools', async () => {
     }
 
     assert.equal(toolsByName.get('slimweb_themes_create_from_default').inputSchema.required.includes('name'), true);
+    assert.match(toolsByName.get('slimweb_themes_create_from_default').description, /does not copy any Default root/i);
+    assert.deepEqual(toolsByName.get('slimweb_themes_create_from_theme').inputSchema.required, ['site_code', 'source_theme_id', 'name']);
+    assert.equal(toolsByName.get('slimweb_themes_create_from_theme').inputSchema.properties.source_theme_id.type, 'integer');
     assert.match(toolsByName.get('slimweb_contact_settings_update').description, /contact/i);
     assert.equal(toolsByName.get('slimweb_themes_create_from_default').inputSchema.properties.theme_mode, undefined);
     assert.equal(toolsByName.get('slimweb_site_theme_mode_update').inputSchema.properties.theme_mode.enum.includes('dark'), true);
@@ -488,6 +492,10 @@ test('MCP tools list includes homepage editing contract tools', async () => {
     assert.match(toolsByName.get('slimweb_theme_shell_get_context').description, /balanced tree.*div.*nav.*header.*structurally empty/i);
     assert.match(toolsByName.get('slimweb_theme_shell_get_context').description, /literal href.*#.*relative.*https?/i);
     assert.equal(toolsByName.get('slimweb_themes_update_root_elements').inputSchema.required.includes('theme_id'), true);
+    assert.equal(toolsByName.get('slimweb_themes_update_root_elements').inputSchema.properties.confirmed_active_theme_edit.type, 'boolean');
+    assert.equal(toolsByName.get('slimweb_theme_style_profile_upsert').inputSchema.properties.confirmed_active_theme_edit.type, 'boolean');
+    assert.equal(toolsByName.get('slimweb_theme_style_profile_append_request').inputSchema.properties.confirmed_active_theme_edit.type, 'boolean');
+    assert.match(toolsByName.get('slimweb_themes_update_root_elements').description, /Default is immutable/i);
     assert.match(toolsByName.get('slimweb_themes_update_root_elements').description, /replaces the MCP-managed root-elements CSS file/);
     assert.match(toolsByName.get('slimweb_themes_update_root_elements').description, /floating_actions/);
     assert.match(toolsByName.get('slimweb_themes_update_root_elements').description, /explicitly requests it for that slot/);
@@ -765,7 +773,11 @@ test('homepage editing tools call repository implementations', async () => {
     },
     createThemeFromDefault: async (accountId, args) => {
       calls.push(['themes_create', accountId, args]);
-      return { theme: { id: 22, name: args.name }, copied_from_default: true, content_fallback: 'default' };
+      return { theme: { id: 22, name: args.name }, copied_from_default: false, content_fallback: 'default' };
+    },
+    createThemeFromTheme: async (accountId, args) => {
+      calls.push(['themes_clone', accountId, args]);
+      return { theme: { id: 23, name: args.name }, source_theme: { id: args.source_theme_id } };
     },
     activateTheme: async (accountId, args) => {
       calls.push(['themes_activate', accountId, args]);
@@ -1358,6 +1370,7 @@ test('homepage editing tools call repository implementations', async () => {
     assert.equal((await callTool(2420, 'slimweb_design_context_get', { site_id: 101 })).result.structuredContent.framework, 'Tailwind');
     assert.equal((await callTool(242, 'slimweb_site_theme_mode_update', { site_id: 101, theme_mode: 'dark' })).result.structuredContent.theme_mode, 'dark');
     assert.equal((await callTool(25, 'slimweb_themes_create_from_default', { site_id: 101, name: '可愛版型' })).result.structuredContent.theme.id, 22);
+    assert.equal((await callTool(250, 'slimweb_themes_create_from_theme', { site_id: 101, source_theme_id: 22, name: '可愛版型 v2' })).result.structuredContent.source_theme.id, 22);
     assert.equal((await callTool(251, 'slimweb_themes_activate', { site_id: 101, theme_id: '22' })).result.structuredContent.theme.is_active, true);
     assert.equal((await callTool(26, 'slimweb_theme_shell_get_context', { site_id: 101, theme_id: '22' })).result.structuredContent.reference_only, true);
     assert.equal((await callTool(27, 'slimweb_theme_style_profile_get', { site_id: 101, theme_id: 22 })).result.structuredContent.profile.summary, '童趣');
@@ -1547,7 +1560,7 @@ assert.equal((await callTool(63, 'slimweb_discount_codes_list', { site_id: 101 }
     })).result.structuredContent.public_url, /hero\.png/);
     assert.equal((await callTool(69, 'slimweb_themes_delete', { site_id: 101, theme_id: 22 })).result.structuredContent.deleted_theme_id, 22);
 
-    assert.deepEqual(calls.map((call) => call[0]), ['select', 'themes_list', 'theme_mode_get', 'design_context_get', 'theme_mode_update', 'themes_create', 'themes_activate', 'shell_context', 'profile_get', 'profile_upsert', 'profile_append', 'site_readiness_get', 'site_launch_progress_get', 'seo_get', 'seo_update', 'facebook_settings_get', 'facebook_settings_update', 'notion_settings_get', 'notion_settings_update', 'mail_delivery_settings_get', 'mail_delivery_settings_update', 'payment_logistics_get', 'payment_logistics_update', 'orders_list', 'orders_profit_statistics', 'orders_get', 'orders_create_logistics', 'orders_mark_shipped', 'returns_pending_list', 'returns_create_logistics', 'returns_cancel', 'returns_complete', 'refunds_complete', 'refunds_create', 'dashboard_summary', 'settings_get', 'settings_update', 'admins_list', 'admin_upsert', 'admin_delete', 'articles_list', 'articles_check_title', 'articles_get_content', 'article_create', 'article_update', 'content_seo_update', 'categories_list', 'category_upsert', 'category_delete', 'nav_items_list', 'nav_item_upsert', 'nav_item_delete', 'products_list', 'product_get', 'product_image_reference_prepare', 'upload_create', 'upload_commit', 'chatgpt_attachment_import', 'product_upsert', 'product_delete', 'product_import_inspect', 'product_import_validate', 'product_import_commit', 'coupon_templates_list', 'coupon_template_upsert', 'member_coupon_issue', 'members_list', 'member_get', 'newsletter_create', 'poster_create', 'discount_codes_list', 'discount_code_upsert', 'member_tiers_list', 'member_tier_upsert', 'threshold_gifts_list', 'threshold_gift_upsert', 'product_add_ons_list', 'product_add_on_upsert', 'customer_service_logs_list', 'customer_service_settings_get', 'customer_service_settings_update', 'export_create', 'audit_list', 'themes_root', 'preview', 'pages_check_title', 'pages_check_title', 'pages_check_title', 'pages_check_title', 'pages_list', 'get_content', 'get_content', 'page_create', 'page_update', 'page_delete', 'upload', 'themes_delete']);
+    assert.deepEqual(calls.map((call) => call[0]), ['select', 'themes_list', 'theme_mode_get', 'design_context_get', 'theme_mode_update', 'themes_create', 'themes_clone', 'themes_activate', 'shell_context', 'profile_get', 'profile_upsert', 'profile_append', 'site_readiness_get', 'site_launch_progress_get', 'seo_get', 'seo_update', 'facebook_settings_get', 'facebook_settings_update', 'notion_settings_get', 'notion_settings_update', 'mail_delivery_settings_get', 'mail_delivery_settings_update', 'payment_logistics_get', 'payment_logistics_update', 'orders_list', 'orders_profit_statistics', 'orders_get', 'orders_create_logistics', 'orders_mark_shipped', 'returns_pending_list', 'returns_create_logistics', 'returns_cancel', 'returns_complete', 'refunds_complete', 'refunds_create', 'dashboard_summary', 'settings_get', 'settings_update', 'admins_list', 'admin_upsert', 'admin_delete', 'articles_list', 'articles_check_title', 'articles_get_content', 'article_create', 'article_update', 'content_seo_update', 'categories_list', 'category_upsert', 'category_delete', 'nav_items_list', 'nav_item_upsert', 'nav_item_delete', 'products_list', 'product_get', 'product_image_reference_prepare', 'upload_create', 'upload_commit', 'chatgpt_attachment_import', 'product_upsert', 'product_delete', 'product_import_inspect', 'product_import_validate', 'product_import_commit', 'coupon_templates_list', 'coupon_template_upsert', 'member_coupon_issue', 'members_list', 'member_get', 'newsletter_create', 'poster_create', 'discount_codes_list', 'discount_code_upsert', 'member_tiers_list', 'member_tier_upsert', 'threshold_gifts_list', 'threshold_gift_upsert', 'product_add_ons_list', 'product_add_on_upsert', 'customer_service_logs_list', 'customer_service_settings_get', 'customer_service_settings_update', 'export_create', 'audit_list', 'themes_root', 'preview', 'pages_check_title', 'pages_check_title', 'pages_check_title', 'pages_check_title', 'pages_list', 'get_content', 'get_content', 'page_create', 'page_update', 'page_delete', 'upload', 'themes_delete']);
 		    assert.deepEqual(calls.map((call) => call[1].email), Array.from({ length: calls.length }, () => 'owner@example.com'));
   });
 });

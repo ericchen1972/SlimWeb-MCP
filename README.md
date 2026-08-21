@@ -187,7 +187,8 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 | `slimweb_site_theme_mode_get` | Available | content read | 讀取站台層級色系；Default 與所有自訂版型都沿用這個 light/dark 設定。 |
 | `slimweb_design_context_get` | Available | content read | 回傳目前啟用版型的設計摘要、站台明暗色系與固定框架 `Tailwind`，供 AI 在視覺設計或畫圖前先讀取。 |
 | `slimweb_site_theme_mode_update` | Available | content write | 將站台層級色系切換為 light 或 dark。 |
-| `slimweb_themes_create_from_default` | Available | content write | 建立新版型，並只複製 Default shell/root-element template；新版型作為每一頁的基底樣式，包含首頁。 |
+| `slimweb_themes_create_from_default` | Available | content write | 建立空白的非 Default 版型；不複製 Default root elements，未客製的 shell slot 使用系統 runtime fallback。 |
+| `slimweb_themes_create_from_theme` | Available | content write | 從指定的非 Default 來源版型複製 shell、root assets 與 style profile；不複製 page body。 |
 | `slimweb_themes_activate` | Available | content write | 將指定版型設為前台啟用版型；會影響實際前台呈現。 |
 | `slimweb_themes_delete` | Available | content write | 刪除非 Default 版型與其 template 內容；Default 不能刪除。 |
 | `slimweb_theme_shell_get_context` | Available | content read | 回傳設計用 reference-only JSON，包含固定的 navbar、floating_actions、footer slots、navbar 必備的 `data-storefront-primary-navigation-slot`、`data-storefront-member-auth-slot`、`data-storefront-cart-slot` 三個呈現插槽、實際 shell 資料、`website_type` 事實資料與目前 MCP-managed root CSS。 |
@@ -444,14 +445,24 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 狀態: Available
 - 權限: content write
 - Scope: active site
-- 用途: 建立新版型。此 tool 會新增一筆非 Default `site_pages` 記錄，並只將 Default 的 shell/root-element template storage 複製到新版型目錄。
+- 用途: 建立新版型。此 tool 只新增一筆非 Default `site_pages` 記錄，不複製 Default 的 root elements 或 style profile；未客製的 shell slot 由系統 Default runtime fallback 呈現。
 - Input: `site_code`、`name`
 - Output: site summary、created theme summary、copied flag、`copied_scope`、`content_fallback`、`inherits_site_theme_mode`、preview URL
-- Side effects: creates site page style scheme and copies Default shell files. It does not copy `pages/*` body/content files.
+- Side effects: creates a site page style scheme without copying Default storage objects or `pages/*` body/content files.
 - 色系規則: 此 tool 不選擇 light/dark；新版型沿用 `sites.theme_mode`。若設計需求跟色調有關，先用 `slimweb_site_theme_mode_get/update`。
 - 是否需要 confirmation: yes when user did not explicitly ask to create a new theme
 - 錯誤情境: site not found、invalid name、storage adapter not configured、upstream write failed
 - Audit fields: request ID、user ID、account ID、site ID、theme ID
+
+### `slimweb_themes_create_from_theme`
+
+- 狀態: Available
+- 權限: content write
+- Scope: active site
+- 用途: 使用者在目前啟用非 Default 版型上選擇「建立新版型」時，複製該來源版型的 root fragments、root assets 與 style profile。
+- Input: `site_code`、非 Default 的 `source_theme_id`、`name`
+- Side effects: creates an inactive custom Theme and copies only Theme shell data; page body 不會複製。
+- 錯誤情境: source is Default、theme not found、invalid name、storage write failed
 
 ### `slimweb_themes_activate`
 
@@ -486,7 +497,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 權限: content write
 - Scope: active site and theme
 - 用途: 更新固定的 `navbar`、`floating_actions`、`footer` root elements 與 root-level CSS。每個 Theme navbar 都必須各有一個不可點擊的容器型 `data-storefront-primary-navigation-slot`、一個可點擊的 `data-storefront-member-auth-slot` 與一個可點擊的 `data-storefront-cart-slot`；primary slot 只能使用 div、nav 或 header 且須 structurally empty，後兩者必須是啟用的 button 或具有有效 href 的 anchor。Navbar 必須是 static HTML；禁止 Blade、PHP、components 與 bound attributes，且 markup 必須形成 balanced tree。三個 required slots 必須位於不同元素、不得在 interactive ancestor 內，member/cart 也不得位於 primary slot 內。Every anchor must use a literal href：`#`/fragment、relative/root path、`//host/path`，或通過驗證的 `http://`/`https://` URL；route helper、其他 scheme 與動態 URL expression 都會被拒絕。AI 可依參考網站調整插槽外觀與響應式配置，但不可加入 Webless 保留的 runtime attributes，也不可把 live category/nav labels 或 URLs 寫進 Theme HTML。功能、資料與是否顯示完全由 Webless runtime 依網站設定處理。When navbar markup or theme CSS is created or modified, CSS must style category_menu, navbar_categories, and recursive ordinary navigation through the canonical hooks. Footer-only fragment updates that do not modify CSS do not require rewriting navigation CSS. 只有使用者明確指定某個自訂 slot 時才加入對應內容，不可把 Footer、頁面或其他位置提供的資料自行挪用。`css` 不是局部 patch，會替換 `assets/root-elements/css/00-mcp-theme.css`。
-- Input: `site_code`、`theme_id`、optional `fragments.navbar`、`fragments.floating_actions`、`fragments.footer`、optional `css`
+- Input: `site_code`、`theme_id`、optional `fragments.navbar`、`fragments.floating_actions`、`fragments.footer`、optional `css`、active custom Theme 直接修改時必須為 true 的 `confirmed_active_theme_edit`
 - Output: write summary、theme summary、updated fragments、CSS updated flag、preview URL
 - Side effects: writes root element Blade fragments and replaces `assets/root-elements/css/00-mcp-theme.css`
 - JavaScript: Theme 不支援 inline JavaScript 或 Theme-level `enabled_libraries`；動畫程式與 library 選擇只能放在 page scope。
@@ -505,8 +516,8 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 
 - CSS runtime hooks: `[data-storefront-primary-navigation-runtime]`、`[data-storefront-primary-navigation]`、`[data-storefront-category-menu]`、`[data-storefront-navbar-categories]`、`[data-storefront-nav-items]`、`[data-storefront-nav-node]`、`[data-storefront-nav-trigger]`、`[data-storefront-nav-panel]`、`[data-storefront-nav-children]`、`[data-storefront-nav-depth]`。
 
-- 是否需要 confirmation: yes for customer-facing active theme
-- 錯誤情境: theme not found、unsafe HTML、storage adapter not configured
+- 是否需要 confirmation: Default 永遠不可修改；active custom Theme 必須取得使用者明確確認，inactive custom Theme 不需要。
+- 錯誤情境: Default target、active custom without confirmation、theme not found、unsafe HTML、storage adapter not configured
 - Audit fields: request ID、user ID、account ID、site ID、theme ID、updated fragments
 
 ### `slimweb_theme_style_profile_get`
@@ -1669,7 +1680,7 @@ AI Client 收到或引用的圖片預設是 reference-only。只有當 tool call
 - 建立版型前必須有 `name`，沒有就先詢問使用者。
 - 使用 `slimweb_themes_list` 檢查是否已有同名或近似自訂版型；如果已有明確同名版型，立刻停止並告知使用者。
 - 如果使用者要求暗色、螢光、neon、高對比等明顯依賴明暗模式的風格，先使用 `slimweb_site_theme_mode_get` 確認目前色系；必要時使用 `slimweb_site_theme_mode_update` 切換 light / dark。
-- 使用 `slimweb_themes_create_from_default` 從 Default 建立新的自訂版型。
+- 使用 `slimweb_themes_create_from_default` 建立新的自訂版型；不複製 Default root storage，未修改的 slots 使用 canonical runtime fallback。
 - 使用 `slimweb_theme_shell_get_context` 取得 navbar、floating_actions、footer、分類模式與 canonical hooks、固定 `primary_navigation`/`member_auth`/`cart` 插槽等真實 shell reference 資料，以及目前 MCP-managed root CSS。
 - 每個 Theme navbar 一律包含一個容器型 `data-storefront-primary-navigation-slot`、一個可點擊的 `data-storefront-member-auth-slot` 與一個可點擊的 `data-storefront-cart-slot`；參考網站與 `website_type` 只影響設計背景，不改變 Theme schema。
 - CSS 必須涵蓋 `[data-storefront-category-menu]`、`[data-storefront-navbar-categories]` 與 `[data-storefront-nav-items]` 的遞迴節點/trigger/panel/children/depth 狀態。Theme HTML 不複製 live category/nav labels、URLs 或樹狀資料，Webless runtime 會注入它們。
@@ -1683,8 +1694,10 @@ AI Client 收到或引用的圖片預設是 reference-only。只有當 tool call
 
 ### 修改版型
 
-- 修改版型前必須有 `theme_id` 或版型名稱，沒有就先詢問使用者。
-- 使用 `slimweb_themes_list` 找到目標自訂版型；如果找不到或有多個可能目標，立刻停止並請使用者確認。
+- navbar、floating_actions、footer、root CSS 與 style profile 都是 Theme-managed elements。修改前先用 `slimweb_design_context_get` 讀取目前啟用版型與 `theme_edit_policy`。
+- 目前啟用版型是 Default 時，不提供直接修改選項；直接以 `slimweb_themes_create_from_default` 建立新版型，再把修改寫入新版型。
+- 目前啟用版型是非 Default 時，必須先詢問使用者要建立新版型或直接修改目前版型。選擇建立時用 `slimweb_themes_create_from_theme` 複製目前版型；選擇直接修改時，每個 root/style-profile write 都傳 `confirmed_active_theme_edit: true`。
+- 使用 `slimweb_themes_list` 找到精確目標；如果找不到或有多個可能目標，立刻停止並請使用者確認。
 - 使用 `slimweb_theme_style_profile_get` 取得目前版型風格摘要與歷史需求。
 - 使用 `slimweb_theme_shell_get_context` 取得 navbar、floating_actions、footer、分類模式、canonical hooks 與三個固定呈現插槽等真實 shell reference 資料，以及目前 MCP-managed root CSS。
 - 使用 `slimweb_design_context_get` 取得目前網站設計摘要、色系與框架。
@@ -1789,6 +1802,7 @@ MCP tools 應回傳可預期的錯誤類型：
 - `slimweb_site_theme_mode_get`
 - `slimweb_site_theme_mode_update`
 - `slimweb_themes_create_from_default`
+- `slimweb_themes_create_from_theme`
 - `slimweb_themes_activate`
 - `slimweb_themes_update_root_elements`
 - `slimweb_assets_upload`

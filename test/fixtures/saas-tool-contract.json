@@ -1,6 +1,6 @@
 {
-  "count": 127,
-  "sha256": "bb86586ea1668d4da1863a737272e6b581bbb0529e24c8717b182409253124a8",
+  "count": 128,
+  "sha256": "65a80a13c9945173f0b8169d3a4e02e5ef80524d4c67021ad67ddc8906a97eed",
   "tools": [
     {
       "name": "slimweb_media_library_stats",
@@ -773,7 +773,7 @@
     },
     {
       "name": "slimweb_themes_create_from_default",
-      "description": "Create a new non-Default theme/page style scheme by copying only Default shell/root-element template files. The theme acts as the base styling layer for every page, including the homepage. Do not choose light/dark here; the style scheme inherits site-level color mode.",
+      "description": "Create a new non-Default theme/page style scheme. This does not copy any Default root elements or style profile; untouched shell slots use the canonical runtime fallback. The theme acts as the base styling layer for every page, including the homepage. Do not choose light/dark here; the style scheme inherits site-level color mode.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -788,6 +788,37 @@
         },
         "required": [
           "site_code",
+          "name"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_themes_create_from_theme",
+      "description": "Create a new inactive theme by cloning the shell, root assets, and style profile of an explicit non-Default source Theme. Page body content is not copied. Use only after the user chooses to create a new Theme from the current custom Theme.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "source_theme_id": {
+            "type": "integer",
+            "description": "Existing non-Default source Theme ID."
+          },
+          "name": {
+            "type": "string",
+            "description": "Human-readable name for the new Theme."
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "source_theme_id",
           "name"
         ]
       },
@@ -882,7 +913,7 @@
     },
     {
       "name": "slimweb_themes_update_root_elements",
-      "description": "Update the fixed navbar, floating_actions, and footer root fragments plus theme-level CSS. Every Theme navbar must contain exactly one non-clickable primary navigation container slot using data-storefront-primary-navigation-slot, one combined member-auth slot using data-storefront-member-auth-slot, and one cart slot using data-storefront-cart-slot. Each member-auth and cart slot must use an enabled button or an anchor with a safe nonblank href. Navbar markup must be static HTML; Blade, PHP, components, and bound attributes are forbidden. It must form a balanced tree, and the primary slot must use div, nav, or header and be structurally empty. Every anchor must use a literal href beginning with #, a relative or root path, or a validated http/https/protocol-relative URL. Webless runtime owns their behavior, visibility, category mode, and navigation data; runtime category and ordinary navigation labels and URLs are not serialized into Theme HTML. When navbar markup or theme CSS is created or modified, Theme CSS must style category_menu, navbar_categories, and recursive ordinary navigation through the canonical hooks returned by slimweb_theme_shell_get_context. A footer-only update that does not modify CSS does not require rewriting navigation CSS. Before completion, verify full-desktop ordinary links stay on the same row and the header height remains compact at 1536 and 1800 CSS pixels; open the viewport-bound auth, mobile-menu, and cart overlays and confirm their bounds match the viewport without horizontal overflow. Theme markup may change appearance and layout to follow a reference site but must not recreate reserved runtime attributes or split registration and login into separate entries. Add custom content to a slot only when the user explicitly requests it for that slot; data supplied for another placement does not authorize reusing it here. Custom fragment HTML is rendered as supplied; do not auto-bind it to contact data or invent missing links. Theme JavaScript and theme-level libraries are not supported. Do not use this to overwrite page body content. The css field replaces the MCP-managed root-elements CSS file, so include every MCP-managed root style that should remain, including footer/background rules.",
+      "description": "Update the fixed navbar, floating_actions, and footer root fragments plus theme-level CSS. Default is immutable and cannot be targeted. Editing an active custom Theme requires explicit confirmation through confirmed_active_theme_edit=true; inactive custom Themes can be edited without it. Every Theme navbar must contain exactly one non-clickable primary navigation container slot using data-storefront-primary-navigation-slot, one combined member-auth slot using data-storefront-member-auth-slot, and one cart slot using data-storefront-cart-slot. Each member-auth and cart slot must use an enabled button or an anchor with a safe nonblank href. Navbar markup must be static HTML; Blade, PHP, components, and bound attributes are forbidden. It must form a balanced tree, and the primary slot must use div, nav, or header and be structurally empty. Every anchor must use a literal href beginning with #, a relative or root path, or a validated http/https/protocol-relative URL. Webless runtime owns their behavior, visibility, category mode, and navigation data; runtime category and ordinary navigation labels and URLs are not serialized into Theme HTML. When navbar markup or theme CSS is created or modified, Theme CSS must style category_menu, navbar_categories, and recursive ordinary navigation through the canonical hooks returned by slimweb_theme_shell_get_context. A footer-only update that does not modify CSS does not require rewriting navigation CSS. Before completion, verify full-desktop ordinary links stay on the same row and the header height remains compact at 1536 and 1800 CSS pixels; open the viewport-bound auth, mobile-menu, and cart overlays and confirm their bounds match the viewport without horizontal overflow. Theme markup may change appearance and layout to follow a reference site but must not recreate reserved runtime attributes or split registration and login into separate entries. Add custom content to a slot only when the user explicitly requests it for that slot; data supplied for another placement does not authorize reusing it here. Custom fragment HTML is rendered as supplied; do not auto-bind it to contact data or invent missing links. Theme JavaScript and theme-level libraries are not supported. Do not use this to overwrite page body content. The css field replaces the MCP-managed root-elements CSS file, so include every MCP-managed root style that should remain, including footer/background rules.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -900,6 +931,10 @@
           "css": {
             "type": "string",
             "description": "Optional theme CSS stored under root-elements assets."
+          },
+          "confirmed_active_theme_edit": {
+            "type": "boolean",
+            "description": "Required true only when the target is the active custom Theme and the user explicitly chose direct modification."
           },
           "site_code": {
             "type": "string",
@@ -996,6 +1031,9 @@
           "ai_design_notes": {
             "type": "string"
           },
+          "confirmed_active_theme_edit": {
+            "type": "boolean"
+          },
           "site_code": {
             "type": "string",
             "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
@@ -1029,6 +1067,9 @@
           },
           "ai_notes": {
             "type": "string"
+          },
+          "confirmed_active_theme_edit": {
+            "type": "boolean"
           },
           "site_code": {
             "type": "string",
