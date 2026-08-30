@@ -74,7 +74,26 @@ These patch semantics prevent an HTML-only page edit from silently disabling exi
 }
 ```
 
-When the MCP-managed asset does not exist, `content.javascript` is an empty string. The read surface returns only the MCP-managed page script, not unrelated manually managed or migrated formal JavaScript files.
+When the MCP-managed asset does not exist, `content.javascript` is an empty string. The read surface also returns:
+
+- `javascript_asset`: metadata for `90-mcp-page.js`, or `null` when it does not exist;
+- `javascript_conflicts`: metadata for every other executable file found in the page `assets/js` directory.
+
+Asset metadata includes path, ownership, byte size, and SHA-256 digest. The read surface does not silently merge unrelated manually managed or migrated JavaScript into `content.javascript`.
+
+## JavaScript Ownership And Lifecycle
+
+Each page has exactly one MCP-managed behavior slot: `90-mcp-page.js`.
+
+- MCP create and update operations never generate timestamped, numbered, library-specific, or animation-specific page JavaScript filenames.
+- Every nonblank `content.javascript` update replaces the complete contents of the same canonical file.
+- Cache refresh uses a content-derived query version on the served URL; it does not create another stored file.
+- GSAP, ScrollTrigger, Swiper, and other allowlisted libraries remain platform-managed dependencies selected through `enabled_libraries`. They are not copied into `90-mcp-page.js` and do not produce files such as `gsap.js` or `swiper.js` in the page directory.
+- Page-specific initialization, timelines, selectors, and interaction handlers live together in `90-mcp-page.js`, regardless of which allowlisted libraries they use.
+
+Before changing `content.javascript`, Webless inventories the page's formal JavaScript directory. If any executable page JavaScript other than `90-mcp-page.js` exists, the write fails with `CONFLICT`, reason `PAGE_JAVASCRIPT_CONFLICT`, and returns the conflicting asset metadata. HTML-only updates that omit `content.javascript` remain allowed and preserve all existing scripts.
+
+This fail-closed rule prevents MCP from adding a second animation initializer beside a migrated or manually maintained script that it cannot safely reason about. Consolidating noncanonical page scripts is an explicit operator migration, not an automatic MCP side effect.
 
 ## Storage Contract
 
@@ -105,6 +124,8 @@ The validator does not attempt to prove arbitrary JavaScript safe through fragil
 
 External libraries continue to be selected only through `enabled_libraries`. For a Swiper carousel, the page write sends `enabled_libraries: ["swiper"]` and places only the Swiper initialization code in `content.javascript`.
 
+For GSAP work, a page edit reads both the existing `enabled_libraries` and the complete existing `content.javascript`, then submits one replacement behavior source and the complete desired dependency list. Repeated edits therefore update one timeline source instead of accumulating animation files or duplicate initializers.
+
 ## Storefront Delivery
 
 No new storefront loader is required. `StorefrontController` already:
@@ -123,6 +144,7 @@ Verification must prove that allowlisted library assets are available before the
 
 - read and return `90-mcp-page.js` as `content.javascript`;
 - validate JavaScript before any write;
+- inventory noncanonical page JavaScript and block ambiguous JavaScript mutations;
 - create, replace, preserve, or delete the formal asset according to the contract;
 - keep the existing `safeHtml()` executable-content rejection unchanged;
 - include JavaScript asset status and byte count in the write result.
@@ -136,6 +158,8 @@ The focused Webless tests will cover:
 - homepage and custom-page paths;
 - `<script>` rejection in HTML;
 - JavaScript field validation;
+- repeated GSAP or Swiper edits replace the canonical file without creating additional files;
+- noncanonical page JavaScript blocks a JavaScript mutation but not an HTML-only update;
 - upload/read-back verification failure;
 - compensation restores the previous HTML and JavaScript after either write fails;
 - storefront loading and ordering with `enabled_libraries: ["swiper"]`.
@@ -171,7 +195,7 @@ No page object is reported as updated when JavaScript validation or storage veri
 
 Existing pages without `90-mcp-page.js` continue to work unchanged.
 
-Legacy inline scripts already stored in page HTML are handled by the existing `slimweb:extract-storefront-page-scripts` command. That command is not used for new MCP writes. Existing migrated files such as `90-migrated-inline.js` remain separate and are not overwritten by `90-mcp-page.js`.
+Legacy inline scripts already stored in page HTML are handled by the existing `slimweb:extract-storefront-page-scripts` command. That command is not used for new MCP writes. Existing migrated files such as `90-migrated-inline.js` remain separate and are not overwritten by `90-mcp-page.js`; their presence blocks MCP JavaScript mutation until an operator explicitly consolidates or retires them with backup and verification.
 
 EasyDays requires a read-only audit after deployment:
 
@@ -197,6 +221,9 @@ Acceptance requires:
 
 - HTML still rejects executable inline scripts;
 - formal JavaScript is saved, returned, versioned, and executed;
+- repeated page-behavior edits retain exactly one MCP-managed JavaScript asset;
+- allowlisted dependencies and page behavior remain separate and unambiguous;
+- noncanonical page scripts fail closed instead of receiving a second initializer;
 - Swiper is available before Sweety initialization runs;
 - failed writes expose actionable validation details;
 - Sweety carousel works at desktop and mobile sizes;
