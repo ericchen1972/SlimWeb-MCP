@@ -324,7 +324,7 @@ test('MCP tools list includes homepage editing contract tools', async () => {
     assert.equal(body.result.tools.length, 128);
     assert.equal(
       toolsContractHash,
-      '65a80a13c9945173f0b8169d3a4e02e5ef80524d4c67021ad67ddc8906a97eed'
+      '944c5d2653132540b1406ab34d67c3d12eb0a8ff5c02e243115e640054112afb'
     );
 
     for (const toolName of [
@@ -618,12 +618,16 @@ assert.equal(toolsByName.get('slimweb_orders_profit_statistics').inputSchema.pro
     assert.deepEqual(toolsByName.get('slimweb_pages_create').inputSchema.properties.enabled_libraries.items.enum, ['animate_css', 'aos', 'swiper', 'gsap', 'scrolltrigger', 'scrollsmoother']);
     assert.equal(toolsByName.get('slimweb_pages_create').inputSchema.properties.enabled_libraries.items.enum.includes('slimweb_motion'), false);
     assert.match(toolsByName.get('slimweb_pages_create').description, /enabled_libraries/);
-    assert.match(toolsByName.get('slimweb_pages_create').inputSchema.properties.content.description, /page-scoped inline JavaScript/);
+    assert.equal(toolsByName.get('slimweb_pages_create').inputSchema.properties.content.properties.javascript.type, 'string');
+    assert.equal(toolsByName.get('slimweb_pages_create').inputSchema.properties.content.properties.javascript.maxLength, 102400);
+    assert.match(toolsByName.get('slimweb_pages_create').description, /90-mcp-page\.js/i);
     assert.equal(toolsByName.get('slimweb_pages_create').inputSchema.properties.page_key.type, 'string');
     assert.equal(toolsByName.get('slimweb_pages_update').inputSchema.required.includes('page_name'), true);
     assert.equal(toolsByName.get('slimweb_pages_update').inputSchema.required.includes('enabled_libraries'), true);
     assert.equal(toolsByName.get('slimweb_pages_update').inputSchema.properties.title.type, 'string');
-    assert.match(toolsByName.get('slimweb_pages_update').description, /page-scoped inline JavaScript/);
+    assert.match(toolsByName.get('slimweb_pages_update').description, /omit.*preserve/i);
+    assert.match(toolsByName.get('slimweb_pages_update').description, /empty.*delete/i);
+    assert.match(toolsByName.get('slimweb_pages_get_content').description, /javascript_asset.*javascript_conflicts/i);
     assert.match(toolsByName.get('slimweb_pages_get_content').description, /homepage index/);
     assert.match(toolsByName.get('slimweb_pages_update').description, /homepage index/);
     assert.match(toolsByName.get('slimweb_pages_create').description, /stop the task and ask the user to paste or re-upload the image/i);

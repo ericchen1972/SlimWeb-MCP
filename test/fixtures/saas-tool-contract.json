@@ -1,6 +1,6 @@
 {
   "count": 128,
-  "sha256": "65a80a13c9945173f0b8169d3a4e02e5ef80524d4c67021ad67ddc8906a97eed",
+  "sha256": "944c5d2653132540b1406ab34d67c3d12eb0a8ff5c02e243115e640054112afb",
   "tools": [
     {
       "name": "slimweb_media_library_stats",
@@ -4804,7 +4804,7 @@
     },
     {
       "name": "slimweb_pages_get_content",
-      "description": "Read an editable page by page_name and return its content plus metadata. This includes custom pages and the homepage index; other fixed template pages are not editable. Use this before editing a page or when the AI needs the current page state.",
+      "description": "Read an editable page by page_name and return content.html, the complete content.javascript source, enabled_libraries, javascript_asset, and javascript_conflicts. This includes custom pages and the homepage index; other fixed template pages are not editable. Use this before editing so one replacement source can preserve or change all existing behavior.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -4830,7 +4830,7 @@
     },
     {
       "name": "slimweb_pages_create",
-      "description": "Create a new custom page. The AI must already have checked title collisions with slimweb_pages_check_title and should use slimweb_design_context_get plus image tools before sending single-page HTML/CSS/page-scoped JavaScript. The AI may choose enabled_libraries from animate_css, aos, swiper, gsap, scrolltrigger, or scrollsmoother when useful, and must pass [] when none are used. In ChatGPT Remote MCP, if a page or article request needs an image but no usable attached image or directly downloadable image URL is available, stop the task and ask the user to paste or re-upload the image before continuing.",
+      "description": "Create a new custom page. The AI must already have checked title collisions with slimweb_pages_check_title and should use slimweb_design_context_get plus image tools before sending single-page HTML/CSS and optional formal JavaScript. Page behavior is stored only in 90-mcp-page.js; GSAP, Swiper, and other dependencies are selected through enabled_libraries and never become page files. The AI may choose enabled_libraries from animate_css, aos, swiper, gsap, scrolltrigger, or scrollsmoother when useful, and must pass [] when none are used. In ChatGPT Remote MCP, if a page or article request needs an image but no usable attached image or directly downloadable image URL is available, stop the task and ask the user to paste or re-upload the image before continuing.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -4840,7 +4840,35 @@
           },
           "content": {
             "type": "object",
-            "description": "Structured single-page body. Provide content.html or content.body_html containing this page HTML, custom CSS, and page-scoped inline JavaScript when needed. Do not include external script/link/iframe tags or inline event handlers. Select external visual libraries through enabled_libraries."
+            "description": "Structured single-page body. Put non-executable page HTML and custom CSS in content.html or content.body_html. Put the complete page behavior source without script tags in content.javascript; Webless stores it in the single MCP-owned formal asset 90-mcp-page.js. Select external visual libraries only through enabled_libraries.",
+            "properties": {
+              "html": {
+                "type": "string",
+                "description": "Page HTML and scoped CSS without executable scripts, external link tags, or inline event handlers."
+              },
+              "body_html": {
+                "type": "string",
+                "description": "Alias for content.html."
+              },
+              "javascript": {
+                "type": "string",
+                "maxLength": 102400,
+                "description": "Complete page behavior source without script tags. On update, omit to preserve the existing 90-mcp-page.js asset; send an empty string to delete it. Nonblank values replace the whole canonical file."
+              }
+            },
+            "anyOf": [
+              {
+                "required": [
+                  "html"
+                ]
+              },
+              {
+                "required": [
+                  "body_html"
+                ]
+              }
+            ],
+            "additionalProperties": false
           },
           "enabled_libraries": {
             "type": "array",
@@ -4884,7 +4912,7 @@
     },
     {
       "name": "slimweb_pages_update",
-      "description": "Update an existing editable page by page_name. This includes custom pages and the homepage index; other fixed template pages are not editable. Use slimweb_pages_get_content first to fetch the current page state, including enabled_libraries. Use uploaded media_path URLs for reusable images; do not embed base64 images. Custom CSS and page-scoped inline JavaScript are allowed in page HTML; external libraries must be selected through the required enabled_libraries array. In ChatGPT Remote MCP, if a page or article request needs an image but no usable attached image or directly downloadable image URL is available, stop the task and ask the user to paste or re-upload the image before continuing.",
+      "description": "Update an existing editable page by page_name. This includes custom pages and the homepage index; other fixed template pages are not editable. Use slimweb_pages_get_content first to fetch content.javascript, javascript_asset, javascript_conflicts, and enabled_libraries. A nonblank content.javascript replaces the whole 90-mcp-page.js file; omit it to preserve the file, or send an empty string to delete it. Use uploaded media_path URLs for reusable images; do not embed base64 images. Page HTML remains non-executable and external libraries must be selected through the required enabled_libraries array. In ChatGPT Remote MCP, if a page or article request needs an image but no usable attached image or directly downloadable image URL is available, stop the task and ask the user to paste or re-upload the image before continuing.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -4898,7 +4926,35 @@
           },
           "content": {
             "type": "object",
-            "description": "Structured single-page body. Provide content.html or content.body_html containing this page HTML, custom CSS, and page-scoped inline JavaScript when needed. Do not include external script/link/iframe tags or inline event handlers. Select external visual libraries through enabled_libraries."
+            "description": "Structured single-page body. Put non-executable page HTML and custom CSS in content.html or content.body_html. Put the complete page behavior source without script tags in content.javascript; Webless stores it in the single MCP-owned formal asset 90-mcp-page.js. Select external visual libraries only through enabled_libraries.",
+            "properties": {
+              "html": {
+                "type": "string",
+                "description": "Page HTML and scoped CSS without executable scripts, external link tags, or inline event handlers."
+              },
+              "body_html": {
+                "type": "string",
+                "description": "Alias for content.html."
+              },
+              "javascript": {
+                "type": "string",
+                "maxLength": 102400,
+                "description": "Complete page behavior source without script tags. On update, omit to preserve the existing 90-mcp-page.js asset; send an empty string to delete it. Nonblank values replace the whole canonical file."
+              }
+            },
+            "anyOf": [
+              {
+                "required": [
+                  "html"
+                ]
+              },
+              {
+                "required": [
+                  "body_html"
+                ]
+              }
+            ],
+            "additionalProperties": false
           },
           "enabled_libraries": {
             "type": "array",

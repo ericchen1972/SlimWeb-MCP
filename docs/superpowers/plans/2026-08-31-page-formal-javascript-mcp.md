@@ -23,6 +23,9 @@
 - `/Users/eric/Documents/SlimWeb-MCP/test/app.test.js`: consumer contract assertions.
 - `/Users/eric/Documents/SlimWeb-MCP/test/fixtures/saas-tool-contract.json`: regenerated public catalog.
 - `/Users/eric/Documents/SlimWeb-MCP/package.json`, `package-lock.json`, `README.md`: released dependency and documentation.
+- `/Users/eric/Documents/SlimWeb-Standalone/app/Services/Mcp/Content/PageService.php` and `PageJavascriptService.php`: local-object-storage implementation of the same lifecycle.
+- `/Users/eric/Documents/SlimWeb-Standalone/tests/Feature/Standalone/McpV1BackendTest.php`: Standalone backend lifecycle and safety tests.
+- `/Users/eric/Documents/SlimWeb-Standalone-MCP/package.json`, `package-lock.json`, `test/app.test.js`, `README.md`: full-contract consumer alignment.
 - `/Users/eric/Documents/SlimWeb-MCP/docs/acceptance/sweety-carousel-2026-08-31.md`: live evidence.
 
 Do not stage unrelated dirty files in `/Users/eric/Documents/webless`. Every `git add` below uses explicit paths.
@@ -254,7 +257,31 @@ git push origin v0.1.7
 
 Confirm the remote tag resolves to the tested commit before any consumer installs it.
 
-### Task 7: Update, verify, and deploy SlimWeb-MCP
+### Task 7: Align and deploy the Standalone backend and MCP shell
+
+**Files:**
+- Create: `/Users/eric/Documents/SlimWeb-Standalone/app/Services/Mcp/Content/PageJavascriptService.php`
+- Modify: `/Users/eric/Documents/SlimWeb-Standalone/app/Services/Mcp/Content/PageService.php`
+- Modify: `/Users/eric/Documents/SlimWeb-Standalone/tests/Feature/Standalone/McpV1BackendTest.php`
+- Modify: `/Users/eric/Documents/SlimWeb-Standalone-MCP/package.json`, `package-lock.json`, `test/app.test.js`, `README.md`
+
+- [ ] **Step 1: Add and verify failing Standalone backend tests**
+
+Extend the existing full-contract page test to cover create/read, omitted preservation, whole-file replacement, explicit blank deletion, canonical metadata, noncanonical conflict, and inline-HTML rejection using `Storage::fake('standalone_objects')`. Run the focused test and confirm RED.
+
+- [ ] **Step 2: Implement the same storage contract locally**
+
+Port the reviewed Webless `PageJavascriptService` and `PageService` lifecycle without SaaS-only diagnostics. Keep identical path, validation, conflict, digest, and compensation semantics over `LocalObjectStorage`. Run the focused backend test and the full Standalone suite.
+
+- [ ] **Step 3: Upgrade and test Standalone-MCP**
+
+Install Core `v0.1.7`, assert a full-contract backend exposes the new page schema and wording, update README, and run all Standalone-MCP tests. Commit and push both Standalone repositories on `main`.
+
+- [ ] **Step 4: Deploy both Standalone layers**
+
+Push `SlimWeb-Standalone-MCP/main` and verify its matching Cloud Run workflow, `/readyz`, serving revision, and `COMMIT_SHA`. Build the Standalone release package, verify its checksum/exclusions, deploy a backed-up no-production candidate with `scripts/deploy-test-machine.sh`, exercise the page lifecycle, then promote the exact verified release while preserving `.env`, MySQL, uploaded media, templates, and writable storage.
+
+### Task 8: Update, verify, and deploy SlimWeb-MCP
 
 **Files:**
 - Modify: `/Users/eric/Documents/SlimWeb-MCP/package.json`, `package-lock.json`
@@ -319,7 +346,7 @@ gh run list --workflow deploy.yml --limit 5
 
 Inspect the matching run, verify `/readyz`, and record its Cloud Run serving revision and `COMMIT_SHA` separately from Git state.
 
-### Task 8: Repair Sweety and audit EasyDays
+### Task 9: Repair Sweety and audit EasyDays
 
 **Files:**
 - Create: `/Users/eric/Documents/SlimWeb-MCP/docs/acceptance/sweety-carousel-2026-08-31.md`

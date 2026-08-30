@@ -1492,10 +1492,10 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 狀態: Available
 - 權限: content write
 - Scope: active site
-- 用途: 建立新的自訂頁面。AI 應先確認標題不撞名，再依設計摘要與圖片素材建立單頁 HTML/CSS/頁面內 JavaScript，固定頁不可透過這個工具建立或覆寫；若目前是 ChatGPT Remote MCP 而且沒有可用附圖或可直接下載的圖片 URL，就先終止任務並請使用者貼圖。
-- Input: `site_code`、`title`、`content.html` or `content.body_html`、`enabled_libraries`、optional `page_key`、optional `confirmation_token`
-- Output: write summary、site summary、theme summary、page key、title、public URL、preview URL、bytes written
-- Side effects: writes custom page body and metadata to Webless template storage
+- 用途: 建立新的自訂頁面。AI 應先確認標題不撞名，再依設計摘要與圖片素材建立單頁 HTML/CSS；頁面 JavaScript 只能放在 `content.javascript`，由 SlimWeb 寫入固定的 `assets/js/90-mcp-page.js`，固定頁不可透過這個工具建立或覆寫。若目前是 ChatGPT Remote MCP 而且沒有可用附圖或可直接下載的圖片 URL，就先終止任務並請使用者貼圖。
+- Input: `site_code`、`title`、`content.html` or `content.body_html`、optional `content.javascript`、`enabled_libraries`、optional `page_key`、optional `confirmation_token`
+- Output: write summary、site summary、theme summary、page key、title、public URL、preview URL、HTML/JavaScript bytes written
+- Side effects: writes custom page body, metadata, and at most one MCP-owned page JavaScript asset to Webless template storage
 - 是否需要 confirmation: yes when creating customer-facing content
 - 錯誤情境: title already exists、unsafe content、site not found、storage adapter not configured
 - Audit fields: request ID、user ID、account ID、site ID、page key、title
@@ -1505,10 +1505,10 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - 狀態: Available
 - 權限: content write
 - Scope: active site
-- 用途: 修改既有可編輯頁面，包含自訂頁與首頁 `index`。流程會先用 `slimweb_pages_get_content` 讀取目前頁面內容與 `enabled_libraries`；其他固定系統頁不可編輯。若目前是 ChatGPT Remote MCP 而且沒有可用附圖或可直接下載的圖片 URL，就先終止任務並請使用者貼圖。
-- Input: `site_code`、`page_name`、`content.html` or `content.body_html`、`enabled_libraries`、optional `title`、optional `confirmation_token`
+- 用途: 修改既有可編輯頁面，包含自訂頁與首頁 `index`。流程會先用 `slimweb_pages_get_content` 讀取目前頁面內容、正式 JavaScript 與 `enabled_libraries`；其他固定系統頁不可編輯。更新時省略 `content.javascript` 會保留既有程式，傳入非空內容會取代，傳入空字串會刪除。若目前是 ChatGPT Remote MCP 而且沒有可用附圖或可直接下載的圖片 URL，就先終止任務並請使用者貼圖。
+- Input: `site_code`、`page_name`、`content.html` or `content.body_html`、optional `content.javascript`、`enabled_libraries`、optional `title`、optional `confirmation_token`
 - Output: write summary、site summary、theme summary、page key、title、public URL、preview URL、bytes written
-- Side effects: overwrites page body in configured Webless template storage; custom pages also update metadata, while homepage `index` keeps fixed-page metadata
+- Side effects: overwrites page body in configured Webless template storage and may preserve, replace, or delete `assets/js/90-mcp-page.js`; custom pages also update metadata, while homepage `index` keeps fixed-page metadata
 - 是否需要 confirmation: yes when replacing customer-facing content
 - 錯誤情境: page not found、unsafe content、site not found、storage adapter not configured
 - Audit fields: request ID、user ID、account ID、site ID、page key、title
@@ -1528,7 +1528,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 
 ### 頁面可用外部視覺支援
 
-`slimweb_pages_create` 與 `slimweb_pages_update` 都必須傳入 `enabled_libraries`。沒有使用外部支援時傳 `[]`。AI 可依頁面需求自行選用下列 allowlist；不要在 `content.html` 內自行加入 CDN `<script src>` 或 `<link>`，SlimWeb 會依參數用 CDN 載入固定資產。頁面 HTML 可以包含自訂 CSS 與頁面範圍 inline JavaScript。
+`slimweb_pages_create` 與 `slimweb_pages_update` 都必須傳入 `enabled_libraries`。沒有使用外部支援時傳 `[]`。AI 可依頁面需求自行選用下列 allowlist；不要在 `content.html` 內自行加入 CDN `<script src>`、`<link>`、inline event handler 或 JavaScript。SlimWeb 會依參數載入固定 library，頁面自訂程式則只使用 `content.javascript`，並集中管理在單一 `assets/js/90-mcp-page.js`，避免 GSAP、Swiper 與臨時動畫檔互相覆蓋或重複初始化。
 
 | key | 類型 | 名稱 | 用途 | AI 使用建議 |
 | --- | --- | --- | --- | --- |
