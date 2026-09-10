@@ -1,6 +1,6 @@
 {
   "count": 137,
-  "sha256": "cbb4589ff4ec9a5e92f66515a760dff5af2110112777b9c99b715727ee9f88e5",
+  "sha256": "a6ac0a1043ce6fb0fd6999338495e919fc1faa3d1140190d903e04f6b3b63e85",
   "tools": [
     {
       "name": "slimweb_invoice_settings_get",
@@ -207,6 +207,11 @@
             "type": "string",
             "pattern": "^[A-Za-z0-9._:-]{8,128}$",
             "description": "Stable request key. Reuse the same key and payload for retries of this operation."
+          },
+          "draft_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Update an existing unissued draft or definitively failed invoice with corrected buyer/items; never processing/unknown/issued. Returns the same invoice; no financial issuance. Use a new stable request key for this corrected payload and reuse it for retries."
           },
           "order_id": {
             "type": "integer",
