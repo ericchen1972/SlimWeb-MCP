@@ -1,7 +1,501 @@
 {
-  "count": 128,
-  "sha256": "944c5d2653132540b1406ab34d67c3d12eb0a8ff5c02e243115e640054112afb",
+  "count": 137,
+  "sha256": "cbb4589ff4ec9a5e92f66515a760dff5af2110112777b9c99b715727ee9f88e5",
   "tools": [
+    {
+      "name": "slimweb_invoice_settings_get",
+      "description": "Read electronic invoice connection settings. Secret keys are never returned; only their presence is exposed.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_invoice_settings_update",
+      "description": "Update the separate electronic invoice provider connection. Blank secrets preserve saved keys. Enabling auto_issue_enabled permits automatic issuance for future eligible events only; require explicit user intent before enabling it or switching to production.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "ecpay",
+              "ezpay"
+            ]
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "test",
+              "production"
+            ]
+          },
+          "is_enabled": {
+            "type": "boolean"
+          },
+          "auto_issue_enabled": {
+            "type": "boolean"
+          },
+          "merchant_id": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "hash_key": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "hash_iv": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "provider",
+          "mode",
+          "is_enabled",
+          "merchant_id"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_invoices_list",
+      "description": "List invoices in the selected site. Test and production records remain distinct.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "status": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "ecpay",
+              "ezpay"
+            ]
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "test",
+              "production"
+            ]
+          },
+          "keyword": {
+            "type": "string"
+          },
+          "date_from": {
+            "type": "string",
+            "format": "date"
+          },
+          "date_to": {
+            "type": "string",
+            "format": "date"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_invoices_get",
+      "description": "Get an invoice snapshot and status, without provider credentials.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "invoice_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "invoice_id"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_invoices_create",
+      "description": "Create a reviewable invoice draft; never issues a tax invoice. Supply order_id to snapshot an order, or transaction_date, buyer and items for a standalone cash/manual sale. NTD tax-inclusive ordinary taxable 5% only; no configurable tax rate.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "idempotency_key": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{8,128}$",
+            "description": "Stable request key. Reuse the same key and payload for retries of this operation."
+          },
+          "order_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "transaction_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "buyer": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "email": {
+                "type": "string"
+              },
+              "phone": {
+                "type": "string"
+              },
+              "address": {
+                "type": "string"
+              },
+              "tax_id": {
+                "type": "string"
+              },
+              "carrier_number": {
+                "type": "string"
+              },
+              "donation_code": {
+                "type": "string"
+              },
+              "carrier_type": {
+                "type": "string",
+                "enum": [
+                  "none",
+                  "mobile",
+                  "citizen",
+                  "member",
+                  "donation"
+                ]
+              }
+            }
+          },
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "quantity": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "unit": {
+                  "type": "string"
+                },
+                "unit_price": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "name",
+                "quantity",
+                "unit_price"
+              ]
+            }
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "idempotency_key"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_invoices_issue",
+      "description": "Issue this reviewed draft with its original provider/environment. This can create a legal tax invoice in production. Require explicit user intent; never issue automatically merely because a draft exists. On unknown outcome use sync before any retry.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "invoice_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "idempotency_key": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{8,128}$",
+            "description": "Stable request key. Reuse the same key and payload for retries of this operation."
+          },
+          "confirmed": {
+            "type": "boolean",
+            "const": true,
+            "description": "Set true only after the user explicitly requests this specific financial operation."
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "invoice_id",
+          "idempotency_key",
+          "confirmed"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_invoices_sync",
+      "description": "Query the original provider to reconcile invoice status after pending/unknown results. Does not issue a new invoice.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "invoice_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "invoice_id"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_invoices_void",
+      "description": "Void this issued invoice with an explicit reason and user intent. A consequential financial operation; does not automatically reissue.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "invoice_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "idempotency_key": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{8,128}$",
+            "description": "Stable request key. Reuse the same key and payload for retries of this operation."
+          },
+          "confirmed": {
+            "type": "boolean",
+            "const": true,
+            "description": "Set true only after the user explicitly requests this specific financial operation."
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "invoice_id",
+          "idempotency_key",
+          "confirmed",
+          "reason"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    {
+      "name": "slimweb_invoices_allowance",
+      "description": "Create an allowance for this invoice with explicit user intent and reason. Amount is an integer NTD amount and cannot exceed the remaining invoice balance. Merchant must confirm prior buyer agreement and retain evidence. Refund/return status alone is not authorization.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "invoice_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "idempotency_key": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{8,128}$",
+            "description": "Stable request key. Reuse the same key and payload for retries of this operation."
+          },
+          "confirmed": {
+            "type": "boolean",
+            "const": true,
+            "description": "Set true only after the user explicitly requests this specific financial operation."
+          },
+          "buyer_agreed": {
+            "type": "boolean",
+            "const": true,
+            "description": "Merchant confirms prior buyer agreement to this allowance and retains evidence. Separate from confirming the operation."
+          },
+          "amount": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "site_code": {
+            "type": "string",
+            "description": "Stable SlimWeb site code selected from slimweb_sites_list, such as swcb_zog0l7zlyp3lwmlc. Do not use numeric site_id."
+          }
+        },
+        "required": [
+          "site_code",
+          "invoice_id",
+          "idempotency_key",
+          "confirmed",
+          "buyer_agreed",
+          "amount",
+          "reason"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
     {
       "name": "slimweb_media_library_stats",
       "description": "Return media-library total count and size plus unused count and size. Optionally includes unused committed asset details; usage is checked across content, products, settings, newsletters, categories, and templates.",

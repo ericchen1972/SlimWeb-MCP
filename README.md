@@ -243,6 +243,15 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 | `slimweb_media_library_stats` | Available | asset read | 回傳素材總數／容量與未使用素材數量／容量。 |
 | `slimweb_media_library_delete_unused` | Available | asset write | 重新檢查引用後，只刪除當下仍未使用的素材。 |
 | `slimweb_pages_delete` | Available | content write | 刪除自訂頁面內容；固定系統頁不可刪除。 |
+| `slimweb_invoice_settings_get` | Available | invoice settings | 讀取獨立電子發票設定；金鑰只回傳存在狀態。 |
+| `slimweb_invoice_settings_update` | Available | invoice settings | 設定綠界／ezPay、測試／正式、啟用與自動開票及加密憑證。 |
+| `slimweb_invoices_list` | Available | invoice read | 依狀態、環境、服務商、日期或關鍵字查詢。 |
+| `slimweb_invoices_get` | Available | invoice read | 讀取原票快照及狀態，不回傳供應商金鑰。 |
+| `slimweb_invoices_create` | Available | invoice draft | 從訂單或獨立交易建立待確認草稿，不直接開票。 |
+| `slimweb_invoices_issue` | Available | invoice financial write | 使用者明確要求後開立；必填穩定 idempotency_key 與 confirmed=true。 |
+| `slimweb_invoices_sync` | Available | invoice sync | 查證原供應商狀態，未知結果先查證。 |
+| `slimweb_invoices_void` | Available | invoice financial write | 使用者明確要求後作廢，必填原因、穩定請求鍵及 confirmed=true。 |
+| `slimweb_invoices_allowance` | Available | invoice financial write | 使用者明確要求後折讓，必填整數台幣金額、原因、穩定請求鍵及 confirmed=true。 |
 | `slimweb_orders_list` | Available | order read | 用後台同一套搜尋參數查正常訂單；「待處理」請用 `logistics_status=pending`，代表金流完成但物流未完成。超過 20 筆時 AI 應請用戶到後台縮小條件。 |
 | `slimweb_orders_profit_statistics` | Available | order read | 計算已付款且未取消訂單的純利；不帶日期代表全部，問「這個月」時由 AI 帶入當月起訖日期。 |
 | `slimweb_orders_get` | Available | order read | 讀取單一訂單，包含品項、付款、物流、退貨、退款與 `available_actions`。 |
