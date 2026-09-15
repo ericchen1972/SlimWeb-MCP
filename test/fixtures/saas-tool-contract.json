@@ -1,6 +1,6 @@
 {
   "count": 137,
-  "sha256": "a6ac0a1043ce6fb0fd6999338495e919fc1faa3d1140190d903e04f6b3b63e85",
+  "sha256": "556a19e3b36729d381ec5c6f9ad96a8e7e5b3310db48685a84aeecc6ba76343e",
   "tools": [
     {
       "name": "slimweb_invoice_settings_get",
@@ -2294,11 +2294,10 @@
                     "enum": [
                       "seven",
                       "family",
-                      "hilife",
-                      "ok"
+                      "hilife"
                     ]
                   },
-                  "description": "ECPay supports seven/family/hilife/ok. NewebPay supports seven/family/hilife only."
+                  "description": "ECPay and NewebPay support seven/family/hilife. OK Mart logistics is no longer supported."
                 },
                 "logistics_type": {
                   "type": "string",
@@ -2497,8 +2496,7 @@
             "enum": [
               "seven",
               "family",
-              "hilife",
-              "ok"
+              "hilife"
             ]
           },
           "temperature": {

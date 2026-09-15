@@ -802,7 +802,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - Output: updated provider states、supported provider list、answer policy
 - Side effects: upserts `site_payment_providers` / `site_logistics_providers`; writes encrypted provider settings compatible with Webless Laravel `encrypted:array`
 - Rule: `ecpay` 與 `newebpay` 屬於線上刷卡金流，同一站台只能啟用其中一家；啟用其中一家會停用另一家。`linepay` 可同時啟用，不受此限制。
-- Logistics rule: 綠界物流與藍新物流沒有獨立啟用開關，啟用同家的金流時即視為一併啟用同家物流；停用同家金流時物流也會停用。綠界物流超商通路為 `seven`、`family`、`hilife`、`ok`，並可設定 `logistics_type` = `c2c` 或 `b2c`；C2C/B2C 必須與綠界後台申請項目一致，若需要建立逆物流請使用 B2C。藍新物流超商通路目前使用 `seven`、`family`、`hilife`，不把 OK 當成預設可用通路；可用通路與寄件模式以藍新後台啟用項目為準。新竹物流使用 `merchant_id` 作為 API 公司名稱、`password` 作為 API 密碼、optional `customer_id` 作為客代；新竹物流沒有後台測試/正式模式下拉，測試時使用文件提供的測試公司名稱 `test` 與密碼 `test1`。新竹物流保留自己的 `is_enabled`，`collect_payment_enabled` 為 true 時前台可顯示貨到付款。
+- Logistics rule: 綠界物流與藍新物流沒有獨立啟用開關，啟用同家的金流時即視為一併啟用同家物流；停用同家金流時物流也會停用。綠界物流超商通路為 `seven`、`family`、`hilife`，並可設定 `logistics_type` = `c2c` 或 `b2c`；C2C/B2C 必須與綠界後台申請項目一致，若需要建立逆物流請使用 B2C。藍新物流超商通路目前使用 `seven`、`family`、`hilife`，不把 OK 當成預設可用通路；可用通路與寄件模式以藍新後台啟用項目為準。新竹物流使用 `merchant_id` 作為 API 公司名稱、`password` 作為 API 密碼、optional `customer_id` 作為客代；新竹物流沒有後台測試/正式模式下拉，測試時使用文件提供的測試公司名稱 `test` 與密碼 `test1`。新竹物流保留自己的 `is_enabled`，`collect_payment_enabled` 為 true 時前台可顯示貨到付款。
 - AI answer rule: 使用者問自己的 SlimWeb 站台支援哪些金物流時，先呼叫 `slimweb_payment_logistics_get`，並只依支援清單回答。使用者問一般「電商網站用什麼金流」時，不把未支援供應商描述成 SlimWeb 可用。
 - 是否需要 confirmation: yes when enabling/disabling providers or changing credentials
 - 錯誤情境: validation failed、unsupported provider、missing credentials、multiple online card providers enabled、encryption key not configured、site not found、permission denied
@@ -1099,7 +1099,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
   - `slimweb_refunds_create`: 建立綠界/藍新刷退。
 - AI rule: 所有 order/return/refund write tools 都必須先依 `slimweb_orders_get`、`slimweb_orders_list` 或 `slimweb_returns_pending_list` 回傳的 `available_actions` 執行。若 `available_actions` 中多個物流選項帶有 `requires_user_choice: true`，必須先詢問用戶要使用哪一家物流，不可自行選。
 - 物流規則摘要:
-  - 7-11/全家/萊爾富/OK 超商取貨訂單只能建立同一通路的超商物流單。
+  - 7-11/全家/萊爾富超商取貨訂單只能建立同一通路的超商物流單。
   - 宅配貨到付款只能建立新竹物流，且新竹物流需啟用代收貨款。
   - 宅配線上付款可依啟用狀態建立綠界宅配或新竹物流；若兩者皆可用，AI 必須詢問用戶。
   - 退貨逆物流與退款互不掛勾；退款另用 refund tools 處理。
