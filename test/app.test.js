@@ -603,7 +603,7 @@ assert.equal(toolsByName.get('slimweb_orders_profit_statistics').inputSchema.pro
     assert.equal(toolsByName.get('slimweb_payment_logistics_update').inputSchema.properties.payments.items.properties.language.enum.includes('ko'), true);
     assert.equal(toolsByName.get('slimweb_payment_logistics_update').inputSchema.properties.payments.items.properties.language.enum.includes('th'), true);
     assert.equal(toolsByName.get('slimweb_payment_logistics_update').inputSchema.properties.logistics.items.properties.hash_key, undefined);
-    assert.equal(toolsByName.get('slimweb_payment_logistics_update').inputSchema.properties.logistics.items.properties.store_types.items.enum.includes('ok'), true);
+    assert.equal(toolsByName.get('slimweb_payment_logistics_update').inputSchema.properties.logistics.items.properties.store_types.items.enum.includes('ok'), false);
     assert.equal(toolsByName.has('slimweb_debug_attachment_refs'), true);
     assert.match(toolsByName.get('slimweb_products_upsert').description, /ask the user to choose an existing leaf category/);
     assert.match(toolsByName.get('slimweb_categories_upsert').description, /icon_svg_base64/);
