@@ -1,6 +1,6 @@
 {
   "count": 137,
-  "sha256": "556a19e3b36729d381ec5c6f9ad96a8e7e5b3310db48685a84aeecc6ba76343e",
+  "sha256": "a017fc23f3b18fc3d416edab822d700c846d9034b0dfd5b8a91d4d5bb2d71495",
   "tools": [
     {
       "name": "slimweb_invoice_settings_get",
@@ -4623,7 +4623,7 @@
     },
     {
       "name": "slimweb_newsletters_create",
-      "description": "Create a scheduled SlimWeb newsletter for all active members. This stores no recipient rows and does not send email directly. At the scheduled time SlimWeb queries the current active-member emails. If scheduled_at is omitted, SlimWeb-MCP sets it to the current time plus 5 minutes.",
+      "description": "Create a scheduled SlimWeb newsletter for all active members from HTML composed by the external AI client; this does not require configured site AI or invoke server-side AI generation. This stores no recipient rows and does not send email directly. At the scheduled time SlimWeb queries the current active-member emails. If scheduled_at is omitted, SlimWeb-MCP sets it to the current time plus 5 minutes.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -4657,7 +4657,7 @@
     },
     {
       "name": "slimweb_posters_create",
-      "description": "Create a durable AI-generated ecommerce poster using up to five product names, the site name/logo, product names, product primary images as image-edit references, and the user drawing request. The generated poster is stored as a media asset and returned with image_url plus asset.media_path. If any product name fuzzy search matches multiple products, stop and return candidates for user confirmation.",
+      "description": "Create a durable AI-generated ecommerce poster using up to five product names, the site name/logo, product names, product primary images as image-edit references, and the user drawing request. Requires the site AI provider and API key configured in the site integration settings; backend generation uses that site configuration without shared platform credentials. The generated poster is stored as a media asset and returned with image_url plus asset.media_path. If any product name fuzzy search matches multiple products, stop and return candidates for user confirmation.",
       "inputSchema": {
         "type": "object",
         "properties": {
