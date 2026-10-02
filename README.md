@@ -1924,6 +1924,6 @@ Cloud Run 使用 `--allow-unauthenticated`，讓 AI Client 與使用者可開啟
 6. 補上 authentication、permission、validation、error mapping 的 tests。
 7. 每新增一個 tool，同步更新本 README 的 tool matrix 與 tool contract。
 
-LINE workflow and release dependency: see [LINE Rich Menu contract](../SlimWeb-MCP-Core/docs/line-rich-menu-contract.md). The gateway pins Core v0.1.12. Deploy the LINE backend endpoints before deploying this gateway.
+LINE workflow and release dependency: see [LINE Rich Menu contract](../SlimWeb-MCP-Core/docs/line-rich-menu-contract.md). The gateway pins Core v0.1.13. Deploy the LINE backend endpoints before deploying this gateway.
 
 Integration credentials are write-only. Read and update responses return `has_notion_token`, `has_notification_smtp_password`, and provider `settings.hasHashKey` / `hasHashIv` / `hasPassword` presence flags; clients must not expect saved secret values. Token/password fields in tool input schemas are writes, not returned values.
