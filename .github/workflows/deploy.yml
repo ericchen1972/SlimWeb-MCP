@@ -55,3 +55,9 @@ jobs:
             --set-env-vars="NODE_ENV=production,PUBLIC_BASE_URL=https://slimweb-mcp-aakwcbp2ca-de.a.run.app,GOOGLE_CLIENT_ID=27587628711-upin8ch154kqrl88k41978q660oc0pbg.apps.googleusercontent.com,MCP_SESSION_SECRET=${{ secrets.MCP_SESSION_SECRET }},WEBLESS_MCP_SECRET=${{ secrets.WEBLESS_MCP_SECRET }},WEBLESS_BACKEND_API_BASE_URL=https://webless-aakwcbp2ca-de.a.run.app" \
             --allow-unauthenticated \
             --quiet
+          # Existing revision-pinned traffic does not follow a newly deployed image.
+          gcloud run services update-traffic "${SERVICE}" \
+            --project="${PROJECT_ID}" \
+            --region="${REGION}" \
+            --to-latest \
+            --quiet
