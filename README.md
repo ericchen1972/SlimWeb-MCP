@@ -243,6 +243,15 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 | `slimweb_media_library_stats` | Available | asset read | 回傳素材總數／容量與未使用素材數量／容量。 |
 | `slimweb_media_library_delete_unused` | Available | asset write | 重新檢查引用後，只刪除當下仍未使用的素材。 |
 | `slimweb_pages_delete` | Available | content write | 刪除自訂頁面內容；固定系統頁不可刪除。 |
+| `slimweb_line_bot_settings_get` | Available | LINE integration | LINE Bot / AI 設定與 Rich Menu 管理；憑證僅寫入，發佈前檢查就緒狀態。 |
+| `slimweb_line_bot_settings_update` | Available | LINE integration | LINE Bot / AI 設定與 Rich Menu 管理；憑證僅寫入，發佈前檢查就緒狀態。 |
+| `slimweb_line_ai_settings_get` | Available | LINE integration | LINE Bot / AI 設定與 Rich Menu 管理；憑證僅寫入，發佈前檢查就緒狀態。 |
+| `slimweb_line_ai_settings_update` | Available | LINE integration | LINE Bot / AI 設定與 Rich Menu 管理；憑證僅寫入，發佈前檢查就緒狀態。 |
+| `slimweb_line_rich_menus_list` | Available | LINE integration | LINE Bot / AI 設定與 Rich Menu 管理；憑證僅寫入，發佈前檢查就緒狀態。 |
+| `slimweb_line_rich_menus_get` | Available | LINE integration | LINE Bot / AI 設定與 Rich Menu 管理；憑證僅寫入，發佈前檢查就緒狀態。 |
+| `slimweb_line_rich_menus_create` | Available | LINE integration | LINE Bot / AI 設定與 Rich Menu 管理；憑證僅寫入，發佈前檢查就緒狀態。 |
+| `slimweb_line_rich_menus_publish` | Available | LINE integration | LINE Bot / AI 設定與 Rich Menu 管理；憑證僅寫入，發佈前檢查就緒狀態。 |
+| `slimweb_line_rich_menus_delete` | Available | LINE integration | LINE Bot / AI 設定與 Rich Menu 管理；憑證僅寫入，發佈前檢查就緒狀態。 |
 | `slimweb_invoice_settings_get` | Available | invoice settings | 讀取獨立電子發票設定；金鑰只回傳存在狀態。 |
 | `slimweb_invoice_settings_update` | Available | invoice settings | 設定綠界／ezPay、測試／正式、啟用與自動開票及加密憑證。 |
 | `slimweb_invoices_list` | Available | invoice read | 依狀態、環境、服務商、日期或關鍵字查詢。 |
@@ -1914,3 +1923,7 @@ Cloud Run 使用 `--allow-unauthenticated`，讓 AI Client 與使用者可開啟
 5. 建立 SlimWeb Backend Adapter，連接現有 Webless / SlimWeb application service 或 API。
 6. 補上 authentication、permission、validation、error mapping 的 tests。
 7. 每新增一個 tool，同步更新本 README 的 tool matrix 與 tool contract。
+
+LINE workflow and release dependency: see [LINE Rich Menu contract](../SlimWeb-MCP-Core/docs/line-rich-menu-contract.md). The gateway pins Core v0.1.12. Deploy the LINE backend endpoints before deploying this gateway.
+
+Integration credentials are write-only. Read and update responses return `has_notion_token`, `has_notification_smtp_password`, and provider `settings.hasHashKey` / `hasHashIv` / `hasPassword` presence flags; clients must not expect saved secret values. Token/password fields in tool input schemas are writes, not returned values.

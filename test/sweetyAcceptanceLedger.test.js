@@ -12,16 +12,16 @@ const contract = JSON.parse(
   readFileSync(new URL('./fixtures/saas-tool-contract.json', import.meta.url), 'utf8'),
 );
 
-test('Sweety acceptance ledger covers the frozen 137-tool contract exactly once', () => {
+test('Sweety acceptance ledger covers the frozen 146-tool contract exactly once', () => {
   const rows = buildRows(contract.tools);
 
-  assert.equal(contract.count, 137);
+  assert.equal(contract.count, 146);
   assert.equal(
     contract.sha256,
-    'a017fc23f3b18fc3d416edab822d700c846d9034b0dfd5b8a91d4d5bb2d71495',
+    '62cdd6cd11bd68f2aecc19e4cc4279ea5c29d7962d320bcbe17f92e9185ceae9',
   );
-  assert.equal(rows.length, 137);
-  assert.equal(new Set(rows.map(({ tool }) => tool)).size, 137);
+  assert.equal(rows.length, 146);
+  assert.equal(new Set(rows.map(({ tool }) => tool)).size, 146);
   assert.ok(rows.every(({ tool, siteCode, status, domain }) => (
     siteCode === 'swcb_g3fg1bpnjulrr75o'
       && status === ACCEPTANCE.NOT_RUN
