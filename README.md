@@ -243,6 +243,11 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 | `slimweb_media_library_stats` | Available | asset read | 回傳素材總數／容量與未使用素材數量／容量。 |
 | `slimweb_media_library_delete_unused` | Available | asset write | 重新檢查引用後，只刪除當下仍未使用的素材。 |
 | `slimweb_pages_delete` | Available | content write | 刪除自訂頁面內容；固定系統頁不可刪除。 |
+| `slimweb_line_friends_stats` | Available | integration + member read | 查詢日期化好友統計與綁定會員數。 |
+| `slimweb_line_members_list` | Available | integration + member read | 按會員條件或姓名查詢 follow 綁定會員，支援分頁供 Excel 匯出。 |
+| `slimweb_line_push_prepare` | Available | integration + member read | 準備最多五個訊息物件，回傳受眾、預覽、全部連結與確認資訊，不發送。 |
+| `slimweb_line_push_send` | Available | integration + member read | 最終人類確認後 Broadcast／Multicast，保存批次狀態與重試識別。 |
+| `slimweb_line_push_status` | Available | integration + member read | 查詢推播請求與批次狀態，不保證逐人送達。 |
 | `slimweb_line_bot_settings_get` | Available | LINE integration | LINE Bot / AI 設定與 Rich Menu 管理；憑證僅寫入，發佈前檢查就緒狀態。 |
 | `slimweb_line_bot_settings_update` | Available | LINE integration | LINE Bot / AI 設定與 Rich Menu 管理；憑證僅寫入，發佈前檢查就緒狀態。 |
 | `slimweb_line_ai_settings_get` | Available | LINE integration | LINE Bot / AI 設定與 Rich Menu 管理；憑證僅寫入，發佈前檢查就緒狀態。 |
@@ -1927,3 +1932,5 @@ Cloud Run 使用 `--allow-unauthenticated`，讓 AI Client 與使用者可開啟
 LINE workflow and release dependency: see [LINE Rich Menu contract](../SlimWeb-MCP-Core/docs/line-rich-menu-contract.md). The gateway pins Core v0.1.13. Deploy the LINE backend endpoints before deploying this gateway.
 
 Integration credentials are write-only. Read and update responses return `has_notion_token`, `has_notification_smtp_password`, and provider `settings.hasHashKey` / `hasHashIv` / `hasPassword` presence flags; clients must not expect saved secret values. Token/password fields in tool input schemas are writes, not returned values.
+
+LINE member push tools (Core v0.1.16): friends_stats, members_list, push_prepare/send/status. Follow/unfollow updates only existing member bindings; member filters exclude unfollow. All friends use broadcast; member targets use multicast. Always show immutable preview and all URLs and obtain final human confirmation before send. Unknown outcomes retry the same operation, not a new preparation. See ../SlimWeb-MCP-Core/docs/line-member-push-contract.md.

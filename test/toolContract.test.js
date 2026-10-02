@@ -6,8 +6,8 @@ import { test } from 'node:test';
 
 import { createRequestHandler } from '../src/app.js';
 
-const EXPECTED_COUNT = 146;
-const EXPECTED_SHA256 = '71664e518d8b0a6e7862a7c51c4d60f3b14324fff26a8d6496b25ae65e6841a1';
+const EXPECTED_COUNT = 151;
+const EXPECTED_SHA256 = '9f0d29278280ad147ec10a639fd49929119d8a75a688a3c6eaa425b7d495ad44';
 const PHASE_2_TOOLS = [
   'slimweb_categories_list',
   'slimweb_categories_upsert',
