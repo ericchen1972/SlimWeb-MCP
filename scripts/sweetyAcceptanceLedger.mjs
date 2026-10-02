@@ -9,8 +9,8 @@ export const ACCEPTANCE = Object.freeze({
 });
 
 const SITE_CODE = 'swcb_g3fg1bpnjulrr75o';
-const EXPECTED_COUNT = 127;
-const EXPECTED_HASH = 'bb86586ea1668d4da1863a737272e6b581bbb0529e24c8717b182409253124a8';
+const EXPECTED_COUNT = 152;
+const EXPECTED_HASH = 'f708b037959aabb12e909ba5531f37a438869e8af31e9154025037bd804fbc2c';
 
 const DOMAIN_RULES = [
   ['identity', /_(auth_status|sites_list|site_select)$/],

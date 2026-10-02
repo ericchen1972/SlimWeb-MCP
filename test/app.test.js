@@ -321,10 +321,10 @@ test('MCP tools list includes homepage editing contract tools', async () => {
       .update(JSON.stringify(body.result.tools))
       .digest('hex');
 
-    assert.equal(body.result.tools.length, 151);
+    assert.equal(body.result.tools.length, 152);
     assert.equal(
       toolsContractHash,
-      '9f0d29278280ad147ec10a639fd49929119d8a75a688a3c6eaa425b7d495ad44'
+      'f708b037959aabb12e909ba5531f37a438869e8af31e9154025037bd804fbc2c'
     );
 
     for (const toolName of [

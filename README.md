@@ -249,6 +249,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 | `slimweb_line_push_send` | Available | integration + member read | 最終人類確認後 Broadcast／Multicast，保存批次狀態與重試識別。 |
 | `slimweb_line_push_status` | Available | integration + member read | 查詢推播請求與批次狀態，不保證逐人送達。 |
 | `slimweb_line_bot_settings_get` | Available | LINE integration | LINE Bot / AI 設定與 Rich Menu 管理；憑證僅寫入，發佈前檢查就緒狀態。 |
+| `slimweb_line_bot_qrcode_get` | Available | LINE integration | Generate/reuse the configured Bot add-friend QR PNG and return its public asset URL and friend link. |
 | `slimweb_line_bot_settings_update` | Available | LINE integration | LINE Bot / AI 設定與 Rich Menu 管理；憑證僅寫入，發佈前檢查就緒狀態。 |
 | `slimweb_line_ai_settings_get` | Available | LINE integration | LINE Bot / AI 設定與 Rich Menu 管理；憑證僅寫入，發佈前檢查就緒狀態。 |
 | `slimweb_line_ai_settings_update` | Available | LINE integration | LINE Bot / AI 設定與 Rich Menu 管理；憑證僅寫入，發佈前檢查就緒狀態。 |
@@ -1934,3 +1935,6 @@ LINE workflow and release dependency: see [LINE Rich Menu contract](../SlimWeb-M
 Integration credentials are write-only. Read and update responses return `has_notion_token`, `has_notification_smtp_password`, and provider `settings.hasHashKey` / `hasHashIv` / `hasPassword` presence flags; clients must not expect saved secret values. Token/password fields in tool input schemas are writes, not returned values.
 
 LINE member push tools (Core v0.1.16): friends_stats, members_list, push_prepare/send/status. Follow/unfollow updates only existing member bindings; member filters exclude unfollow. All friends use broadcast; member targets use multicast. Always show immutable preview and all URLs and obtain final human confirmation before send. Unknown outcomes retry the same operation, not a new preparation. See ../SlimWeb-MCP-Core/docs/line-member-push-contract.md.
+
+### LINE Bot add-friend QR Code
+`slimweb_line_bot_qrcode_get` validates the configured Bot token/identity and returns a reusable site PNG (`media_path`, `qr_image_url`) and `add_friend_url`. Requires integration settings permission. No Token is returned. Replies may be disabled; AI/webhook readiness is not required. Keep the square aspect ratio and white quiet-zone and hyperlink the image for mobile users. Use existing page/theme tools for placement.
