@@ -1938,3 +1938,6 @@ LINE member push tools (Core v0.1.16): friends_stats, members_list, push_prepare
 
 ### LINE Bot add-friend QR Code
 `slimweb_line_bot_qrcode_get` validates the configured Bot token/identity and returns a reusable site PNG (`media_path`, `qr_image_url`) and `add_friend_url`. Requires integration settings permission. No Token is returned. Replies may be disabled; AI/webhook readiness is not required. Keep the square aspect ratio and white quiet-zone and hyperlink the image for mobile users. Use existing page/theme tools for placement.
+
+## Website notifications
+See [site.notification contract](docs/site-notification-contract.md). One website subscription delivers new-order and return-request notices only. Display in the subscribed chat and wait for user instructions before actions. Requires Work Cloud host support; actual UI acceptance is separate from server tests.
