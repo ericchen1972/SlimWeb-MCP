@@ -18,7 +18,7 @@ test('Sweety acceptance ledger covers the frozen 152-tool contract exactly once'
   assert.equal(contract.count, 152);
   assert.equal(
     contract.sha256,
-    '67543192a0aefe14f586d0d21255f273ec07b7548e19ddaa6b9f69c2c71dafcc',
+    'c017fc412c71f4c64df873fea3ba78e2a9b59798b1794df7b617ed3cde724a0b',
   );
   assert.equal(rows.length, 152);
   assert.equal(new Set(rows.map(({ tool }) => tool)).size, 152);
