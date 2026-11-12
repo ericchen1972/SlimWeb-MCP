@@ -1429,11 +1429,11 @@ test('homepage editing tools call repository implementations', async () => {
       facebook_comment_on_products: false,
       facebook_comment_on_posts: true
     })).result.structuredContent.settings.facebook_page_id, 'fb-page-2');
-    assert.equal((await callTool(34, 'slimweb_notion_settings_get', { site_id: 101 })).result.structuredContent.settings.notion_token, 'notion-secret');
+    assert.equal((await callTool(34, 'slimweb_notion_settings_get', { site_id: 101 })).result.structuredContent.settings.notion_token, undefined);
     assert.equal((await callTool(35, 'slimweb_notion_settings_update', {
       site_id: 101,
       notion_token: 'ntn-updated'
-    })).result.structuredContent.settings.notion_token, 'ntn-updated');
+    })).result.structuredContent.settings.notion_token, undefined);
     assert.equal((await callTool(36, 'slimweb_mail_delivery_settings_get', { site_id: 101 })).result.structuredContent.settings.notification_smtp_host, 'smtp.example.com');
     assert.equal((await callTool(37, 'slimweb_mail_delivery_settings_update', {
       site_id: 101,
@@ -2111,7 +2111,7 @@ test('authenticated tools list and calls are filtered by web admin permissions',
       id: 101,
       slug: 'site-1',
       name: '測試網站',
-      permissions: ['backend_ai_assistant', 'page_management', 'page_management_pages']
+      permissions: ['backend_ai_assistant', 'main_page_management']
     }],
     listSitesForAdminIdentity: async () => [{
       site_admin_id: 22,
@@ -2119,7 +2119,7 @@ test('authenticated tools list and calls are filtered by web admin permissions',
       id: 101,
       slug: 'site-1',
       name: '測試網站',
-      permissions: ['backend_ai_assistant', 'page_management', 'page_management_pages']
+      permissions: ['backend_ai_assistant', 'main_page_management']
     }],
     getPageContent: async () => ({ content: { html: '<section>Home</section>' } }),
     listProducts: async () => {
