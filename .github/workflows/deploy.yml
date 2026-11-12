@@ -5,6 +5,10 @@ on:
     branches:
       - main
 
+concurrency:
+  group: deploy-${{ github.workflow }}
+  cancel-in-progress: false
+
 permissions:
   contents: read
 
@@ -43,21 +47,12 @@ jobs:
           IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${ARTIFACT_REPOSITORY}/${SERVICE}:${GITHUB_SHA}"
           docker push "${IMAGE}"
 
-      - name: Deploy to Cloud Run
+      - name: Deploy verified immutable candidate preserving runtime
+        env:
+          STANDALONE: "false"
+          PROMOTE: "true"
         run: |
           IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${ARTIFACT_REPOSITORY}/${SERVICE}:${GITHUB_SHA}"
-          gcloud run deploy "${SERVICE}" \
-            --project="${PROJECT_ID}" \
-            --region="${REGION}" \
-            --platform=managed \
-            --image="${IMAGE}" \
-            --timeout=900 \
-            --set-env-vars="NODE_ENV=production,PUBLIC_BASE_URL=https://slimweb-mcp-aakwcbp2ca-de.a.run.app,GOOGLE_CLIENT_ID=27587628711-upin8ch154kqrl88k41978q660oc0pbg.apps.googleusercontent.com,MCP_SESSION_SECRET=${{ secrets.MCP_SESSION_SECRET }},WEBLESS_MCP_SECRET=${{ secrets.WEBLESS_MCP_SECRET }},WEBLESS_BACKEND_API_BASE_URL=https://webless-aakwcbp2ca-de.a.run.app" \
-            --allow-unauthenticated \
-            --quiet
-          # Existing revision-pinned traffic does not follow a newly deployed image.
-          gcloud run services update-traffic "${SERVICE}" \
-            --project="${PROJECT_ID}" \
-            --region="${REGION}" \
-            --to-latest \
-            --quiet
+          export IMAGE_DIGEST="$(docker image inspect "${IMAGE}" --format '{{index .RepoDigests 0}}')"
+          export REVISION_SUFFIX="gh-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          node scripts/deploy-preserving-runtime.mjs
