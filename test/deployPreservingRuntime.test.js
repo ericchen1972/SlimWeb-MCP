@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { deployPreservingRuntime } from '../scripts/deploy-preserving-runtime.mjs';
+import { deployPreservingRuntime, candidateTag, resolveLinuxAmd64Image, runCloudJson } from '../scripts/deploy-preserving-runtime.mjs';
 
 const names = ['NODE_ENV','PUBLIC_BASE_URL','GOOGLE_CLIENT_ID','HUMAN_APPROVAL_GOOGLE_CLIENT_ID','MCP_SESSION_SECRET','WEBLESS_MCP_SECRET','WEBLESS_BACKEND_API_BASE_URL','SLIMAI_ASSERTION_ISSUER','SLIMAI_ASSERTION_PUBLIC_KEYS_JSON'];
 function fixture({missing, unhealthy = false} = {}) {
@@ -9,7 +9,7 @@ function fixture({missing, unhealthy = false} = {}) {
   const runner = args => {
     calls.push(args);
     if (args[1] === 'services' && args[2] === 'describe') return {spec: {template: {spec: {containers: [{env}]}}}};
-    if (args[1] === 'deploy') return {status: {traffic: [{tag: 'candidate-test', revisionName: 'service-test', url: 'https://candidate.example'}]}};
+    if (args[1] === 'deploy') return {status: {traffic: [{tag: candidateTag('service','test'), revisionName: 'service-test', url: 'https://candidate.example'}]}};
     if (args[1] === 'revisions') return {metadata: {name: 'service-test'}, spec: {containers: [{image: options.image, env}]}, status: {conditions: [{type: 'Ready', status: 'True'}]}};
     return {};
   };
@@ -27,7 +27,7 @@ test('deploy preserves configuration and IAM, then promotes only healthy exact r
   assert.ok(deploy.includes('--no-traffic'));
   assert.ok(!deploy.some(arg => /env-vars|secrets|unauthenticated|service-account/.test(arg)));
   const promotion = f.calls.find(args => args.some(arg=>arg.startsWith('--to-revisions=')));
-  assert.ok(f.calls.at(-1).includes('--remove-tags=candidate-test'));
+  assert.ok(f.calls.at(-1).includes(`--remove-tags=${candidateTag('service','test')}`));
   assert.ok(promotion.includes('--to-revisions=service-test=100'));
   assert.ok(!promotion.includes('--to-latest'));
 });
@@ -93,4 +93,24 @@ test('deployment succeeds through externally reachable readyz when edge reserves
  await deployPreservingRuntime({...options,...f});
  assert.deepEqual(paths,['/readyz']);
  assert.ok(f.calls.some(args=>args.includes('--to-revisions=service-test=100')));
+});
+
+test('candidate tag fits Cloud Run combined46-character limit with standalone service',()=>{
+ const service='slimweb-standalone-mcp',suffix='gh-43276123829-1';
+ const tag=candidateTag(service,suffix);
+ assert.ok(tag.length+service.length<=46);assert.match(tag,/^[a-z][a-z0-9-]+$/);
+ assert.equal(tag,candidateTag(service,suffix));assert.notEqual(tag,candidateTag(service,suffix+'2'));
+});
+test('OCI index resolves to its immutable linux amd64 child rather than the attestation',()=>{
+ const child='sha256:'+'b'.repeat(64);
+ const image=resolveLinuxAmd64Image(options.image,()=>({manifests:[{digest:child,platform:{os:'linux',architecture:'amd64'}},{digest:'sha256:'+'c'.repeat(64),platform:{os:'unknown',architecture:'unknown'}}]}));
+ assert.equal(image,'registry/image@'+child);
+ assert.equal(resolveLinuxAmd64Image(options.image,()=>({schemaVersion:2,config:{}})),options.image);
+ assert.throws(()=>resolveLinuxAmd64Image(options.image,()=>({manifests:[]})),/linux\/amd64/);
+});
+test('cloud command failure exposes only allowlisted operation and code',()=>{
+ const run=()=>{const error=new Error('SECRET command values');error.status=1;error.stderr=Buffer.from('ERROR: (gcloud.run.deploy) INVALID_ARGUMENT: SECRET env content');throw error;};
+ assert.throws(()=>runCloudJson(['run','deploy','secret-service','--secret=SECRET'],run),error=>{
+  assert.match(error.message,/run deploy.*INVALID_ARGUMENT/);assert.ok(!error.message.includes('SECRET'));assert.ok(!error.message.includes('secret-service'));return true;
+ });
 });

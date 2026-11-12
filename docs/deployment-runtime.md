@@ -7,3 +7,5 @@ Each run uses its own revision suffix and candidate tag. The candidate image and
 Bootstrap or runtime configuration changes are separate authorized operations. Secrets must not be copied into workflow files or logs. Required secret references are checked for presence; successful container startup/health validates that Cloud Run can resolve them.
 
 The deployment probe intentionally uses `/readyz` only. Google’s external edge can return an HTML 404 for `/healthz` even when the local application route exists. A non-success response or invalid readiness JSON still blocks promotion.
+
+Docker may publish an OCI index containing the executable image and provenance attestations. Before deployment, the helper inspects that immutable index and selects its single `linux/amd64` child digest. Cloud Run’s resolved revision image is compared strictly against that child, preserving image verification without confusing the index and executable digest. Candidate tags use a short deterministic hash to fit Cloud Run’s combined service/tag length limit. CLI failures report only the allowlisted operation and error code; raw arguments, environment values and stderr remain suppressed.
