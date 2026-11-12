@@ -11,6 +11,6 @@
     "node": ">=20"
   },
   "dependencies": {
-    "@slimweb/mcp-core": "github:ericchen1972/SlimWeb-MCP-Core#2ee6d773fc099c513366cc90015dd8713d9313af"
+    "@slimweb/mcp-core": "github:ericchen1972/SlimWeb-MCP-Core#24ee803a0b2b411b1ad7351374de90bb543d98de"
   }
 }
