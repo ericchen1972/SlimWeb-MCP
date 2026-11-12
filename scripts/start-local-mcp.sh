@@ -22,6 +22,7 @@ export WEBLESS_STORAGE_DRIVER="local"
 export WEBLESS_STORAGE_ROOT="/Users/eric/Documents/webless/storage/app/private"
 # Keep this in sync with webless/.config/config.json SLIMWEB_MCP_BASE_URL.
 export PUBLIC_BASE_URL="http://127.0.0.1:19091"
+export NODE_ENV="development"
 export HOST="127.0.0.1"
 export PORT="19091"
 

@@ -5,12 +5,12 @@
   "type": "module",
   "scripts": {
     "start": "node src/server.js",
-    "test": "node --test"
+    "test": "NODE_ENV=test node --test"
   },
   "engines": {
     "node": ">=20"
   },
   "dependencies": {
-    "@slimweb/mcp-core": "github:ericchen1972/SlimWeb-MCP-Core#v0.1.26"
+    "@slimweb/mcp-core": "github:ericchen1972/SlimWeb-MCP-Core#v0.1.27"
   }
 }

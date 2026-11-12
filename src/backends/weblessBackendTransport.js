@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 export class BackendError extends Error {
   constructor(message, options = {}) {
@@ -24,17 +24,33 @@ export class WeblessBackendTransport {
   }
 
   async request({ method = 'GET', path, identity, tool, permission, body, idempotencyKey }) {
+    method = method.toUpperCase();
+    const servicePath = /^\/internal\/mcp\/v1\/(?:version|actor-grants\/(?:bootstrap|exchange|revoke)|oauth-state\/[a-z_]+\/[a-f0-9]{64})$/.test(path);
+    if (!servicePath && !identity?.backend_grant) {
+      throw new BackendError('A verified backend identity grant is required.', {code:'UNAUTHENTICATED',status:401});
+    }
+    const serializedBody = body === undefined ? undefined : JSON.stringify(body);
+    let assertion;
+    if (!servicePath) {
+      const proof = await this.request({method:'POST',path:'/internal/mcp/v1/actor-grants/exchange',tool:'actor_proof',body:{
+        backend_grant:identity.backend_grant,method,path,
+        body_hash:createHash('sha256').update(serializedBody ?? '').digest('hex')
+      }});
+      if (typeof proof.assertion !== 'string' || proof.assertion === '') {
+        throw new BackendError('Backend identity proof is unavailable.', {code:'UPSTREAM_INVALID_RESPONSE',status:503});
+      }
+      assertion = proof.assertion;
+    }
     const requestId = String(this.requestIdFactory());
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
     const headers = {
       accept: 'application/json',
       'X-SlimWeb-MCP-Secret': this.secret,
-      'X-SlimWeb-Actor-Sub': String(identity?.google_id ?? identity?.google_sub ?? ''),
-      'X-SlimWeb-Actor-Email': String(identity?.email ?? ''),
       'X-SlimWeb-Tool': String(tool ?? ''),
       'X-Request-Id': requestId
     };
+    if (assertion) headers['X-SlimWeb-Actor-Assertion'] = assertion;
     if (permission) headers['X-SlimWeb-Permission'] = String(permission);
     if (idempotencyKey) headers['Idempotency-Key'] = String(idempotencyKey);
     if (body !== undefined) headers['content-type'] = 'application/json';
@@ -44,7 +60,8 @@ export class WeblessBackendTransport {
       response = await this.fetch(`${this.baseUrl}${path}`, {
         method,
         headers,
-        body: body === undefined ? undefined : JSON.stringify(body),
+        body: serializedBody,
+        redirect: 'manual',
         signal: controller.signal
       });
     } catch (error) {
@@ -94,5 +111,13 @@ export class WeblessBackendTransport {
     }
 
     return payload.data;
+  }
+
+  bootstrapIdentity({credential}) {
+    return this.request({method:'POST',path:'/internal/mcp/v1/actor-grants/bootstrap',tool:'actor_bootstrap',body:{credential,target:'saas'}});
+  }
+
+  revokeIdentityGrant(identity) {
+    return this.request({method:'POST',path:'/internal/mcp/v1/actor-grants/revoke',tool:'actor_revoke',body:{backend_grant:identity.backend_grant}});
   }
 }

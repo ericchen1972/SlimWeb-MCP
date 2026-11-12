@@ -39,6 +39,28 @@ async function withServerOptions(options, run) {
   }
 }
 
+async function exchangeBrowserLogin(baseUrl, response) {
+  assert.equal(response.status, 200);
+  const login = await response.json();
+  assert.equal(login.session.access_token, undefined);
+  const cookie = response.headers.get('set-cookie');
+  const redirectUri = 'https://chatgpt.com/oauth/callback';
+  const verifier = 'fixture-pkce-verifier-with-at-least-43-characters-long';
+  const challenge = createHash('sha256').update(verifier).digest('base64url');
+  const registration = await fetch(baseUrl + '/oauth/register', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ redirect_uris: [redirectUri] }) });
+  const { client_id } = await registration.json();
+  const query = new URLSearchParams({ response_type: 'code', client_id, redirect_uri: redirectUri, code_challenge: challenge, code_challenge_method: 'S256' });
+  const consent = await fetch(baseUrl + '/oauth/authorize?' + query, { headers: { cookie }, redirect: 'manual' });
+  assert.equal(consent.status, 200);
+  const consent_token = (await consent.text()).match(/name="consent_token" value="([^"]+)"/)[1];
+  const approval = await fetch(baseUrl + '/oauth/authorize', { method: 'POST', headers: { cookie, 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ consent_token, decision: 'allow' }), redirect: 'manual' });
+  assert.equal(approval.status, 302);
+  const code = new URL(approval.headers.get('location')).searchParams.get('code');
+  const tokens = await fetch(baseUrl + '/oauth/token', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ grant_type: 'authorization_code', client_id, redirect_uri: redirectUri, code, code_verifier: verifier }) });
+  assert.equal(tokens.status, 200);
+  return (await tokens.json()).access_token;
+}
+
 function testOAuthStore() {
   const records = new Map();
   return {
@@ -1349,7 +1371,7 @@ test('homepage editing tools call repository implementations', async () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ credential: 'google-id-token' })
     });
-    const token = (await loginResponse.json()).session.access_token;
+    const token = await exchangeBrowserLogin(baseUrl, loginResponse);
 
     const callTool = async (id, name, args) => {
       const response = await fetch(`${baseUrl}/mcp`, {
@@ -1637,7 +1659,10 @@ test('Google login creates a signed MCP session cookie', async () => {
     assert.equal(body.ok, true);
     assert.equal(body.admin.email, 'owner@example.com');
     assert.match(cookie, /swmcp_session=/);
-    assert.equal(body.session.token_type, 'Bearer');
+    assert.equal(body.session.access_token, undefined);
+    assert.equal(body.session.token_type, undefined);
+    assert.match(cookie, /HttpOnly/);
+    assert.match(cookie, /Secure/);
   });
 });
 
@@ -1801,7 +1826,8 @@ test('OAuth authorization code flow exchanges logged-in session for MCP bearer t
 
     assert.equal(tokenResponse.status, 200);
     assert.equal(tokenBody.token_type, 'Bearer');
-    assert.equal(tokenBody.expires_in, 604800);
+    assert.equal(tokenBody.expires_in, 900);
+    assert.ok(tokenBody.refresh_token);
     assert.ok(tokenBody.access_token);
 
     const mcpResponse = await fetch(`${baseUrl}/mcp`, {
@@ -1847,6 +1873,7 @@ test('auth success page does not expose bearer token after OAuth login', async (
       body: JSON.stringify({ credential: 'google-id-token' })
     });
     const loginBody = await loginResponse.json();
+    assert.equal(loginBody.session.access_token, undefined);
     const cookie = loginResponse.headers.get('set-cookie');
 
     const successResponse = await fetch(`${baseUrl}/auth/success`, {
@@ -1862,7 +1889,6 @@ test('auth success page does not expose bearer token after OAuth login', async (
     assert.doesNotMatch(html, /Authorization:\s*Bearer/);
     assert.doesNotMatch(html, /<textarea/i);
     assert.doesNotMatch(html, /copy-token/);
-    assert.doesNotMatch(html, new RegExp(loginBody.session.access_token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   });
 });
 
@@ -1914,14 +1940,13 @@ test('default SaaS repository routes settings update through the configured back
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ credential: 'google-token' })
     });
-    const login = await loginResponse.json();
-    assert.equal(loginResponse.status, 200);
+    const accessToken = await exchangeBrowserLogin(baseUrl, loginResponse);
 
     const response = await fetch(`${baseUrl}/mcp`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        authorization: `Bearer ${login.session.access_token}`
+        authorization: `Bearer ${accessToken}`
       },
       body: JSON.stringify({
         jsonrpc: '2.0',
@@ -1992,7 +2017,7 @@ test('authenticated tools can read account status and sites', async () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ credential: 'google-id-token' })
     });
-    const token = (await loginResponse.json()).session.access_token;
+    const token = await exchangeBrowserLogin(baseUrl, loginResponse);
 
     const statusResponse = await fetch(`${baseUrl}/mcp`, {
       method: 'POST',
@@ -2118,7 +2143,7 @@ test('authenticated tools list and calls are filtered by web admin permissions',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ credential: 'google-id-token' })
     });
-    const token = (await loginResponse.json()).session.access_token;
+    const token = await exchangeBrowserLogin(baseUrl, loginResponse);
 
     const toolsResponse = await fetch(`${baseUrl}/mcp`, {
       method: 'POST',

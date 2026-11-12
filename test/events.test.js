@@ -2,12 +2,15 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {createServer} from 'node:http';
 import {createRequestHandler} from '../src/app.js';
-import {createSessionToken} from '@slimweb/mcp-core/session';
+import {issueTokenFamily} from '@slimweb/mcp-core/session';
 test('SaaS installed Core exposes site.notification and sends subscription to the website backend', async()=>{
  const calls=[];const site={site_id:1,site_code:'swcb_demo',permissions:['system_admin']};
  const backendTransport={async request(op){calls.push(op);if(op.path.endsWith('/site-context/resolve'))return {actor:{site_id:1,permissions:site.permissions},site};if(op.path.endsWith('/sites'))return {sites:[site]};return {id:'sub_saas',refreshBefore:null,cursor:null,truncated:false};}};
- const secret='events-test-secret';const server=createServer(createRequestHandler({backendTransport,sessionSecret:secret}));await new Promise(r=>server.listen(0,'127.0.0.1',r));
- const call=async(method,params={})=>(await fetch(`http://127.0.0.1:${server.address().port}/mcp`,{method:'POST',headers:{'content-type':'application/json',authorization:`Bearer ${createSessionToken({email:'owner@example.com',google_id:'owner-sub'},secret)}`},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})})).json();
+ const rows=new Map(); const oauthStore={async put(k,id,v,exp){rows.set(k+id,{v,exp});},async get(k,id){const row=rows.get(k+id);return row?.exp>Date.now()/1000?row.v:null;},async take(k,id){const row=await this.get(k,id);rows.delete(k+id);return row;}};
+ const secret='events-test-secret'; const publicBaseUrl='https://mcp.example.com';
+ const token=await issueTokenFamily({email:'owner@example.com',google_id:'owner-sub'}, {client_id:'events-client',issuer:publicBaseUrl,audience:publicBaseUrl+'/mcp',scope:'mcp',resource_context:null}, {oauthStore,sessionSecret:secret});
+ const server=createServer(createRequestHandler({backendTransport,sessionSecret:secret,oauthStore,publicBaseUrl}));await new Promise(r=>server.listen(0,'127.0.0.1',r));
+ const call=async(method,params={})=>(await fetch(`http://127.0.0.1:${server.address().port}/mcp`,{method:'POST',headers:{'content-type':'application/json',authorization:`Bearer ${token.access_token}`},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})})).json();
  try{
   assert.equal((await call('events/list')).result.events[0].name,'site.notification');
   const p={name:'site.notification',arguments:{site_code:'swcb_demo'},delivery:{mode:'webhook',url:'https://receiver.example.com/callback',secret:'whsec_'+Buffer.alloc(32).toString('base64')}};

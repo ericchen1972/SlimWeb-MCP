@@ -29,6 +29,14 @@ function createRepository({
 async function withJsonServer(handler, run) {
   const server = createServer(async (request, response) => {
     try {
+      if(request.url==='/internal/mcp/v1/actor-grants/exchange'){
+        const proof=await readJson(request);
+        assert.equal(proof.backend_grant,'fixture-backend-grant');
+        assert.equal(proof.actor,undefined);
+        assert.match(proof.body_hash,/^[a-f0-9]{64}$/);
+        sendJson(response,200,{ok:true,data:{assertion:'fixture-signed-proof'}});
+        return;
+      }
       await handler(request, response);
     } catch (error) {
       response.writeHead(500, { 'content-type': 'application/json' });
@@ -62,6 +70,7 @@ async function readJson(request) {
 }
 
 const identity = {
+  backend_grant:'fixture-backend-grant',
   email: 'owner@example.com',
   google_id: 'google-sub'
 };
@@ -138,8 +147,9 @@ test('backend client maps site context and settings methods to Webless HTTP', as
   assert.equal(requests.length, 4);
   for (const request of requests) {
     assert.equal(request.headers['x-slimweb-mcp-secret'], 'service-secret');
-    assert.equal(request.headers['x-slimweb-actor-sub'], 'google-sub');
-    assert.equal(request.headers['x-slimweb-actor-email'], 'owner@example.com');
+    assert.equal(request.headers['x-slimweb-actor-sub'], undefined);
+    assert.equal(request.headers['x-slimweb-actor-email'], undefined);
+    assert.equal(request.headers['x-slimweb-actor-assertion'], 'fixture-signed-proof');
     assert.equal(request.headers['x-request-id'], 'request-client-001');
   }
   assert.equal(requests[0].headers['x-slimweb-tool'], 'slimweb_sites_list');

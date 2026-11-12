@@ -5,7 +5,18 @@ import { test } from 'node:test';
 import { BackendError, WeblessBackendTransport } from '../src/backends/weblessBackendTransport.js';
 
 async function withServer(handler, run) {
-  const server = createServer(handler);
+  const server = createServer(async(request,response)=>{
+    if(request.url==='/internal/mcp/v1/actor-grants/exchange'){
+      const proof=await readJson(request);
+      assert.equal(proof.backend_grant,'fixture-backend-grant');
+      assert.equal(proof.actor,undefined);
+      assert.match(proof.body_hash,/^[a-f0-9]{64}$/);
+      response.writeHead(200,{'content-type':'application/json'});
+      response.end(JSON.stringify({ok:true,data:{assertion:'fixture-signed-proof'}}));
+      return;
+    }
+    return handler(request,response);
+  });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   try {
     await run(`http://127.0.0.1:${server.address().port}`);
@@ -35,7 +46,7 @@ test('SaaS transport sends environment-specific headers and parses data', async 
     assert.deepEqual(await transport.request({
       method: 'PUT',
       path: '/internal/mcp/v1/sites/swcb_demo/settings/seo',
-      identity: { google_id: 'google-sub', email: 'owner@example.com' },
+      identity: { google_id: 'google-sub', email: 'owner@example.com', backend_grant:'fixture-backend-grant' },
       tool: 'slimweb_seo_settings_update',
       permission: 'seo_settings',
       idempotencyKey: 'idempotency-001',
@@ -46,8 +57,9 @@ test('SaaS transport sends environment-specific headers and parses data', async 
   assert.equal(received.method, 'PUT');
   assert.equal(received.url, '/internal/mcp/v1/sites/swcb_demo/settings/seo');
   assert.equal(received.headers['x-slimweb-mcp-secret'], 'service-secret');
-  assert.equal(received.headers['x-slimweb-actor-sub'], 'google-sub');
-  assert.equal(received.headers['x-slimweb-actor-email'], 'owner@example.com');
+  assert.equal(received.headers['x-slimweb-actor-sub'], undefined);
+  assert.equal(received.headers['x-slimweb-actor-email'], undefined);
+  assert.equal(received.headers['x-slimweb-actor-assertion'], 'fixture-signed-proof');
   assert.equal(received.headers['x-slimweb-tool'], 'slimweb_seo_settings_update');
   assert.equal(received.headers['x-slimweb-permission'], 'seo_settings');
   assert.equal(received.headers['x-request-id'], 'request-001');
@@ -62,7 +74,7 @@ test('SaaS transport maps safe backend errors without leaking response internals
   }, async (baseUrl) => {
     const transport = new WeblessBackendTransport({ baseUrl, secret: 'service-secret' });
     await assert.rejects(
-      transport.request({ method: 'PUT', path: '/internal/mcp/v1/test', identity: {}, tool: 'test', body: {} }),
+      transport.request({ method: 'PUT', path: '/internal/mcp/v1/test', identity: {backend_grant:'fixture-backend-grant'}, tool: 'test', body: {} }),
       (error) => error instanceof BackendError
         && error.code === 'VALIDATION_FAILED'
         && error.status === 422
