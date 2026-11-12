@@ -1,6 +1,7 @@
 import { SlimWebBackendRepository } from '@slimweb/mcp-core/backend-repository';
 
 import { WeblessBackendTransport } from './backends/weblessBackendTransport.js';
+import { WeblessOAuthStore } from './backends/weblessOAuthStore.js';
 
 export function createSaasContext(options = {}) {
   if (options.accountRepository) {
@@ -27,6 +28,7 @@ export function createSaasContext(options = {}) {
   );
 
   return {
-    accountRepository: new SlimWebBackendRepository({ transport })
+    accountRepository: new SlimWebBackendRepository({ transport }),
+    oauthStore: options.oauthStore ?? new WeblessOAuthStore(transport)
   };
 }

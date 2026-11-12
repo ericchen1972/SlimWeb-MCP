@@ -24,7 +24,7 @@ async function withServer(run) {
 }
 
 async function withServerOptions(options, run) {
-  const server = createServer(createRequestHandler(options));
+  const server = createServer(createRequestHandler({ oauthStore: testOAuthStore(), ...options }));
 
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();
@@ -37,6 +37,15 @@ async function withServerOptions(options, run) {
       server.close((error) => (error ? reject(error) : resolve()));
     });
   }
+}
+
+function testOAuthStore() {
+  const records = new Map();
+  return {
+    async put(kind, key, value, expiresAt) { records.set(kind + key, { value, expiresAt }); },
+    async get(kind, key) { const row = records.get(kind + key); return row && row.expiresAt > Date.now()/1000 ? row.value : null; },
+    async take(kind, key) { const row = records.get(kind + key); records.delete(kind + key); return row && row.expiresAt > Date.now()/1000 ? row.value : null; }
+  };
 }
 
 function testAdminSitesFor(profile, permissions = ['backend_ai_assistant', 'system_admin']) {
@@ -1740,14 +1749,19 @@ test('OAuth authorization code flow exchanges logged-in session for MCP bearer t
     });
     const cookie = loginResponse.headers.get('set-cookie');
 
-    const codeVerifier = 'this-is-a-long-pkce-code-verifier-for-chatgpt';
+    const codeVerifier = 'this-is-a-long-pkce-code-verifier-for-chatgpt-123';
     const codeChallenge = Buffer.from(
       await crypto.subtle.digest('SHA-256', new TextEncoder().encode(codeVerifier))
     ).toString('base64url');
     const redirectUri = 'https://chatgpt.com/oauth/callback';
+    const registration = await fetch(baseUrl + '/oauth/register', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ client_name: 'ChatGPT', redirect_uris: [redirectUri] })
+    });
+    const { client_id: clientId } = await registration.json();
     const authorizeUrl = new URL(`${baseUrl}/oauth/authorize`);
     authorizeUrl.searchParams.set('response_type', 'code');
-    authorizeUrl.searchParams.set('client_id', 'chatgpt-client');
+    authorizeUrl.searchParams.set('client_id', clientId);
     authorizeUrl.searchParams.set('redirect_uri', redirectUri);
     authorizeUrl.searchParams.set('state', 'state-123');
     authorizeUrl.searchParams.set('code_challenge', codeChallenge);
@@ -1757,10 +1771,17 @@ test('OAuth authorization code flow exchanges logged-in session for MCP bearer t
       headers: { cookie },
       redirect: 'manual'
     });
-    const location = authorizeResponse.headers.get('location');
+    assert.equal(authorizeResponse.status, 200);
+    const consentHtml = await authorizeResponse.text();
+    const consentToken = consentHtml.match(/name="consent_token" value="([^"]+)"/)[1];
+    const approved = await fetch(baseUrl + '/oauth/authorize', {
+      method: 'POST', headers: { cookie, 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ consent_token: consentToken, decision: 'allow' }), redirect: 'manual'
+    });
+    const location = approved.headers.get('location');
     const callbackUrl = new URL(location);
 
-    assert.equal(authorizeResponse.status, 302);
+    assert.equal(approved.status, 302);
     assert.equal(callbackUrl.origin + callbackUrl.pathname, redirectUri);
     assert.equal(callbackUrl.searchParams.get('state'), 'state-123');
     assert.ok(callbackUrl.searchParams.get('code'));
@@ -1770,7 +1791,7 @@ test('OAuth authorization code flow exchanges logged-in session for MCP bearer t
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
         grant_type: 'authorization_code',
-        client_id: 'chatgpt-client',
+        client_id: clientId,
         redirect_uri: redirectUri,
         code: callbackUrl.searchParams.get('code'),
         code_verifier: codeVerifier

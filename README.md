@@ -1941,3 +1941,8 @@ LINE member push tools (Core v0.1.16): friends_stats, members_list, push_prepare
 
 ## Website notifications
 See [site.notification contract](docs/site-notification-contract.md). One website subscription delivers new-order and return-request notices only. Display in the subscribed chat and wait for user instructions before actions. Requires Work Cloud host support; actual UI acceptance is separate from server tests.
+# OAuth security update (2026-11-12)
+
+The security batch source requires the updated Core OAuth implementation and the Webless OAuth-state backend routes. OAuth state is encrypted in the shared backend database cache, with atomic code consumption across instances; no new environment variable is needed. Deploy backend support before updating the MCP service. Previously issued untyped sessions/tokens require reconnecting. Clients must dynamically register their exact callback, use S256 PKCE and complete the browser consent page.
+
+The gateway pins the immutable Core v0.1.26 release, including its resolved commit in package-lock.json. Run npm ci and npm test to reproduce the released dependency. Deploy the Webless OAuth-state backend before promoting this gateway.
