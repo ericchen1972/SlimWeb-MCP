@@ -25,7 +25,7 @@ export class WeblessBackendTransport {
 
   async request({ method = 'GET', path, identity, tool, permission, body, idempotencyKey }) {
     method = method.toUpperCase();
-    const servicePath = /^\/internal\/mcp\/v1\/(?:version|actor-grants\/(?:bootstrap|exchange|revoke)|oauth-state\/[a-z_]+\/[a-f0-9]{64})$/.test(path);
+    const servicePath = /^\/internal\/mcp\/v1\/(?:version|actor-grants\/(?:bootstrap|exchange|revoke)|human-approvals\/(?:bootstrap|preview|decide)|oauth-state\/[a-z_]+\/[a-f0-9]{64})$/.test(path);
     if (!servicePath && !identity?.backend_grant) {
       throw new BackendError('A verified backend identity grant is required.', {code:'UNAUTHENTICATED',status:401});
     }

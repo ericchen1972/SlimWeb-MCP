@@ -29,6 +29,11 @@ export function createSaasContext(options = {}) {
 
   return {
     accountRepository: new SlimWebBackendRepository({ transport }),
+    humanApprovalTransport: options.humanApprovalTransport ?? {
+      bootstrap: input => transport.request({method:'POST',path:'/internal/mcp/v1/human-approvals/bootstrap',body:{...input,target:'saas'}}),
+      preview: ({human_ticket}) => transport.request({method:'POST',path:'/internal/mcp/v1/human-approvals/preview',body:{human_ticket}}),
+      decide: ({human_ticket,decision}) => transport.request({method:'POST',path:'/internal/mcp/v1/human-approvals/decide',body:{human_ticket,decision}})
+    },
     oauthStore: options.oauthStore ?? new WeblessOAuthStore(transport)
   };
 }
