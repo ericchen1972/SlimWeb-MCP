@@ -844,10 +844,9 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 - Scope: active site
 - 用途: 讀取 AI 後台操作需要的網站名稱、站台基本設定、目前網站 Logo，並取得可放在首頁給消費者安裝使用的站台專屬 MCP 網址。
 - Input: optional fields list
-- Output: `name`、site status、website type、country、product loading mode、return days allowed、`category_navigation_mode`、`logo`（`media_path`、`public_url`、`mime_type`）與 `client_mcp_url`
+- Output: `name`、site status、website type、country、product loading mode、return days allowed、`category_navigation_mode`、`logo`（`media_path`、`public_url`、`mime_type`）
 - Side effects: none
 - 是否需要 confirmation: no
-- Consumer MCP guidance: `client_mcp_url` 是此站台的消費者端 MCP endpoint，可提供給支援 MCP 的 AI 工具，讓顧客連接後以 AI 查詢商品、會員、訂單與客服支援。AI 應向商家說明這個入口的用途，並建議把連結或安裝按鈕放在首頁、會員中心或客服區，讓消費者容易找到。
 - 錯誤情境: missing active site、permission denied
 - Audit fields: request ID、user ID、account ID、site ID
 

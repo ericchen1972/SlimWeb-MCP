@@ -1,6 +1,6 @@
 {
   "count": 153,
-  "sha256": "16c39777c731d435e6031b956dc0cc302be6b28a80f59a6c3c17953f1eb005ec",
+  "sha256": "6de1528edc14f51db9dfc25cb6e6df30c0b6382ca9ec5974ed83b0c4b8a3dd14",
   "tools": [
     {
       "name": "slimweb_guides_get",
@@ -3806,7 +3806,7 @@
     },
     {
       "name": "slimweb_settings_get",
-      "description": "Read the SlimWeb site name and basic settings such as status, website type, default country, product load mode, return days, category_navigation_mode, the single active site logo, and the consumer MCP URL for shoppers to install or connect supported AI clients.",
+      "description": "Read the SlimWeb site name and basic settings such as status, website type, default country, product load mode, return days, category_navigation_mode, the single active site logo.",
       "inputSchema": {
         "type": "object",
         "properties": {

@@ -121,7 +121,7 @@ test('health endpoint reports service metadata', async () => {
     assert.equal(response.status, 200);
     assert.equal(body.ok, true);
     assert.equal(body.service, 'slimweb-mcp');
-    assert.match(body.instructions, /consumer MCP URL/);
+    assert.doesNotMatch(body.instructions, /client_mcp_url|consumer MCP URL/);
     assert.match(body.instructions, /site logo/);
     assert.match(body.instructions, /product summary\/description/);
     assert.match(body.instructions, /Do not invent discounts/);
@@ -355,7 +355,7 @@ test('MCP tools list includes homepage editing contract tools', async () => {
     assert.equal(body.result.tools.length, 153);
     assert.equal(
       toolsContractHash,
-      '16c39777c731d435e6031b956dc0cc302be6b28a80f59a6c3c17953f1eb005ec'
+      '6de1528edc14f51db9dfc25cb6e6df30c0b6382ca9ec5974ed83b0c4b8a3dd14'
     );
 
     for (const toolName of [
@@ -1011,7 +1011,6 @@ test('homepage editing tools call repository implementations', async () => {
             public_url: 'https://slimweb.tw/media/sites/101/settings/logo-current.webp',
             mime_type: 'image/webp'
           },
-          client_mcp_url: 'https://client-mcp.example.test/sites/swcb_test101/mcp'
         }
       };
     },
@@ -1464,7 +1463,7 @@ test('homepage editing tools call repository implementations', async () => {
     assert.equal(settings.name, '測試網站');
     assert.equal(settings.site_status, 'active');
     assert.equal(settings.logo.mime_type, 'image/webp');
-    assert.equal(settings.client_mcp_url, 'https://client-mcp.example.test/sites/swcb_test101/mcp');
+    assert.equal(Object.hasOwn(settings, 'client_mcp_url'), false);
     const updatedSettings = (await callTool(53, 'slimweb_settings_update', {
       site_id: 101,
       name: '新的網站名稱',
