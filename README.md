@@ -180,6 +180,7 @@ Adapter 是 MCP Server 與 SlimWeb / Webless 後端之間的唯一連接層。
 
 | Tool | 狀態 | 權限 | 用途 |
 | --- | --- | --- | --- |
+| `slimweb_guides_get` | Available | authenticated user | Read current deployed operating guide index or exact topic; authenticated, read-only, no site selection or business writes. |
 | `slimweb_auth_status` | Available | authenticated user | 回傳登入狀態、使用者摘要、目前 account。 |
 | `slimweb_sites_list` | Available | account read | 列出使用者可操作的 SlimWeb sites。 |
 | `slimweb_site_select` | Available | account read | 驗證並回傳 AI 後續 tool 呼叫要操作的 site。 |
@@ -1946,3 +1947,8 @@ See [site.notification contract](docs/site-notification-contract.md). One websit
 The security batch source requires the updated Core OAuth implementation and the Webless OAuth-state backend routes. OAuth state is encrypted in the shared backend database cache, with atomic code consumption across instances; no new environment variable is needed. Deploy backend support before updating the MCP service. Previously issued untyped sessions/tokens require reconnecting. Clients must dynamically register their exact callback, use S256 PKCE and complete the browser consent page.
 
 The gateway now pins immutable Core v0.1.27, including its resolved commit in package-lock.json. Browser cookies last eight hours; API access expires after 15 minutes and refresh credentials rotate with durable replay revocation. Deploy the updated Webless actor-grant and OAuth-state endpoints before promotion. Production requires explicit Google client and canonical HTTPS origin configuration; SlimAI service assertions use the central RSA trust set through `SLIMAI_ASSERTION_ISSUER` and `SLIMAI_ASSERTION_PUBLIC_KEYS_JSON`. Legacy session tokens require signing in again. Run npm ci and npm test to reproduce the released dependency.
+
+
+## Thin Plugin operating guides
+
+The stable local Skill calls `slimweb_guides_get` with `topic: index` at every new task, then `overview` and relevant catalog topics before advising or modifying sites. Responses identify the latest deployed guide bundle with `guide_version` and per-topic `sha256`. Core bundles deterministic exports of the canonical Skill repository; a server deployment updates operational content without reinstalling the client Plugin. This is not binary/package auto-update: the initial thin-Skill migration and future tool/schema changes can require a Plugin update or client refresh. On guidance failure stop affected mutations rather than use stale local instructions. Current schemas, permissions, site selection, domain binding and confirmation remain authoritative. No Google OAuth or backend runtime configuration is changed by guide-only updates.

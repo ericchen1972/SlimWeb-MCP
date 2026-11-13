@@ -352,10 +352,10 @@ test('MCP tools list includes homepage editing contract tools', async () => {
       .update(JSON.stringify(body.result.tools))
       .digest('hex');
 
-    assert.equal(body.result.tools.length, 152);
+    assert.equal(body.result.tools.length, 153);
     assert.equal(
       toolsContractHash,
-      'c017fc412c71f4c64df873fea3ba78e2a9b59798b1794df7b617ed3cde724a0b'
+      '16c39777c731d435e6031b956dc0cc302be6b28a80f59a6c3c17953f1eb005ec'
     );
 
     for (const toolName of [
@@ -2182,5 +2182,29 @@ test('authenticated tools list and calls are filtered by web admin permissions',
     const deniedBody = await deniedResponse.json();
 
     assert.equal(deniedBody.error.data.reason, 'FORBIDDEN');
+  });
+});
+
+
+test('thin Plugin reads deployed guide catalog and content after existing OAuth', async () => {
+  const repository = {
+    listAdminSitesForGoogleProfile: async profile => testAdminSitesFor(profile),
+    listSitesForAdminIdentity: async profile => testAdminSitesFor(profile),
+  };
+  await withServerOptions({
+    googleVerifier: {verify: async () => ({sub:'guide-owner',email:'guide@example.com',name:'Guide Owner'})},
+    accountRepository: repository, sessionSecret: 'guide-fixture-secret',
+  }, async baseUrl => {
+    const login = await fetch(baseUrl + '/auth/google', {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({credential:'test'})});
+    const token = await exchangeBrowserLogin(baseUrl, login);
+    const call = async topic => {
+      const response = await fetch(baseUrl + '/mcp', {method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+token},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'tools/call',params:{name:'slimweb_guides_get',arguments:{topic}}})});
+      assert.equal(response.status,200);return response.json();
+    };
+    const index = await call('index');assert.equal(index.error,undefined);
+    const catalog = index.result.structuredContent;assert.match(catalog.guide_version,/^sha256:[a-f0-9]{64}$/);assert.ok(catalog.topics.some(t=>t.topic==='overview'));
+    const overview = (await call('overview')).result.structuredContent;
+    assert.equal(overview.guide_version,catalog.guide_version);assert.equal(createHash('sha256').update(overview.content).digest('hex'),overview.sha256);
+    assert.match(overview.content,/SlimWeb/);
   });
 });

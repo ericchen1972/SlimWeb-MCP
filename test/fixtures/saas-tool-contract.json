@@ -1,7 +1,33 @@
 {
-  "count": 152,
-  "sha256": "c017fc412c71f4c64df873fea3ba78e2a9b59798b1794df7b617ed3cde724a0b",
+  "count": 153,
+  "sha256": "16c39777c731d435e6031b956dc0cc302be6b28a80f59a6c3c17953f1eb005ec",
   "tools": [
+    {
+      "name": "slimweb_guides_get",
+      "description": "Read current deployed SlimWeb operating guidance. Start each new task with topic=index, then overview and the relevant topics. No site selection is required for this authenticated read-only tool. Return guide_version and topic SHA-256 so clients can detect updates; always follow current schemas, permissions and confirmation rules.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "topic": {
+            "type": "string",
+            "default": "index",
+            "description": "index or an exact topic returned by the guide index."
+          }
+        },
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
     {
       "name": "slimweb_invoice_settings_get",
       "description": "Read electronic invoice connection settings. Secret keys are never returned; only their presence is exposed.",
@@ -2001,7 +2027,7 @@
     },
     {
       "name": "slimweb_sites_list",
-      "description": "List SlimWeb sites available to the authenticated account. Always call this first before any other SlimWeb MCP action.",
+      "description": "List SlimWeb sites available to the authenticated account. Call this before any site-scoped SlimWeb action; authenticated operating-guide reads do not require site selection.",
       "inputSchema": {
         "type": "object",
         "properties": {}
